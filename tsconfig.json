@@ -1,19 +1,12 @@
 {
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
+    "rootDir": ".",
     "outDir": "dist",
-    "rootDir": "src",
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "resolveJsonModule": true
+    "paths": {
+      "@llmwiki/shared": ["./packages/shared/src/index.ts"]
+    }
   },
-  "include": ["src"],
+  "include": ["packages/*/src"],
   "exclude": ["node_modules", "dist", "tests"]
 }

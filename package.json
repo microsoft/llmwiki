@@ -3,13 +3,16 @@
   "version": "0.1.0",
   "description": "A personal knowledge base where the LLM does all the maintenance",
   "type": "module",
-  "bin": {
-    "plaid": "./dist/cli.js"
-  },
+  "private": true,
+  "workspaces": [
+    "packages/shared",
+    "packages/cli",
+    "packages/vscode"
+  ],
   "scripts": {
-    "build": "tsup",
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/cli && npm run build --workspace=packages/vscode",
     "test": "vitest run",
-    "lint": "tsc --noEmit",
+    "lint": "npm run lint --workspace=packages/shared && npm run lint --workspace=packages/cli && npm run lint --workspace=packages/vscode",
     "dev": "vitest watch"
   },
   "keywords": [
@@ -27,9 +30,5 @@
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"
-  },
-  "dependencies": {
-    "commander": "^14.0.3",
-    "gray-matter": "^4.0.3"
   }
 }

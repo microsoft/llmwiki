@@ -53,7 +53,7 @@ jobs:
           echo "${{ steps.changed.outputs.files }}" | while IFS= read -r file; do
             if [ -n "$file" ] && [ -f "$file" ]; then
               echo "Ingesting: $file"
-              node dist/cli.js wiki ingest "$file"
+              node packages/cli/dist/cli.js wiki ingest "$file"
             fi
           done
 

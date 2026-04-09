@@ -15,7 +15,7 @@
     "retry_rate": 0.0
   },
   "tasks": {
-    "c2-01": { "status": "pending", "attempts": 0, "pr": null, "merged": false },
+    "c2-01": { "status": "running", "attempts": 1, "pr": null, "merged": false },
     "c2-02": { "status": "pending", "attempts": 0, "pr": null, "merged": false },
     "c2-03": { "status": "pending", "attempts": 0, "pr": null, "merged": false },
     "c2-04": { "status": "pending", "attempts": 0, "pr": null, "merged": false },
