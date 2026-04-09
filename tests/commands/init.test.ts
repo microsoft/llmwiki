@@ -81,6 +81,13 @@ describe('initWiki', () => {
     expect(agentsContent).toContain('concept');
     expect(agentsContent).toContain('source');
     expect(agentsContent).toContain('Frontmatter Schema');
+    expect(agentsContent).toContain('summary');
+    expect(agentsContent).toContain('Naming Conventions');
+    expect(agentsContent).toContain('Ingest Workflow');
+    expect(agentsContent).toContain('Lint Rules');
+    expect(agentsContent).toContain('Cross-Referencing');
+    expect(agentsContent).toContain('broken-links');
+    expect(agentsContent).toContain('orphan-pages');
   });
 
   it('should return created status with dirs and files', async () => {

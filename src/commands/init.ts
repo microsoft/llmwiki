@@ -43,6 +43,7 @@ const AGENTS_CONTENT = `# AGENTS.md
 - **entity** — A person, place, organization, or thing
 - **concept** — An idea, theory, or abstract topic
 - **source** — A reference to raw material
+- **summary** — An auto-generated summary of an ingested source
 
 ### Directory Structure
 
@@ -56,14 +57,65 @@ const AGENTS_CONTENT = `# AGENTS.md
 
 ### Frontmatter Schema
 
+**Required fields:**
+- \`type\` — Page type (entity, concept, source, summary)
+- \`title\` — Page title
+
+**Optional fields:**
+- \`tags\` — Array of tag strings
+- \`sources\` — Array of source references
+- \`created\` — Creation date (YYYY-MM-DD)
+- \`updated\` — Last updated date (YYYY-MM-DD)
+- \`source_path\` — Relative path to the original source file
+- \`ingested\` — Date the source was ingested
+
 \`\`\`yaml
-type: entity | concept | source
+type: entity | concept | source | summary
 title: string
 tags: string[]
 sources: string[]
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
+source_path: string   # source/summary pages only
+ingested: YYYY-MM-DD  # source/summary pages only
 \`\`\`
+
+### Naming Conventions
+
+- Filenames are lowercased
+- Extensions are stripped
+- Non-alphanumeric characters become hyphens
+- Leading/trailing hyphens are removed
+- Example: \`My Report (2024).pdf\` → \`my-report-2024\`
+- Summary pages: \`sources/{slug}-summary.md\`
+- Entity pages: \`entities/{slug}.md\`
+- Concept pages: \`concepts/{slug}.md\`
+
+### Ingest Workflow
+
+1. Place raw file in \`raw/\` directory
+2. Run \`plaid wiki ingest <source>\` (supports \`--dry-run\`)
+3. A summary page is created in \`wiki/sources/\`
+4. \`wiki/index.md\` is updated with the new entry
+5. \`wiki/log.md\` records the ingestion event
+
+### Lint Rules
+
+- **broken-links** (error) — Links pointing to non-existent files
+- **orphan-pages** (warning) — Pages with no inbound links and not in index
+- **index-completeness** (warning) — Pages not listed in wiki/index.md
+- **stale-entries** (error) — Index entries pointing to deleted files
+- **missing-pages** (info) — Referenced pages that do not exist yet
+
+Run lint: \`plaid wiki lint\` (supports \`--category\` filter)
+
+### Cross-Referencing Guidelines
+
+- Use standard Markdown links: \`[Title](relative/path.md)\`
+- Links must be relative paths ending in \`.md\`
+- External URLs (http/https) are ignored by lint
+- Use relative paths from the current file location
+- The lint command detects broken links and orphan pages
 `;
 
 /**
