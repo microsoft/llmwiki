@@ -1,0 +1,7 @@
+
+# Harness-managed (local only, not committed)
+.harness-state-prompt.md
+.github/agents/
+.github/skills/
+.github/instructions/
+.github/hooks/
