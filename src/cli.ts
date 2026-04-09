@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { registerInitCommand } from './commands/init.js';
+import { registerLintCommand } from './commands/lint.js';
 import { registerStatusCommand } from './commands/status.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -27,10 +28,11 @@ export function createProgram(): Command {
 
   // Register implemented commands
   registerInitCommand(wiki);
+  registerLintCommand(wiki);
   registerStatusCommand(wiki);
 
   // Placeholder subcommands for commands not yet implemented
-  const subcommands = ['ingest', 'query', 'lint'] as const;
+  const subcommands = ['ingest', 'query'] as const;
 
   for (const name of subcommands) {
     wiki
