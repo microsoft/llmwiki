@@ -1,3 +1,4 @@
+- [2026-04-09T21:41:00Z] [commander] cycle=cycle-1 action=review-pr summary=Reviewed PR #16 (feat(5.1): query command): LGTM — clean implementation, comprehensive tests, CI passing, no pending Copilot review. Ready to merge.
 - [2026-04-09T21:31:00Z] [commander] cycle=cycle-1 action=execute-task task=5.1 summary=Completed task 5.1 (Query command): src/commands/query.ts with TF-based search, weighted scoring, --save and --json support, 24 tests. All 145 tests pass. Opened PR #16.
 - [2026-04-09T21:23:00Z] [commander] cycle=cycle-1 action=merge-pr summary=Merged PR #15 (feat(4.2): ingest command) via squash merge. Task 4.2 complete. Wave 4 finished. Next: task 5.1 (Query command).
 - [2026-04-09T21:18:00Z] [commander] cycle=cycle-1 action=review-pr summary=Reviewed PR #15 (feat(4.2): ingest command): LGTM — clean implementation, no blockers, CI passing. Ready to merge.
@@ -49,3 +50,5 @@
 - [2026-04-09T20:55:18.267Z] [commander] cycle=22 action=unknown summary=Could not parse commander output
 - [2026-04-09T21:16:08.247Z] [commander] cycle=24 action=execute-task summary=Reviewed and merged PR #14 (task 4.1 lint command). Delegated task 4.2 (Ingest command) to gem-implementer on branch task/cycle-1/4.2.
 - [2026-04-09T21:21:54.407Z] [commander] cycle=25 action=review-pr summary=Reviewed PR #15 (feat(4.2): ingest command): LGTM — clean implementation, comprehensive tests, CI passing. Ready to merge.
+- [2026-04-09T21:37:17.598Z] [commander] cycle=26 action=execute-task summary=Merged PR #15 (task 4.2), implemented task 5.1 (Query command) with TF-based search, weighted scoring, --save/--json support, 24 tests — all 145 tests pass. Opened PR #16.
+- [2026-04-09T21:40:13.199Z] [commander] cycle=27 action=review-pr summary=Inferred from commander output (no JSON block returned)
