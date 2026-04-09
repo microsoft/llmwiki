@@ -1,0 +1,68 @@
+name: Auto-Ingest
+
+on:
+  push:
+    paths:
+      - "raw/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build CLI
+        run: npm run build
+
+      - name: Detect changed files in raw/
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            FILES=$(find raw/ -type f 2>/dev/null || true)
+          else
+            FILES=$(git diff --name-only --diff-filter=ACMR HEAD~1 HEAD -- 'raw/' || true)
+          fi
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$FILES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          if [ -z "$FILES" ]; then
+            echo "count=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "count=$(echo "$FILES" | wc -l)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ingest changed files
+        if: steps.changed.outputs.count != '0'
+        run: |
+          echo "${{ steps.changed.outputs.files }}" | while IFS= read -r file; do
+            if [ -n "$file" ] && [ -f "$file" ]; then
+              echo "Ingesting: $file"
+              node dist/cli.js wiki ingest "$file"
+            fi
+          done
+
+      - name: Commit wiki updates
+        if: steps.changed.outputs.count != '0'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore(wiki): auto-ingest updated sources"
+          commit_user_name: "github-actions[bot]"
+          commit_user_email: "41898282+github-actions[bot]@users.noreply.github.com"
+          commit_author: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          file_pattern: "wiki/**"
