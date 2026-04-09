@@ -20,23 +20,164 @@ The system has three layers:
 | **Wiki** | LLM | Generated markdown files — summaries, entity pages, concept pages, cross-references. The LLM owns this layer entirely. |
 | **Schema** | Human + LLM | Conventions document (AGENTS.md) defining wiki structure, workflows, and rules. Co-evolved over time. |
 
-## CLI Tool (`llmwiki`)
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for full technical design and data-flow diagrams.
 
-The primary interface is a TypeScript/Node.js CLI with structured JSON output for agent interop.
+## Prerequisites
+
+- [Node.js](https://nodejs.org/) v20 or later
+
+## Installation
+
+```bash
+# Clone the repository
+git clone <repo-url>
+cd llmwiki
+
+# Install dependencies
+npm ci
+
+# Build the CLI
+npm run build
+
+# Link globally (optional — makes `plaid` available everywhere)
+npm link
+```
+
+After building, the CLI is available at `./dist/cli.js` or, if linked, as the `plaid` command.
+
+## CLI Tool (`plaid wiki`)
+
+The primary interface is a TypeScript/Node.js CLI invoked as `plaid wiki <command>`. All subcommands inherit a `--json` flag from the `wiki` group for machine-readable output.
+
+### Commands
 
 | Command | Description |
 |---------|-------------|
-| `llmwiki init` | Initialize a new wiki repository with directory structure and schema |
-| `llmwiki ingest` | Process a raw source into wiki updates (summaries, cross-references, index) |
-| `llmwiki query` | Search the wiki and synthesize an answer with citations |
-| `llmwiki lint` | Health-check the wiki for contradictions, orphans, and stale content |
-| `llmwiki status` | Show wiki statistics — source count, page count, last activity |
+| `plaid wiki init` | Initialize a new wiki knowledge base with directory structure and schema |
+| `plaid wiki ingest <source>` | Ingest a source file — creates a summary page, updates index and log |
+| `plaid wiki query <query>` | Search wiki pages by keyword with scored results |
+| `plaid wiki lint` | Run health checks — broken links, orphan pages, index completeness |
+| `plaid wiki status` | Show wiki statistics — source count, page count, last activity |
 
-All commands support `--json` for machine-readable output.
+### `plaid wiki init`
 
-## Development Status
+Creates the directory structure and starter files for a new wiki.
 
-🚧 **Early development** — the project is in the design and bootstrapping phase. No functional CLI exists yet. See [STRATEGY.md](./STRATEGY.md) for priorities and [ARCHITECTURE.md](./ARCHITECTURE.md) for technical design.
+```bash
+plaid wiki init [--path <dir>]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--path <dir>` | `.` | Target directory for the wiki |
+
+Creates: `raw/`, `wiki/entities/`, `wiki/concepts/`, `wiki/sources/`, `wiki/index.md`, `wiki/log.md`, and `AGENTS.md` with a starter schema template.
+
+### `plaid wiki ingest <source>`
+
+Reads a source file, creates a summary page in `wiki/sources/`, updates `wiki/index.md`, and appends to `wiki/log.md`.
+
+```bash
+plaid wiki ingest <source> [--path <dir>] [--dry-run]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--path <dir>` | `.` | Wiki root directory |
+| `--dry-run` | `false` | Preview changes without writing files |
+
+The source filename is slugified for the output path. Example: `raw/My Report (2024).pdf` produces `wiki/sources/my-report-2024-summary.md`.
+
+### `plaid wiki query <query>`
+
+Searches wiki pages by keyword. Terms are matched against index titles (3× weight), summaries (2× weight), and page bodies (1× weight). Results are returned sorted by score.
+
+```bash
+plaid wiki query <query> [--path <dir>] [--save]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--path <dir>` | `.` | Wiki root directory |
+| `--save` | `false` | Save query results as a wiki page under `wiki/queries/` |
+
+### `plaid wiki lint`
+
+Runs health checks on the wiki and reports findings by severity.
+
+```bash
+plaid wiki lint [--path <dir>] [--category <categories>]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--path <dir>` | `.` | Wiki root directory |
+| `--category <categories>` | all | Comma-separated list of check categories to run |
+
+**Lint categories:**
+
+| Category | Severity | Description |
+|----------|----------|-------------|
+| `broken-links` | error | Internal links pointing to non-existent `.md` files |
+| `orphan-pages` | warning | Pages with no inbound links and not listed in the index |
+| `index-completeness` | warning | Wiki pages not listed in `wiki/index.md` |
+| `stale-entries` | error | Index entries pointing to deleted files |
+| `missing-pages` | info | Referenced pages that do not exist yet |
+
+Exits with code 1 if any errors are found.
+
+### `plaid wiki status`
+
+Displays a summary of wiki health and activity.
+
+```bash
+plaid wiki status [--path <dir>]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--path <dir>` | `.` | Wiki root directory |
+
+Reports: source count (`raw/`), wiki page count (`wiki/`), last ingest date, last lint date, orphan page count, and index coverage percentage.
+
+### JSON output
+
+Pass `--json` to the `wiki` group to get structured JSON from any subcommand:
+
+```bash
+plaid wiki --json init
+plaid wiki --json ingest raw/notes.md
+plaid wiki --json lint --category broken-links,stale-entries
+```
+
+Example output from `plaid wiki --json ingest raw/notes.md`:
+
+```json
+{
+  "command": "ingest",
+  "status": "success",
+  "pages_created": ["sources/notes-summary.md"],
+  "pages_updated": ["index.md", "log.md"],
+  "dry_run": false
+}
+```
+
+## GitHub Actions
+
+Two workflows are included in `.github/workflows/`:
+
+- **`ci.yml`** — Runs on push and PR to `main`. Lints (`tsc --noEmit`), builds (`tsup`), and tests (`vitest`).
+- **`ingest.yml`** — Triggers on pushes that modify `raw/**` or via manual `workflow_dispatch`. Detects changed files, runs `plaid wiki ingest` on each, and auto-commits wiki updates.
+
+## Development
+
+```bash
+npm ci            # Install dependencies
+npm run build     # Build with tsup
+npm test          # Run tests (vitest)
+npm run lint      # Type-check (tsc --noEmit)
+npm run dev       # Watch mode (vitest watch)
+```
 
 ## License
 

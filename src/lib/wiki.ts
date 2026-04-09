@@ -1,5 +1,5 @@
 import matter from 'gray-matter';
-import { readFile, writeFile, readdir, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, readdir, stat, mkdir } from 'node:fs/promises';
 import { join, dirname, extname } from 'node:path';
 
 export interface WikiPageFrontmatter {
@@ -40,6 +40,18 @@ export async function listPages(wikiDir: string): Promise<string[]> {
       .map((entry) => join(wikiDir, entry as string));
   } catch {
     return [];
+  }
+}
+
+/**
+ * Check whether a directory exists.
+ */
+export async function directoryExists(dirPath: string): Promise<boolean> {
+  try {
+    const s = await stat(dirPath);
+    return s.isDirectory();
+  } catch {
+    return false;
   }
 }
 

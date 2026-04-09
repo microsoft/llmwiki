@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { join, resolve } from 'node:path';
-import { stat, mkdir } from 'node:fs/promises';
-import { readPage, writePage } from '../lib/wiki.js';
+import { mkdir } from 'node:fs/promises';
+import { readPage, writePage, directoryExists } from '../lib/wiki.js';
 import { readIndex, type IndexEntry } from '../lib/index.js';
 import { appendEntry } from '../lib/log.js';
 
@@ -54,18 +54,6 @@ function excerpt(body: string, maxLen = 200): string {
   const cleaned = body.replace(/\s+/g, ' ').trim();
   if (cleaned.length <= maxLen) return cleaned;
   return cleaned.slice(0, maxLen) + '…';
-}
-
-/**
- * Check whether a directory exists.
- */
-async function directoryExists(dirPath: string): Promise<boolean> {
-  try {
-    const s = await stat(dirPath);
-    return s.isDirectory();
-  } catch {
-    return false;
-  }
 }
 
 /**

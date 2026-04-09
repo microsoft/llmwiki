@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { readFile, stat, access, constants } from 'node:fs/promises';
 import { join, resolve, basename, extname, relative } from 'node:path';
-import { writePage } from '../lib/wiki.js';
+import { writePage, directoryExists } from '../lib/wiki.js';
 import { addEntry } from '../lib/index.js';
 import { appendEntry } from '../lib/log.js';
 
@@ -27,18 +27,6 @@ function slugify(filename: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-}
-
-/**
- * Check whether a directory exists.
- */
-async function directoryExists(dirPath: string): Promise<boolean> {
-  try {
-    const s = await stat(dirPath);
-    return s.isDirectory();
-  } catch {
-    return false;
-  }
 }
 
 /**
