@@ -13,7 +13,7 @@
     "3.1": { "status": "completed", "attempts": 1, "pr": 12, "merged": true },
     "3.2": { "status": "completed", "attempts": 1, "pr": 13, "merged": true },
     "4.1": { "status": "completed", "attempts": 1, "pr": 14, "merged": true },
-    "4.2": { "status": "pending", "attempts": 0 },
+    "4.2": { "status": "completed", "attempts": 1, "pr": 15 },
     "5.1": { "status": "pending", "attempts": 0 },
     "5.2": { "status": "pending", "attempts": 0 },
     "6.1": { "status": "pending", "attempts": 0 },
