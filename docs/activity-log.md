@@ -1,3 +1,4 @@
+- [2026-04-09T21:46:00Z] [commander] cycle=cycle-1 action=merge-pr summary=Merged PR #16 (feat(5.1): query command) via squash merge. Task 5.1 complete. Wave 5 partially done. Next: task 5.2 (GitHub Actions ingest workflow).
 - [2026-04-09T21:41:00Z] [commander] cycle=cycle-1 action=review-pr summary=Reviewed PR #16 (feat(5.1): query command): LGTM — clean implementation, comprehensive tests, CI passing, no pending Copilot review. Ready to merge.
 - [2026-04-09T21:31:00Z] [commander] cycle=cycle-1 action=execute-task task=5.1 summary=Completed task 5.1 (Query command): src/commands/query.ts with TF-based search, weighted scoring, --save and --json support, 24 tests. All 145 tests pass. Opened PR #16.
 - [2026-04-09T21:23:00Z] [commander] cycle=cycle-1 action=merge-pr summary=Merged PR #15 (feat(4.2): ingest command) via squash merge. Task 4.2 complete. Wave 4 finished. Next: task 5.1 (Query command).
