@@ -33,20 +33,25 @@ waves:
         estimated_effort: small
 
       - task_id: "1.2"
-        name: "CLI entry point with Commander.js"
+        name: "CLI entry point with Commander.js (plaid wiki)"
         description: >
-          Create src/cli.ts as the CLI entry point using Commander.js. Set up the
-          program with name, version, description, and a global --json flag. Add
+          Create src/cli.ts as the CLI entry point using Commander.js. The CLI
+          is invoked as `plaid wiki [action]` (per issue #6). Set up the top-level
+          `plaid` program with a `wiki` subcommand group. Under `wiki`, register
           placeholder subcommands (init, ingest, query, lint, status) that print
-          "not yet implemented". Include a shebang line for direct execution.
-          Write unit tests verifying --help output and --version output.
+          "not yet implemented". Add a global --json flag on the wiki group.
+          Update package.json bin field from "llmwiki" to "plaid". Include a
+          shebang line for direct execution. Write unit tests verifying help and
+          version output.
         type: implementation
+        issue_ref: 6
         acceptance_criteria:
           - "src/cli.ts exists with Commander.js program setup"
-          - "Running llmwiki --help shows all 5 commands and --json flag"
-          - "Running llmwiki --version shows package version"
-          - "Global --json flag is parsed and available to subcommands"
-          - "Each subcommand (init, ingest, query, lint, status) is registered"
+          - "package.json bin field is { plaid: ./dist/cli.js }"
+          - "Running plaid wiki --help shows all 5 commands and --json flag"
+          - "Running plaid --version shows package version"
+          - "Global --json flag is parsed and available to wiki subcommands"
+          - "Each subcommand (init, ingest, query, lint, status) is registered under plaid wiki"
           - "Tests exist verifying CLI help output includes all commands"
           - "npm run build produces dist/cli.js that is executable"
         dependencies: ["1.1"]
