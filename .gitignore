@@ -1,3 +1,6 @@
+node_modules/
+dist/
+*.tsbuildinfo
 
 # Harness-managed (local only, not committed)
 .harness-state-prompt.md

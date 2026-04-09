@@ -5,7 +5,7 @@
   "status": "active",
   "started_at": "2026-04-09T18:41:00Z",
   "tasks": {
-    "1.1": { "status": "pending", "attempts": 0 },
+    "1.1": { "status": "running", "attempts": 1 },
     "1.2": { "status": "pending", "attempts": 0 },
     "2.1": { "status": "pending", "attempts": 0 },
     "2.2": { "status": "pending", "attempts": 0 },
