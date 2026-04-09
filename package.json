@@ -4,7 +4,7 @@
   "description": "A personal knowledge base where the LLM does all the maintenance",
   "type": "module",
   "bin": {
-    "llmwiki": "./dist/cli.js"
+    "plaid": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsup",
@@ -12,15 +12,23 @@
     "lint": "tsc --noEmit",
     "dev": "vitest watch"
   },
-  "keywords": ["wiki", "knowledge-base", "cli", "llm"],
+  "keywords": [
+    "wiki",
+    "knowledge-base",
+    "cli",
+    "llm"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
     "tsup": "^8.0.0",
-    "vitest": "^3.0.0",
-    "@types/node": "^20.0.0"
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "commander": "^14.0.3"
   }
 }
