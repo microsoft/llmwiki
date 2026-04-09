@@ -1,0 +1,23 @@
+{
+  "cycle_id": "cycle-1",
+  "plan_id": "cycle-1",
+  "plan_path": "docs/plan/current/plan.yaml",
+  "status": "active",
+  "started_at": "2026-04-09T18:41:00Z",
+  "tasks": {
+    "1.1": { "status": "pending", "attempts": 0 },
+    "1.2": { "status": "pending", "attempts": 0 },
+    "2.1": { "status": "pending", "attempts": 0 },
+    "2.2": { "status": "pending", "attempts": 0 },
+    "2.3": { "status": "pending", "attempts": 0 },
+    "3.1": { "status": "pending", "attempts": 0 },
+    "3.2": { "status": "pending", "attempts": 0 },
+    "4.1": { "status": "pending", "attempts": 0 },
+    "4.2": { "status": "pending", "attempts": 0 },
+    "5.1": { "status": "pending", "attempts": 0 },
+    "5.2": { "status": "pending", "attempts": 0 },
+    "6.1": { "status": "pending", "attempts": 0 },
+    "6.2": { "status": "pending", "attempts": 0 }
+  },
+  "cycle_history": []
+}
