@@ -1,3 +1,4 @@
+- [2026-04-09T21:31:00Z] [commander] cycle=cycle-1 action=execute-task task=5.1 summary=Completed task 5.1 (Query command): src/commands/query.ts with TF-based search, weighted scoring, --save and --json support, 24 tests. All 145 tests pass. Opened PR #16.
 - [2026-04-09T21:23:00Z] [commander] cycle=cycle-1 action=merge-pr summary=Merged PR #15 (feat(4.2): ingest command) via squash merge. Task 4.2 complete. Wave 4 finished. Next: task 5.1 (Query command).
 - [2026-04-09T21:18:00Z] [commander] cycle=cycle-1 action=review-pr summary=Reviewed PR #15 (feat(4.2): ingest command): LGTM — clean implementation, no blockers, CI passing. Ready to merge.
 - [2026-04-09T21:14:00Z] [commander] cycle=cycle-1 action=execute-task task=4.2 summary=Completed task 4.2 (Ingest command): src/commands/ingest.ts with source file processing, summary page creation, index/log updates, --dry-run and --json support, 18 tests. All 121 tests pass. Opened PR #15.
