@@ -2,11 +2,21 @@
   "cycle_id": "cycle-1",
   "plan_id": "cycle-1",
   "plan_path": "docs/plan/current/plan.yaml",
-  "status": "active",
+  "status": "completed",
   "started_at": "2026-04-09T18:41:00Z",
+  "completed_at": "2026-04-09T22:42:05Z",
+  "score": {
+    "tasks_completed": 13,
+    "tasks_total": 13,
+    "tasks_failed": 0,
+    "prs_merged": 13,
+    "prs_open": 0,
+    "completion_rate": 1.0,
+    "retry_rate": 0.0
+  },
   "tasks": {
-    "1.1": { "status": "completed", "attempts": 1, "pr": 7 },
-    "1.2": { "status": "completed", "attempts": 1, "pr": 8 },
+    "1.1": { "status": "completed", "attempts": 1, "pr": 7, "merged": true },
+    "1.2": { "status": "completed", "attempts": 1, "pr": 8, "merged": true },
     "2.1": { "status": "completed", "attempts": 1, "pr": 9, "merged": true },
     "2.2": { "status": "completed", "attempts": 1, "pr": 10, "merged": true },
     "2.3": { "status": "completed", "attempts": 1, "pr": 11, "merged": true },
@@ -19,5 +29,16 @@
     "6.1": { "status": "completed", "attempts": 1, "pr": 18, "merged": true },
     "6.2": { "status": "completed", "attempts": 1, "pr": 19, "merged": true }
   },
-  "cycle_history": []
+  "cycle_history": [
+    {
+      "cycle_id": "cycle-1",
+      "title": "LLM Wiki CLI Foundation",
+      "status": "completed",
+      "started_at": "2026-04-09T18:41:00Z",
+      "completed_at": "2026-04-09T22:42:05Z",
+      "tasks_completed": 13,
+      "tasks_total": 13,
+      "prs_merged": 13
+    }
+  ]
 }
