@@ -16,7 +16,7 @@
     "4.2": { "status": "completed", "attempts": 1, "pr": 15, "merged": true },
     "5.1": { "status": "completed", "attempts": 1, "pr": 16, "merged": true },
     "5.2": { "status": "completed", "attempts": 1, "pr": 17, "merged": true },
-    "6.1": { "status": "completed", "attempts": 1, "pr": 18 },
+    "6.1": { "status": "completed", "attempts": 1, "pr": 18, "merged": true },
     "6.2": { "status": "pending", "attempts": 0 }
   },
   "cycle_history": []
