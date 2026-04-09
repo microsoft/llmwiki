@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { registerInitCommand } from './commands/init.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -23,7 +24,11 @@ export function createProgram(): Command {
     .description('Personal knowledge base powered by LLM')
     .option('--json', 'Output results as JSON', false);
 
-  const subcommands = ['init', 'ingest', 'query', 'lint', 'status'] as const;
+  // Register implemented commands
+  registerInitCommand(wiki);
+
+  // Placeholder subcommands for commands not yet implemented
+  const subcommands = ['ingest', 'query', 'lint', 'status'] as const;
 
   for (const name of subcommands) {
     wiki
