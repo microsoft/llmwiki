@@ -3,6 +3,10 @@ tests/**
 node_modules/**
 *.ts
 !out/**/*.js
+!out/**/*.js.map
 tsconfig.json
 esbuild.config.mjs
 .gitignore
+dist/**
+.vscode/**
+.github/**
