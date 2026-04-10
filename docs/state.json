@@ -6,15 +6,15 @@
   "started_at": "2026-04-10T11:37:00Z",
   "tasks": {
     "c4-01": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T11:44:40Z", "completed_at": "2026-04-10T12:25:00Z", "branch": "task/cycle-4/c4-01", "pr": 47 },
-    "c4-02": { "status": "pending", "attempts": 0 },
-    "c4-03": { "status": "pending", "attempts": 0 },
+    "c4-02": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T12:35:00Z", "completed_at": "2026-04-10T12:52:00Z", "branch": "task/cycle-4/c4-02", "pr": 48, "note": "E2E tests pass — api_version was already fixed in c3-09, stale build was root cause" },
+    "c4-03": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T12:35:00Z", "completed_at": "2026-04-10T12:52:00Z", "branch": "task/cycle-4/c4-02", "pr": 48, "note": "appendEntry race condition fixed (appendFile). Backlinks cleanup still needed." },
     "c4-04": { "status": "pending", "attempts": 0 },
     "c4-05": { "status": "pending", "attempts": 0 },
     "c4-06": { "status": "pending", "attempts": 0 },
     "c4-07": { "status": "pending", "attempts": 0 },
     "c4-08": { "status": "pending", "attempts": 0 },
     "c4-09": { "status": "pending", "attempts": 0 },
-    "c4-10": { "status": "pending", "attempts": 0 },
+    "c4-10": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T12:35:00Z", "completed_at": "2026-04-10T12:52:00Z", "branch": "task/cycle-4/c4-02", "pr": 48, "note": "isNotFoundError helper + 17 bare catch replacements" },
     "c4-11": { "status": "pending", "attempts": 0 }
   },
   "cycle_history": [
