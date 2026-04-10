@@ -107,7 +107,7 @@ Global flags:
   --version Show version
 ```
 
-The CLI uses a two-level command hierarchy: `plaid` is the top-level program, and `wiki` is a command group that registers the six subcommands. The `--json` flag is defined on the `wiki` group and accessed by subcommands via `cmd.parent?.opts().json`.
+The CLI uses a two-level command hierarchy: `plaid` is the top-level program, and `wiki` is a command group that registers the seven subcommands. The `--json` flag is defined on the `wiki` group and accessed by subcommands via `cmd.parent?.opts().json`.
 
 ### Command Details
 
@@ -349,15 +349,18 @@ llmwiki/
 │   │   ├── src/
 │   │   │   ├── index.ts            # Barrel export (re-exports all modules)
 │   │   │   ├── constants.ts       # API_VERSION constant for JSON output versioning
-│   │   │   ├── wiki.ts             # readPage, writePage, listPages, getPageLinks, directoryExists
-│   │   │   ├── index-ops.ts        # readIndex, writeIndex, addEntry, removeEntry, findEntries
+│   │   │   ├── errors.ts          # isNotFoundError, isPermissionError (error classification guards)
+│   │   │   ├── wiki.ts             # readPage, writePage, listPages, getPageLinks, directoryExists, createEntityPage, createConceptPage, addCrosslinks
+│   │   │   ├── index-ops.ts        # readIndex, writeIndex, addEntry, removeEntry, findEntries, updateIndexEntry
 │   │   │   ├── log.ts              # appendEntry, readLog, getRecentEntries
 │   │   │   ├── sources.ts          # listSources (raw/ directory metadata)
 │   │   │   ├── backlinks.ts        # getBacklinks (reverse link resolution)
 │   │   │   ├── lint.ts             # lintWiki (6 check categories)
 │   │   │   ├── utils.ts            # slugify, excerpt (shared utility functions)
 │   │   │   ├── search.ts           # countOccurrences (case-insensitive term matching)
+│   │   │   ├── init.ts             # initWiki (directory scaffolding, AGENTS.md template generation)
 │   │   │   ├── ingest.ts           # ingestSource (single-file ingest with duplicate detection)
+│   │   │   ├── ingest-context.ts   # ingestWithContext (ingest with related pages, word count, suggested actions)
 │   │   │   ├── bulk-ingest.ts      # bulkIngest (batch ingest for raw/ directory)
 │   │   │   ├── query.ts            # queryWiki, slugifyQuery (weighted keyword search)
 │   │   │   ├── status.ts           # getWikiStatus (aggregate wiki statistics)
@@ -673,7 +676,7 @@ The extension uses esbuild (CJS format) with `vscode` as an external. Packaging 
 
 ```
 cli.ts
-  └─► commands/init.ts ──► @llmwiki/shared (log)
+  └─► commands/init.ts ──► @llmwiki/shared (initWiki)
   └─► commands/ingest.ts ──► @llmwiki/shared (ingest, bulk-ingest)
   └─► commands/query.ts ──► @llmwiki/shared (query)
   └─► commands/lint.ts ──► @llmwiki/shared (lint)
@@ -692,7 +695,7 @@ extension.ts
   └─► rawSourcesTree.ts ──► @llmwiki/shared (listSources)
   └─► backlinksTree.ts ──► @llmwiki/shared (getBacklinks)
   └─► lintFindingsTree.ts ──► @llmwiki/shared (LintFinding type)
-  └─► statusBar.ts ──► @llmwiki/shared (readIndex, listPages, readLog, directoryExists)
+  └─► statusBar.ts ──► @llmwiki/shared (directoryExists, getWikiStatus)
 ```
 
 ### Shared Library Modules
@@ -700,15 +703,18 @@ extension.ts
 | Module | Exports | Purpose |
 |--------|---------|---------|
 | `constants.ts` | `API_VERSION` | API version string (`'1'`) included in all JSON output for forward compatibility. |
-| `wiki.ts` | `readPage`, `writePage`, `listPages`, `getPageLinks`, `directoryExists` | Read/write wiki pages with gray-matter frontmatter. List `.md` files recursively. Extract internal markdown links. |
-| `index-ops.ts` | `readIndex`, `writeIndex`, `addEntry`, `removeEntry`, `findEntries` | Parse and serialize the categorized `index.md` format. CRUD operations on index entries. |
+| `errors.ts` | `isNotFoundError`, `isPermissionError` | Error classification guards for ENOENT and EACCES. Used throughout for graceful error handling. |
+| `wiki.ts` | `readPage`, `writePage`, `listPages`, `getPageLinks`, `directoryExists`, `createEntityPage`, `createConceptPage`, `addCrosslinks` | Read/write wiki pages with gray-matter frontmatter. List `.md` files recursively. Extract internal markdown links. Create typed pages with auto-index registration. Append cross-reference links. |
+| `index-ops.ts` | `readIndex`, `writeIndex`, `addEntry`, `removeEntry`, `findEntries`, `updateIndexEntry` | Parse and serialize the categorized `index.md` format. CRUD operations on index entries including partial metadata updates. |
 | `log.ts` | `appendEntry`, `readLog`, `getRecentEntries` | Append timestamped entries to `log.md`. Parse log entries. Retrieve recent entries. |
 | `sources.ts` | `listSources` | List all files in `raw/` with metadata (name, path, size, modified, extension). |
 | `backlinks.ts` | `getBacklinks` | Find all pages containing links to a target page via link resolution. |
 | `lint.ts` | `lintWiki` | Run 6 health-check categories (including frontmatter-validation) and return structured `LintResult`. |
 | `utils.ts` | `slugify`, `excerpt` | Slugify filenames for wiki paths. Extract text excerpts with configurable max length. |
 | `search.ts` | `countOccurrences` | Case-insensitive substring occurrence counting for query scoring. |
+| `init.ts` | `initWiki` | Initialize a wiki knowledge base: create directory structure, index, log, and AGENTS.md schema template. |
 | `ingest.ts` | `ingestSource` | Ingest a single source file into the wiki with duplicate detection and `--force` override. |
+| `ingest-context.ts` | `ingestWithContext` | Ingest a source with enriched context: word count, content type detection, related page discovery, and suggested follow-up actions. Used by the `wiki_ingest_with_context` MCP tool. |
 | `bulk-ingest.ts` | `bulkIngest` | Batch ingest all files from `raw/`, with progress callbacks and per-file status tracking. |
 | `query.ts` | `queryWiki`, `slugifyQuery` | Weighted keyword search across index titles (3×), summaries (2×), and page bodies (1×). Optional save to `wiki/queries/`. |
 | `status.ts` | `getWikiStatus` | Aggregate wiki statistics: source count, page count, last ingest/lint dates, orphan count, index coverage. |

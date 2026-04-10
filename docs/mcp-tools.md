@@ -651,11 +651,11 @@ Ingest result plus enriched context:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| *(ingest result)* | object | Standard ingest output (created pages, index updates) |
-| `relatedPages` | array | Existing wiki pages related to the ingested content |
-| `wordCount` | number | Word count of the source file |
-| `contentType` | string | Detected content type (e.g. `"research-paper"`, `"blog-post"`) |
-| `suggestedActions` | string[] | Recommended follow-up actions (e.g. create entity, add crosslinks) |
+| `ingest` | object | Standard ingest output (`status`, `pages_created`, `pages_updated`, `dry_run`, etc.) |
+| `source_word_count` | number | Word count of the source file |
+| `source_content_type` | string | Detected content type from file extension (e.g. `"markdown"`, `"pdf"`, `"text"`, `"html"`) |
+| `related_pages` | array | Existing wiki pages related to the ingested content (each with `path`, `title`, `score`, `excerpt`) |
+| `suggested_actions` | string[] | Recommended follow-up actions (e.g. create entity, add crosslinks) |
 
 **Example**
 
@@ -671,16 +671,23 @@ Ingest result plus enriched context:
 
 // Response
 {
-  "status": "ingested",
-  "createdPages": ["concepts/attention-mechanisms.md"],
-  "relatedPages": [
-    { "path": "entities/transformer.md", "relevance": 0.91 }
+  "ingest": {
+    "command": "ingest",
+    "api_version": "1",
+    "status": "success",
+    "pages_created": ["sources/attention-is-all-you-need-summary.md"],
+    "pages_updated": ["index.md", "log.md"],
+    "dry_run": false
+  },
+  "source_word_count": 8420,
+  "source_content_type": "pdf",
+  "related_pages": [
+    { "path": "entities/transformer.md", "title": "Transformer", "score": 12, "excerpt": "Introduced in 'Attention Is All You Need' (2017)..." }
   ],
-  "wordCount": 8420,
-  "contentType": "research-paper",
-  "suggestedActions": [
-    "Create entity page for 'Vaswani et al.'",
-    "Add crosslinks from concepts/attention-mechanisms.md to entities/transformer.md"
+  "suggested_actions": [
+    "Review the generated summary page for accuracy",
+    "Create entity pages for mentioned people, organizations, or concepts",
+    "Add crosslinks between the new page and related existing pages"
   ]
 }
 ```
