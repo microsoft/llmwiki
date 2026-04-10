@@ -220,8 +220,39 @@ export const WRITE_TOOLS: ToolDefinition[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Security limits (S-2: prevent DoS via unbounded input)
+// ---------------------------------------------------------------------------
+
+const MAX_BODY_LENGTH = 1_000_000;     // 1 MB
+const MAX_TITLE_LENGTH = 500;
+const MAX_TAGS_COUNT = 50;
+const MAX_TAG_LENGTH = 100;
+const MAX_CROSSLINK_TARGETS = 100;
+const MAX_PATH_LENGTH = 500;
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Validate that a string does not exceed a maximum length. */
+function validateLength(value: string, name: string, max: number): void {
+  if (value.length > max) {
+    throw new Error(`'${name}' exceeds maximum length of ${max} characters`);
+  }
+}
+
+/** Validate a tags array against count and individual length limits. */
+function validateTags(tags: string[] | undefined): void {
+  if (!tags) return;
+  if (tags.length > MAX_TAGS_COUNT) {
+    throw new Error(`Too many tags (max ${MAX_TAGS_COUNT})`);
+  }
+  for (const tag of tags) {
+    if (tag.length > MAX_TAG_LENGTH) {
+      throw new Error(`Tag exceeds maximum length of ${MAX_TAG_LENGTH} characters`);
+    }
+  }
+}
 
 /** Validate that an optional argument, if present, is a string array. */
 function optionalStringArray(args: ToolArgs, key: string): string[] | undefined {
@@ -286,6 +317,12 @@ export async function handleWriteToolCall(
       const tags = optionalStringArray(args, 'tags') ?? [];
       const body = requireString(args, 'body');
 
+      // S-2: Input length limits
+      validateLength(pagePath, 'pagePath', MAX_PATH_LENGTH);
+      validateLength(title, 'title', MAX_TITLE_LENGTH);
+      validateLength(body, 'body', MAX_BODY_LENGTH);
+      validateTags(tags);
+
       const fullPath = assertWithinDir(wikiDir, pagePath);
 
       await writePage(fullPath, {
@@ -315,8 +352,18 @@ export async function handleWriteToolCall(
       const content = requireString(args, 'content');
       const tags = optionalStringArray(args, 'tags') ?? [];
 
-      // Validate the derived path stays within wiki dir
+      // S-2: Input length limits
+      validateLength(entityName, 'name', MAX_TITLE_LENGTH);
+      validateLength(content, 'content', MAX_BODY_LENGTH);
+      validateTags(tags);
+
+      // S-3: Reject empty slugs (e.g. all-punctuation or non-Latin names)
       const slug = slugify(entityName);
+      if (slug.length === 0) {
+        throw new Error("'name' must contain at least one alphanumeric character");
+      }
+
+      // Validate the derived path stays within wiki dir
       assertWithinDir(wikiDir, `entities/${slug}.md`);
 
       const result = await createEntityPage(wikiDir, entityName, content, tags);
@@ -335,8 +382,18 @@ export async function handleWriteToolCall(
       const content = requireString(args, 'content');
       const tags = optionalStringArray(args, 'tags') ?? [];
 
-      // Validate the derived path stays within wiki dir
+      // S-2: Input length limits
+      validateLength(conceptName, 'name', MAX_TITLE_LENGTH);
+      validateLength(content, 'content', MAX_BODY_LENGTH);
+      validateTags(tags);
+
+      // S-3: Reject empty slugs (e.g. all-punctuation or non-Latin names)
       const slug = slugify(conceptName);
+      if (slug.length === 0) {
+        throw new Error("'name' must contain at least one alphanumeric character");
+      }
+
+      // Validate the derived path stays within wiki dir
       assertWithinDir(wikiDir, `concepts/${slug}.md`);
 
       const result = await createConceptPage(wikiDir, conceptName, content, tags);
@@ -352,6 +409,7 @@ export async function handleWriteToolCall(
 
     case 'wiki_update_page': {
       const pagePath = requireString(args, 'pagePath');
+      validateLength(pagePath, 'pagePath', MAX_PATH_LENGTH);
       const fullPath = assertWithinDir(wikiDir, pagePath);
 
       // Read existing page — fail gracefully if not found
@@ -367,8 +425,14 @@ export async function handleWriteToolCall(
 
       // Merge frontmatter updates
       const newTitle = optionalString(args, 'title');
+      // S-7: Reject empty titles
+      if (newTitle !== undefined && newTitle.length === 0) {
+        throw new Error("'title' must be non-empty when provided");
+      }
+      if (newTitle !== undefined) validateLength(newTitle, 'title', MAX_TITLE_LENGTH);
       const newType = optionalString(args, 'type');
       const newTags = optionalStringArray(args, 'tags');
+      validateTags(newTags);
 
       const mergedFrontmatter = { ...existing.frontmatter };
       if (newTitle !== undefined) mergedFrontmatter.title = newTitle;
@@ -377,7 +441,9 @@ export async function handleWriteToolCall(
 
       // Handle body updates
       const bodyAppend = optionalString(args, 'bodyAppend');
+      if (bodyAppend !== undefined) validateLength(bodyAppend, 'bodyAppend', MAX_BODY_LENGTH);
       const bodyReplace = optionalString(args, 'bodyReplace');
+      if (bodyReplace !== undefined) validateLength(bodyReplace, 'bodyReplace', MAX_BODY_LENGTH);
 
       let mergedBody = existing.body;
       if (bodyReplace !== undefined) {
@@ -415,9 +481,14 @@ export async function handleWriteToolCall(
 
     case 'wiki_add_crosslinks': {
       const pagePath = requireString(args, 'pagePath');
+      validateLength(pagePath, 'pagePath', MAX_PATH_LENGTH);
       const targetPages = optionalStringArray(args, 'targetPages');
       if (!targetPages || targetPages.length === 0) {
         throw new Error("'targetPages' must be a non-empty array of strings");
+      }
+      // S-2: Limit crosslink target count
+      if (targetPages.length > MAX_CROSSLINK_TARGETS) {
+        throw new Error(`Too many target pages (max ${MAX_CROSSLINK_TARGETS})`);
       }
 
       // Validate paths stay within wiki dir
@@ -437,8 +508,11 @@ export async function handleWriteToolCall(
 
     case 'wiki_update_index': {
       const pagePath = requireString(args, 'pagePath');
+      validateLength(pagePath, 'pagePath', MAX_PATH_LENGTH);
       const summary = optionalString(args, 'summary');
+      if (summary !== undefined) validateLength(summary, 'summary', MAX_BODY_LENGTH);
       const tags = optionalStringArray(args, 'tags');
+      validateTags(tags);
       const category = optionalString(args, 'category');
 
       const updates: Partial<Omit<IndexEntry, 'path'>> = {};
@@ -457,7 +531,8 @@ export async function handleWriteToolCall(
 
     case 'wiki_ingest_with_context': {
       const sourcePath = requireString(args, 'sourcePath');
-      // S-7: Validate source path stays within project root
+      validateLength(sourcePath, 'sourcePath', MAX_PATH_LENGTH);
+      // Validate source path stays within project root
       assertWithinDir(wikiRoot, sourcePath);
       const dryRun = args.dryRun === true;
       const force = args.force === true;

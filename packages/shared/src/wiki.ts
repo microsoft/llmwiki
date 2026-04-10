@@ -3,7 +3,7 @@ import { readFile, writeFile, readdir, stat, mkdir } from 'node:fs/promises';
 import { join, dirname, extname, relative } from 'node:path';
 import { isNotFoundError } from './errors.js';
 import { slugify } from './utils.js';
-import { addEntry } from './index-ops.js';
+import { addEntry, escapeMarkdownLinkText } from './index-ops.js';
 import type { IndexEntry } from './index-ops.js';
 
 export interface WikiPageFrontmatter {
@@ -232,7 +232,7 @@ export async function addCrosslinks(
       title = tp.replace(/\.md$/, '').split('/').pop()!;
     }
     const relLink = relative(dirname(fromFull), toFull).replace(/\\/g, '/');
-    linkLines.push(`- [${title}](${relLink})`);
+    linkLines.push(`- [${escapeMarkdownLinkText(title)}](${relLink})`);
   }
 
   // Check if "## See also" section exists
