@@ -28,7 +28,7 @@ The project is an npm workspaces monorepo with three packages:
 
 | Package | npm name | Description |
 |---------|----------|-------------|
-| [`packages/shared`](./packages/shared) | `@llmwiki/shared` | Core wiki operations — page I/O, index parsing, log management, lint checks, `listSources`, `getBacklinks`, `ingestSource`, `queryWiki`, `getWikiStatus`, `slugify`, `excerpt`, `countOccurrences`, `bulkIngest` |
+| [`packages/shared`](./packages/shared) | `@llmwiki/shared` | Core wiki operations + MCP server — page I/O, index parsing, log management, lint checks, MCP tool server, `listSources`, `getBacklinks`, `ingestSource`, `queryWiki`, `getWikiStatus`, `slugify`, `excerpt`, `countOccurrences`, `bulkIngest` |
 | [`packages/cli`](./packages/cli) | `@llmwiki/cli` | Commander.js CLI (`plaid wiki` commands) |
 | [`packages/vscode`](./packages/vscode) | `llmwiki-vscode` | VS Code extension — tree views, command palette, status bar |
 
@@ -74,6 +74,7 @@ The primary interface is a TypeScript/Node.js CLI invoked as `plaid wiki <comman
 | `plaid wiki lint` | Run health checks — broken links, orphan pages, index completeness |
 | `plaid wiki status` | Show wiki statistics — source count, page count, last activity |
 | `plaid wiki list <type>` | List wiki pages, source files, or index entries |
+| `plaid wiki mcp` | Start MCP server for external LLM agent integration |
 
 ### `plaid wiki init`
 
@@ -181,6 +182,87 @@ Example output from `plaid wiki --json ingest raw/notes.md`:
   "dry_run": false
 }
 ```
+
+## MCP Server
+
+The MCP (Model Context Protocol) server exposes all wiki operations to external LLM agents — Claude Desktop, Cursor, VS Code Copilot, and any MCP-compatible client. This enables agents to read, search, create, and maintain wiki content programmatically.
+
+### Starting the Server
+
+```bash
+plaid wiki mcp [--path <dir>]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--path <dir>` | `.` | Wiki root directory |
+
+The server communicates over stdio using JSON-RPC. Diagnostic messages go to stderr.
+
+### Available Tools
+
+The server exposes 14 tools — 7 read-only and 7 write:
+
+**Read tools:**
+
+| Tool | Description |
+|------|-------------|
+| `wiki_status` | Wiki statistics — source count, page count, coverage, lint dates |
+| `wiki_query` | Free-text search with weighted relevance scoring |
+| `wiki_lint` | Health checks grouped by severity, with category filter |
+| `wiki_list_pages` | All wiki pages with frontmatter metadata |
+| `wiki_list_sources` | All raw source files with size and date |
+| `wiki_read_page` | Read a single page by path (frontmatter + body) |
+| `wiki_read_index` | All index entries with title, summary, category, tags |
+
+**Write tools:**
+
+| Tool | Description |
+|------|-------------|
+| `wiki_write_page` | Create or overwrite a page (auto-updates index) |
+| `wiki_create_entity` | Create entity page at `entities/{slug}.md` |
+| `wiki_create_concept` | Create concept page at `concepts/{slug}.md` |
+| `wiki_update_page` | Merge partial updates into an existing page |
+| `wiki_add_crosslinks` | Add "See also" links (validates targets exist) |
+| `wiki_update_index` | Update index entry metadata |
+| `wiki_ingest_with_context` | Ingest source with context-rich response |
+
+### Example: MCP Client Configuration
+
+To connect Claude Desktop (or any MCP client):
+
+```json
+{
+  "mcpServers": {
+    "llmwiki": {
+      "command": "plaid",
+      "args": ["wiki", "mcp", "--path", "/path/to/your/wiki"]
+    }
+  }
+}
+```
+
+### Example Tool Invocations
+
+Check wiki health:
+```json
+{ "tool": "wiki_status", "arguments": {} }
+→ { "sourceCount": 12, "wikiPageCount": 8, "indexCoveragePct": 100 }
+```
+
+Search for a topic:
+```json
+{ "tool": "wiki_query", "arguments": { "query": "machine learning" } }
+→ [{ "title": "ML Overview", "path": "concepts/ml-overview.md", "score": 9 }]
+```
+
+Create a new concept page:
+```json
+{ "tool": "wiki_create_concept", "arguments": { "name": "Neural Networks", "content": "# Neural Networks\n\nArtificial neural networks are..." } }
+→ { "status": "created", "path": "concepts/neural-networks.md" }
+```
+
+See [docs/mcp-tools.md](./docs/mcp-tools.md) for the full tool reference with schemas and workflows.
 
 ## VS Code Extension
 

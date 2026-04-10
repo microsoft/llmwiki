@@ -5,34 +5,39 @@
 ## System Overview
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     Human Interface                     │
-│  ┌──────────┐   ┌──────────────┐   ┌────────────────┐  │
-│  │ VS Code  │   │   Obsidian   │   │  GitHub Web    │  │
-│  │ Extension│   │  (read-only) │   │   (browse)     │  │
-│  └────┬─────┘   └──────────────┘   └────────────────┘  │
-│       │                                                 │
-│       ├──────── @llmwiki/shared ◄────────┐              │
-│       │                                  │              │
-│       ▼                                  │              │
-│  ┌──────────┐   ┌──────────────┐         │              │
-│  │  plaid   │──▶│ @llmwiki/    │   ┌─────┴────────┐    │
-│  │ wiki CLI │   │  shared      │◄──│ GitHub       │    │
-│  └────┬─────┘   └──────────────┘   │ Actions      │    │
-│       │                            └──────┬───────┘    │
-└───────┼───────────────────────────────────┼────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                        Human Interface                           │
+│  ┌──────────┐   ┌──────────────┐   ┌────────────────┐           │
+│  │ VS Code  │   │   Obsidian   │   │  GitHub Web    │           │
+│  │ Extension│   │  (read-only) │   │   (browse)     │           │
+│  └────┬─────┘   └──────────────┘   └────────────────┘           │
+│       │                                                          │
+│       ├──────────── @llmwiki/shared ◄────────┐                   │
+│       │                                      │                   │
+│       ▼                                      │                   │
+│  ┌──────────┐   ┌──────────────┐       ┌─────┴────────┐         │
+│  │  plaid   │──▶│ @llmwiki/    │   ┌──▶│ GitHub       │         │
+│  │ wiki CLI │   │  shared      │◄──┤   │ Actions      │         │
+│  └────┬─────┘   └──────┬───────┘   │   └──────┬───────┘         │
+│       │                │           │           │                 │
+│       │                │           │           │                 │
+│       │          ┌─────┴────────┐  │                             │
+│       │          │ MCP Server   │◄─┘── External LLM Agents      │
+│       │          │ (stdio)      │      (Claude, GPT, etc.)      │
+│       │          └──────────────┘                                │
+└───────┼──────────────────────────────────────────────────────────┘
         │                                   │
         ▼                                   ▼
-┌─────────────────────────────────────────────────────────┐
-│                    Git Repository                       │
-│                                                         │
-│  ┌────────────┐  ┌────────────┐  ┌───────────────────┐  │
-│  │ raw/       │  │ wiki/      │  │ AGENTS.md         │  │
-│  │ (sources)  │──▶│ (generated)│◀─│ (schema)          │  │
-│  │ immutable  │  │ LLM-owned  │  │ conventions       │  │
-│  └────────────┘  └────────────┘  └───────────────────┘  │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                       Git Repository                             │
+│                                                                  │
+│  ┌────────────┐  ┌────────────┐  ┌───────────────────┐           │
+│  │ raw/       │  │ wiki/      │  │ AGENTS.md         │           │
+│  │ (sources)  │──▶│ (generated)│◀─│ (schema)          │           │
+│  │ immutable  │  │ LLM-owned  │  │ conventions       │           │
+│  └────────────┘  └────────────┘  └───────────────────┘           │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## Three-Layer Architecture
@@ -92,6 +97,7 @@ Commands:
   lint      Run health checks on the wiki
   status    Show wiki knowledge base status and statistics
   list      List wiki pages, source files, or index entries
+  mcp       Start MCP server for external LLM agent integration
 
 Wiki-level flag:
   --json    Output results as JSON (inherited by all subcommands)
@@ -264,6 +270,74 @@ All commands produce human-readable output by default. With `--json` on the `wik
 }
 ```
 
+## MCP Server Architecture
+
+The MCP server exposes wiki operations via the [Model Context Protocol](https://modelcontextprotocol.io/), enabling external LLM agents (Claude Desktop, Cursor, VS Code Copilot, etc.) to read and write wiki content programmatically. It runs over stdio transport, started via `plaid wiki mcp`.
+
+### Tool Inventory
+
+| Tool | Type | Description |
+|------|------|-------------|
+| `wiki_status` | Read | Wiki statistics (source/page counts, coverage) |
+| `wiki_query` | Read | Free-text search with relevance scores |
+| `wiki_lint` | Read | Health checks by severity with category filter |
+| `wiki_list_pages` | Read | All pages with frontmatter metadata |
+| `wiki_list_sources` | Read | Raw source files with metadata |
+| `wiki_read_page` | Read | Single page content by path |
+| `wiki_read_index` | Read | All index entries |
+| `wiki_write_page` | Write | Create/overwrite page with auto-index |
+| `wiki_create_entity` | Write | Create entity page at `entities/{slug}.md` |
+| `wiki_create_concept` | Write | Create concept page at `concepts/{slug}.md` |
+| `wiki_update_page` | Write | Merge partial updates into existing page |
+| `wiki_add_crosslinks` | Write | Add "See also" section with validated links |
+| `wiki_update_index` | Write | Update index entry metadata |
+| `wiki_ingest_with_context` | Write | Ingest source with context-rich response |
+
+### MCP Data Flow
+
+```
+External LLM Agent
+         │
+    MCP JSON-RPC (stdio)
+         │
+         ▼
+┌─────────────────────┐
+│ plaid wiki mcp      │
+│ (StdioTransport)    │
+└────────┬────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│ MCP Server          │
+│ (createMcpServer)   │
+├─────────┬───────────┤
+│ Read    │ Write     │
+│ Tools   │ Tools     │
+│ (7)     │ (7)       │
+└────┬────┴────┬──────┘
+     │         │
+     ▼         ▼
+┌─────────────────────┐
+│ @llmwiki/shared     │
+│ (core operations)   │
+└────────┬────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│ Git Repository      │
+│ raw/ + wiki/        │
+└─────────────────────┘
+```
+
+### Write Tool Safety Model
+
+- **Path traversal protection:** All path arguments are validated via `assertWithinDir()` — resolved paths must stay within the wiki directory.
+- **Frontmatter validation:** `wiki_write_page` requires `title` and `type` fields in frontmatter.
+- **Input validation:** All required fields are checked for non-empty strings; arrays are validated for correct element types.
+- **Empty slug/title rejection:** Tools reject empty or whitespace-only slug and title arguments.
+- **Index injection prevention:** Index updates use an upsert (find-or-replace) pattern to prevent duplicate entries.
+- **Error isolation:** Each tool call is wrapped in try/catch, returning `isError: true` on failure without crashing the server.
+
 ## Source Code Structure
 
 The project is an npm workspaces monorepo with three packages:
@@ -286,7 +360,12 @@ llmwiki/
 │   │   │   ├── ingest.ts           # ingestSource (single-file ingest with duplicate detection)
 │   │   │   ├── bulk-ingest.ts      # bulkIngest (batch ingest for raw/ directory)
 │   │   │   ├── query.ts            # queryWiki, slugifyQuery (weighted keyword search)
-│   │   │   └── status.ts           # getWikiStatus (aggregate wiki statistics)
+│   │   │   ├── status.ts           # getWikiStatus (aggregate wiki statistics)
+│   │   │   └── mcp/               # MCP server (Model Context Protocol)
+│   │   │       ├── index.ts       # Barrel export
+│   │   │       ├── server.ts      # createMcpServer — registers tools, handles dispatch
+│   │   │       ├── read-tools.ts  # 7 read-only tools (status, query, lint, list, read)
+│   │   │       └── write-tools.ts # 7 write tools (write, create, update, crosslink, ingest)
 │   │   ├── package.json            # @llmwiki/shared, exports: ./dist/index.js
 │   │   └── tsconfig.json           # Extends tsconfig.base.json, composite: true
 │   │
@@ -299,7 +378,8 @@ llmwiki/
 │   │   │       ├── query.ts        # plaid wiki query — keyword search with weighted scoring
 │   │   │       ├── lint.ts         # plaid wiki lint — delegates to @llmwiki/shared lintWiki
 │   │   │       ├── status.ts       # plaid wiki status — delegates to @llmwiki/shared getWikiStatus
-│   │   │       └── list.ts         # plaid wiki list — list pages, sources, or index entries
+│   │   │       ├── list.ts         # plaid wiki list — list pages, sources, or index entries
+│   │   │       └── mcp.ts          # plaid wiki mcp — starts MCP server over stdio
 │   │   ├── package.json            # bin: { plaid: ./dist/cli.js }, depends on @llmwiki/shared
 │   │   └── tsup.config.ts          # ESM bundle, node20 target, shebang banner
 │   │
@@ -575,14 +655,14 @@ The extension uses esbuild (CJS format) with `vscode` as an external. Packaging 
 ### Package Dependency Graph
 
 ```
-┌─────────────────────┐     ┌─────────────────────┐
-│   @llmwiki/cli      │     │   llmwiki-vscode     │
-│   (Commander.js)    │     │   (VS Code ext)      │
-└────────┬────────────┘     └────────┬────────────┘
-         │                           │
-         └───────────┬───────────────┘
-                     │
-                     ▼
+┌─────────────────────┐     ┌─────────────────────┐     ┌─────────────────────┐
+│   @llmwiki/cli      │     │   llmwiki-vscode     │     │   External Agents   │
+│   (Commander.js)    │     │   (VS Code ext)      │     │   (via MCP)         │
+└────────┬────────────┘     └────────┬────────────┘     └────────┬────────────┘
+         │                           │                           │
+         └───────────┬───────────────┼───────────────────────────┘
+                     │               │
+                     ▼               ▼
          ┌─────────────────────┐
          │   @llmwiki/shared   │
          │   (core operations) │
@@ -599,6 +679,7 @@ cli.ts
   └─► commands/lint.ts ──► @llmwiki/shared (lint)
   └─► commands/status.ts ──► @llmwiki/shared (status)
   └─► commands/list.ts ──► @llmwiki/shared (wiki, index-ops, sources)
+  └─► commands/mcp.ts ──► @llmwiki/shared (mcp/server)
 ```
 
 ### VS Code Extension Internal Dependencies
@@ -631,6 +712,7 @@ extension.ts
 | `bulk-ingest.ts` | `bulkIngest` | Batch ingest all files from `raw/`, with progress callbacks and per-file status tracking. |
 | `query.ts` | `queryWiki`, `slugifyQuery` | Weighted keyword search across index titles (3×), summaries (2×), and page bodies (1×). Optional save to `wiki/queries/`. |
 | `status.ts` | `getWikiStatus` | Aggregate wiki statistics: source count, page count, last ingest/lint dates, orphan count, index coverage. |
+| `mcp/` | `createMcpServer` | MCP server with 14 tools (7 read, 7 write) for external LLM agent integration via stdio transport. |
 
 ## Design Decisions
 
