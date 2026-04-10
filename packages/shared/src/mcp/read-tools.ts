@@ -8,7 +8,7 @@ import { readIndex } from '../index-ops.js';
 import { isNotFoundError } from '../errors.js';
 
 /** JSON-Schema definition for a single MCP tool. */
-interface ToolDefinition {
+export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
@@ -203,5 +203,3 @@ export async function handleReadToolCall(
       throw new Error(`Unknown tool: ${name}`);
   }
 }
-
-

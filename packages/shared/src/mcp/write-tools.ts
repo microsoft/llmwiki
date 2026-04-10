@@ -10,14 +10,7 @@ import {
   requireString,
   optionalString,
 } from './read-tools.js';
-import type { ToolArgs } from './read-tools.js';
-
-/** JSON-Schema definition for a single MCP tool. */
-interface ToolDefinition {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-}
+import type { ToolArgs, ToolDefinition } from './read-tools.js';
 
 /** All write tool definitions exposed by the MCP server. */
 export const WRITE_TOOLS: ToolDefinition[] = [
