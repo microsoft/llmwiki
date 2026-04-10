@@ -17,6 +17,7 @@ export function formatDate(isoString: string): string {
 export class RawSourceTreeItem extends vscode.TreeItem {
   readonly filePath?: string;
   readonly directory?: string;
+  readonly isDirectory: boolean;
 
   constructor(
     label: string,
@@ -28,6 +29,7 @@ export class RawSourceTreeItem extends vscode.TreeItem {
     },
   ) {
     super(label, collapsibleState);
+    this.isDirectory = !!options?.directory;
 
     if (options?.sourceFile && options.fullPath) {
       this.contextValue = 'rawSource';
