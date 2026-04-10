@@ -23,6 +23,7 @@ async function fileExists(filePath: string): Promise<boolean> {
     await access(filePath, constants.F_OK);
     return true;
   } catch {
+    // ENOENT — file doesn't exist
     return false;
   }
 }

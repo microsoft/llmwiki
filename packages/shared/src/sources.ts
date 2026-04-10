@@ -23,6 +23,7 @@ export async function listSources(rawDir: string): Promise<SourceFile[]> {
   try {
     entries = await readdir(rawDir, { recursive: true }) as unknown as string[];
   } catch {
+    // ENOENT — raw directory doesn't exist; return empty list
     return [];
   }
 

@@ -30,10 +30,10 @@ export async function getWikiStatus(targetPath: string): Promise<StatusResult> {
   // ── Source count (files in raw/) ───────────────────────────────
   let sourceCount = 0;
   try {
-    const rawEntries = await readdir(rawDir);
-    sourceCount = rawEntries.length;
+    const rawEntries = await readdir(rawDir, { withFileTypes: true, recursive: true });
+    sourceCount = rawEntries.filter((e) => e.isFile()).length;
   } catch {
-    // raw/ doesn't exist — 0 sources
+    // ENOENT — raw/ doesn't exist; 0 sources
   }
 
   // ── Wiki page count (*.md in wiki/, excluding index & log) ────

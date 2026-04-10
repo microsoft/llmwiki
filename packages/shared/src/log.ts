@@ -40,6 +40,7 @@ export async function readLog(logPath: string): Promise<LogEntry[]> {
   try {
     content = await readFile(logPath, 'utf-8');
   } catch {
+    // ENOENT — log file doesn't exist yet; return empty entries
     return [];
   }
 
