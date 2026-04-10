@@ -8,7 +8,7 @@
     "c3-01": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T06:21:00Z", "completed_at": "2026-04-10T06:40:00Z", "merged_at": "2026-04-10T06:54:00Z", "branch": "task/cycle-3/c3-01", "pr": 36 },
     "c3-02": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T07:01:00Z", "completed_at": "2026-04-10T07:12:00Z", "merged_at": "2026-04-10T07:13:00Z", "branch": "task/cycle-3/c3-02", "pr": 37 },
     "c3-03": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T07:17:00Z", "completed_at": "2026-04-10T07:53:00Z", "merged_at": "2026-04-10T07:53:00Z", "branch": "task/cycle-3/c3-03", "pr": 38 },
-    "c3-04": { "status": "running", "attempts": 1, "started_at": "2026-04-10T07:53:00Z", "branch": "task/cycle-3/c3-04" },
+    "c3-04": { "status": "open", "attempts": 1, "started_at": "2026-04-10T08:04:00Z", "completed_at": "2026-04-10T08:07:00Z", "branch": "task/cycle-3/c3-04", "pr": 39 },
     "c3-05": { "status": "pending", "attempts": 0 },
     "c3-06": { "status": "pending", "attempts": 0 },
     "c3-07": { "status": "pending", "attempts": 0 },
