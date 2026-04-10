@@ -1,0 +1,768 @@
+plan_id: cycle-5
+objective: "Determine the highest-impact focus areas for cycle-5 of the llmwiki project"
+focus_area: cycle5_planning
+created_at: "2025-07-25"
+created_by: gem-researcher
+status: completed
+
+tldr: |
+  - All 4 strategy pillars (CLI, Actions, VS Code, Schema) are implemented; cycle-5 is about depth, not breadth.
+  - Highest-impact opportunity: MCP Resources + Prompts — the MCP server only exposes tools; adding resources (wiki pages as browsable resources) and prompt templates (ingest workflow, lint review) would make the wiki dramatically more useful to LLM agents without requiring tool calls for basic reads.
+  - Second highest: GitHub Actions hardening — scheduled lint, PR-triggered wiki validation, and lint-gate merge protection would create a self-healing wiki that catches problems automatically.
+  - Third highest: Delete/rename/move operations — the wiki has no way to delete pages, rename them, or reorganize content. This is the #1 missing CRUD operation, both in CLI and MCP.
+  - E2E tests are flaky on Windows (4 failures from timeouts + EBUSY). Coverage thresholds are set at only 60%.
+  - VS Code extension lacks MCP awareness — it can't invoke or benefit from the MCP write tools. Adding a "smart ingest" command that leverages ingest-with-context would close this gap.
+
+research_metadata:
+  methodology: "Multi-pass hybrid retrieval: semantic search + grep search across all packages, file reads of all source modules, external web search for competitor landscape and MCP best practices, GitHub Actions patterns research. 3 passes: (1) structure + architecture, (2) code-level gap analysis, (3) external research + synthesis."
+  scope: "Full codebase — packages/shared/src (18 modules), packages/cli/src (8 modules), packages/vscode/src (6 modules), tests (31 test files), .github/workflows (2 files), docs/plan, ARCHITECTURE.md, STRATEGY.md, idea.md, cycle-2-review.md"
+  confidence: high
+  coverage: 95
+  decision_blockers: 0
+  research_blockers: 0
+
+# ===========================================================================
+# FILES ANALYZED
+# ===========================================================================
+files_analyzed:
+  - file: STRATEGY.md
+    path: ./STRATEGY.md
+    purpose: "Project vision, priorities, and anti-patterns"
+    key_elements:
+      - element: Ultimate Goal
+        type: pattern
+        location: "STRATEGY.md:7"
+        description: "Personal knowledge base where LLM does all maintenance; zero bookkeeping burden"
+      - element: Current Priority list
+        type: pattern
+        location: "STRATEGY.md:19-31"
+        description: "4 priorities: CLI (done), Actions (done), VS Code (done), Schema (evolving)"
+      - element: What Not To Try
+        type: pattern
+        location: "STRATEGY.md:26-31"
+        description: "Anti-patterns: no self-hosted forges, no custom webhooks, no embedding RAG, no multi-user, no Obsidian plugins, no complex MCP from day one"
+    language: markdown
+    lines: 31
+
+  - file: ARCHITECTURE.md
+    path: ./ARCHITECTURE.md
+    purpose: "Full technical design including MCP server, data flow, VS Code extension architecture"
+    key_elements:
+      - element: MCP Tool Inventory
+        type: pattern
+        location: "ARCHITECTURE.md:279-294"
+        description: "14 MCP tools (7 read, 7 write) — no resources or prompts declared"
+      - element: Write Tool Safety Model
+        type: pattern
+        location: "ARCHITECTURE.md:332-339"
+        description: "Path traversal, frontmatter validation, input limits, injection prevention, error isolation"
+      - element: Design Decisions
+        type: pattern
+        location: "ARCHITECTURE.md:717-760"
+        description: "Rationale for git-based, CLI-first, no-RAG, index-based search, monorepo"
+    language: markdown
+    lines: 760
+
+  - file: server.ts
+    path: packages/shared/src/mcp/server.ts
+    purpose: "MCP server factory — registers tools, dispatches calls"
+    key_elements:
+      - element: createMcpServer
+        type: function
+        location: "server.ts:23"
+        description: "Only declares capabilities: { tools: {} }. No resources, no prompts."
+      - element: Tool dispatch
+        type: pattern
+        location: "server.ts:35-54"
+        description: "Unified try/catch dispatch routing to read or write handlers"
+    language: typescript
+    lines: 57
+
+  - file: write-tools.ts
+    path: packages/shared/src/mcp/write-tools.ts
+    purpose: "7 MCP write tools with security limits"
+    key_elements:
+      - element: Security limits
+        type: pattern
+        location: "write-tools.ts:226-230"
+        description: "MAX_BODY_LENGTH=1MB, MAX_TITLE_LENGTH=500, MAX_TAGS=50, MAX_CROSSLINKS=100, MAX_PATH_LENGTH=500"
+      - element: Missing delete/rename operations
+        type: pattern
+        location: "write-tools.ts:23-220"
+        description: "Write tools cover create, update, crosslink, ingest. No delete, rename, or move operations."
+    language: typescript
+    lines: 547
+
+  - file: read-tools.ts
+    path: packages/shared/src/mcp/read-tools.ts
+    purpose: "7 MCP read tools — status, query, lint, list pages/sources, read page/index"
+    key_elements:
+      - element: assertWithinDir
+        type: function
+        location: "read-tools.ts:139-146"
+        description: "Path traversal guard using resolve + prefix check"
+    language: typescript
+    lines: 208
+
+  - file: wiki.ts
+    path: packages/shared/src/wiki.ts
+    purpose: "Core page CRUD — readPage, writePage, listPages, createEntityPage, createConceptPage, addCrosslinks"
+    key_elements:
+      - element: No deletePage function
+        type: pattern
+        location: "wiki.ts (absent)"
+        description: "writePage exists but no deletePage, renamePage, or movePage"
+      - element: addCrosslinks
+        type: function
+        location: "wiki.ts:182-275"
+        description: "Appends/extends See Also section with dedup. Validates targets exist."
+    language: typescript
+    lines: 276
+
+  - file: query.ts
+    path: packages/shared/src/query.ts
+    purpose: "Keyword search with weighted scoring (title 3x, summary 2x, body 1x)"
+    key_elements:
+      - element: queryWiki
+        type: function
+        location: "query.ts:41-161"
+        description: "Simple substring matching. No fuzzy search, no TF-IDF, no phrase matching."
+    language: typescript
+    lines: 162
+
+  - file: lint.ts
+    path: packages/shared/src/lint.ts
+    purpose: "6 lint check categories with structured findings"
+    key_elements:
+      - element: No auto-fix capability
+        type: pattern
+        location: "lint.ts (absent)"
+        description: "Lint reports findings but has no --fix mode for stale entries or orphan pages"
+    language: typescript
+    lines: 252
+
+  - file: ingest-context.ts
+    path: packages/shared/src/ingest-context.ts
+    purpose: "Enhanced ingest with word count, content type, related pages, suggested actions"
+    key_elements:
+      - element: extractKeywords
+        type: function
+        location: "ingest-context.ts:74-92"
+        description: "Stop-word filtered keyword extraction for related page discovery"
+      - element: generateSuggestedActions
+        type: function
+        location: "ingest-context.ts:95-133"
+        description: "Returns action suggestions as plain strings — could be more structured"
+    language: typescript
+    lines: 223
+
+  - file: extension.ts
+    path: packages/vscode/src/extension.ts
+    purpose: "VS Code extension entry point — registers tree views, commands, watchers, status bar"
+    key_elements:
+      - element: No MCP integration
+        type: pattern
+        location: "extension.ts (absent)"
+        description: "Extension uses @llmwiki/shared directly but has no awareness of MCP tools or ingest-with-context"
+    language: typescript
+    lines: 57
+
+  - file: commands.ts
+    path: packages/vscode/src/commands.ts
+    purpose: "7 VS Code command handlers"
+    key_elements:
+      - element: Ingest command
+        type: function
+        location: "commands.ts:91-164"
+        description: "Uses ingestSource() directly — does not use ingestWithContext() which provides richer output"
+      - element: No delete/rename commands
+        type: pattern
+        location: "commands.ts (absent)"
+        description: "Commands cover init, ingest, query, lint, status, openPage, refresh. No delete, rename."
+    language: typescript
+    lines: 283
+
+  - file: ci.yml
+    path: .github/workflows/ci.yml
+    purpose: "CI — lint, build, test on push/PR to main"
+    key_elements:
+      - element: No wiki-specific validation
+        type: pattern
+        location: "ci.yml:1-64"
+        description: "Runs TypeScript lint and tests but no wiki content validation (e.g., lint findings as PR checks)"
+    language: yaml
+    lines: 64
+
+  - file: ingest.yml
+    path: .github/workflows/ingest.yml
+    purpose: "Auto-ingest on push to raw/**"
+    key_elements:
+      - element: No scheduled maintenance
+        type: pattern
+        location: "ingest.yml:1-44"
+        description: "Only triggers on push to raw/ or manual dispatch. No scheduled lint or maintenance."
+    language: yaml
+    lines: 44
+
+  - file: vitest.config.ts
+    path: ./vitest.config.ts
+    purpose: "Test configuration with coverage thresholds"
+    key_elements:
+      - element: Low coverage thresholds
+        type: pattern
+        location: "vitest.config.ts:13-18"
+        description: "Lines: 60%, Functions: 60%, Branches: 50%, Statements: 60% — low for a 4-cycle project"
+    language: typescript
+    lines: 25
+
+  - file: errors.ts
+    path: packages/shared/src/errors.ts
+    purpose: "Error type guards"
+    key_elements:
+      - element: isNotFoundError / isPermissionError
+        type: function
+        location: "errors.ts:1-6"
+        description: "Only 2 error type guards. No custom error classes, no WikiError base."
+    language: typescript
+    lines: 6
+
+  - file: cycle-2-review.md
+    path: docs/cycle-2-review.md
+    purpose: "Post-cycle security & quality audit from cycle 2"
+    key_elements:
+      - element: C-6 VS Code integration tests never wired to CI
+        type: pattern
+        location: "cycle-2-review.md:110-120"
+        description: "Known tech debt from cycle 2 — still unresolved"
+    language: markdown
+    lines: 278
+
+# ===========================================================================
+# PATTERNS FOUND
+# ===========================================================================
+patterns_found:
+  - category: architecture
+    pattern: "Shared library as single source of truth"
+    description: "All wiki operations live in @llmwiki/shared. CLI, VS Code, and MCP all consume the same library. No logic duplication across consumers."
+    examples:
+      - file: packages/vscode/src/commands.ts
+        location: "commands.ts:1-16"
+        snippet: "import { readIndex, directoryExists, lintWiki, appendEntry, ingestSource, bulkIngest, queryWiki, getWikiStatus } from '@llmwiki/shared';"
+      - file: packages/shared/src/mcp/write-tools.ts
+        location: "write-tools.ts:1-12"
+        snippet: "import { readPage, writePage, createEntityPage, createConceptPage, addCrosslinks } from '../wiki.js';"
+    prevalence: common
+
+  - category: architecture
+    pattern: "MCP tools-only server (no resources or prompts)"
+    description: "The MCP server declares only { tools: {} } capabilities. It does not expose wiki pages as MCP Resources (browsable by agents) or define MCP Prompt templates (reusable workflows). This limits agent discoverability."
+    examples:
+      - file: packages/shared/src/mcp/server.ts
+        location: "server.ts:26"
+        snippet: "{ capabilities: { tools: {} } }"
+    prevalence: common
+
+  - category: architecture
+    pattern: "CRUD gap — no delete, rename, or move operations"
+    description: "The shared library and MCP server support create, read, update (partial) operations but have no deletePage, renamePage, or movePage. This affects both CLI and VS Code. Wiki maintenance requires manual file deletion."
+    examples:
+      - file: packages/shared/src/wiki.ts
+        location: "wiki.ts (full file)"
+        snippet: "// Exports: readPage, writePage, listPages, directoryExists, getPageLinks, createEntityPage, createConceptPage, addCrosslinks — no delete/rename"
+    prevalence: common
+
+  - category: error_handling
+    pattern: "Consistent ENOENT/EACCES guards"
+    description: "After cycle-3/4 cleanup, most catch blocks properly check isNotFoundError(). Only 1 bare catch{} remains in wiki.ts:addCrosslinks (line 231)."
+    examples:
+      - file: packages/shared/src/wiki.ts
+        location: "wiki.ts:231"
+        snippet: "} catch { title = tp.replace(/\\.md$/, '').split('/').pop()!; }"
+    prevalence: rare
+
+  - category: security
+    pattern: "Input validation and DoS prevention on MCP tools"
+    description: "Write tools enforce body size (1MB), title length (500), tag count (50), crosslink targets (100), path length (500). All paths validated with assertWithinDir."
+    examples:
+      - file: packages/shared/src/mcp/write-tools.ts
+        location: "write-tools.ts:226-230"
+        snippet: "const MAX_BODY_LENGTH = 1_000_000; const MAX_TITLE_LENGTH = 500; const MAX_TAGS_COUNT = 50;"
+    prevalence: common
+
+  - category: testing
+    pattern: "560+ tests across 31 files with 3-tier structure"
+    description: "Tests organized as: shared unit tests (14 files), CLI command tests (6 files) + E2E (1 file) + unit (2 files), VS Code mock-based tests (6 files) + integration suite (1 file, excluded from CI)."
+    examples:
+      - file: tests/shared/mcp/write-tools.test.ts
+        location: "write-tools.test.ts"
+        snippet: "70 test cases for MCP write tool dispatch, validation, error handling"
+    prevalence: common
+
+  - category: testing
+    pattern: "E2E tests flaky on Windows"
+    description: "4 E2E tests fail on Windows: 3 from 5000ms timeouts (full workflow tests), 1 from EBUSY on temp dir cleanup. These are infrastructure issues, not logic bugs."
+    examples:
+      - file: tests/cli/e2e/cli.test.ts
+        location: "cli.test.ts:621, 663, 728"
+        snippet: "Error: Test timed out in 5000ms + EBUSY: resource busy or locked, rmdir"
+    prevalence: occasional
+
+  - category: structure
+    pattern: "Consistent JSON output with api_version"
+    description: "All command outputs include command name, api_version: '1', and structured data. This enables forward-compatible agent interop."
+    examples:
+      - file: packages/shared/src/constants.ts
+        location: "constants.ts:5"
+        snippet: "export const API_VERSION = '1';"
+    prevalence: common
+
+  - category: naming
+    pattern: "Kebab-case files, PascalCase classes, camelCase functions"
+    description: "Consistent naming across all packages. File names use kebab-case (write-tools.ts), classes use PascalCase (WikiPagesTreeDataProvider), functions use camelCase (readPage)."
+    examples:
+      - file: packages/shared/src/ingest-context.ts
+        location: "ingest-context.ts"
+        snippet: "export async function ingestWithContext(...)"
+    prevalence: common
+
+# ===========================================================================
+# RELATED ARCHITECTURE
+# ===========================================================================
+related_architecture:
+  components_relevant_to_domain:
+    - component: "@llmwiki/shared"
+      responsibility: "Core wiki operations: init, ingest, query, lint, status, list, MCP server, page CRUD"
+      location: packages/shared/src/
+      relationship_to_domain: "Foundation — all cycle-5 features will be added here"
+    - component: "@llmwiki/cli"
+      responsibility: "Commander.js CLI wrapping shared library"
+      location: packages/cli/src/
+      relationship_to_domain: "Consumer — new commands mirror new shared functions"
+    - component: "llmwiki-vscode"
+      responsibility: "VS Code extension with tree views, commands, status bar"
+      location: packages/vscode/src/
+      relationship_to_domain: "Consumer — needs new commands for new operations"
+    - component: "MCP Server"
+      responsibility: "14 tools (7 read, 7 write) over stdio transport"
+      location: packages/shared/src/mcp/
+      relationship_to_domain: "Extension point — new tools, resources, prompts"
+    - component: "GitHub Actions"
+      responsibility: "CI pipeline + auto-ingest workflow"
+      location: .github/workflows/
+      relationship_to_domain: "Automation backbone — needs hardening"
+
+  interfaces_used_by_domain:
+    - interface: "MCP SDK Server API"
+      location: "@modelcontextprotocol/sdk ^1.12.1"
+      usage_pattern: "Server creation, ListToolsRequestSchema, CallToolRequestSchema, StdioServerTransport"
+    - interface: "gray-matter"
+      location: "@llmwiki/shared dependency"
+      usage_pattern: "YAML frontmatter parsing/serialization for all wiki pages"
+    - interface: "Commander.js v14"
+      location: "@llmwiki/cli dependency"
+      usage_pattern: "Two-level command hierarchy (plaid wiki <cmd>)"
+
+  data_flow_involving_domain: |
+    Human → raw/ files → ingest → wiki/sources/ summary pages → index.md + log.md
+    Agent → MCP tools → @llmwiki/shared → wiki/ files
+    VS Code → @llmwiki/shared directly → wiki/ files
+    GitHub Actions → CLI binary → @llmwiki/shared → wiki/ files → auto-commit
+
+  key_relationships_to_domain:
+    - from: "MCP write tools"
+      to: "wiki.ts, index-ops.ts, ingest.ts"
+      relationship: imports
+    - from: "VS Code commands"
+      to: "@llmwiki/shared (barrel export)"
+      relationship: imports
+    - from: "CLI commands"
+      to: "@llmwiki/shared (barrel export)"
+      relationship: imports
+    - from: "ingest-context.ts"
+      to: "ingest.ts, query.ts"
+      relationship: calls
+
+# ===========================================================================
+# RELATED TECHNOLOGY STACK
+# ===========================================================================
+related_technology_stack:
+  languages_used_in_domain:
+    - TypeScript (ES2022, NodeNext, strict mode)
+    - YAML (GitHub Actions)
+  frameworks_used_in_domain:
+    - name: "Commander.js v14"
+      usage_in_domain: "CLI command registration and argument parsing"
+    - name: "Vitest v3"
+      usage_in_domain: "Test framework with v8 coverage provider"
+    - name: "VS Code Extension API v1.85+"
+      usage_in_domain: "Tree views, commands, status bar, file system watchers"
+  libraries_used_in_domain:
+    - name: "@modelcontextprotocol/sdk ^1.12.1"
+      purpose_in_domain: "MCP server creation, tool registration, stdio transport"
+    - name: "gray-matter ^4.0.3"
+      purpose_in_domain: "YAML frontmatter parsing and serialization"
+    - name: "tsup ^8.0.0"
+      purpose_in_domain: "CLI bundling (ESM, node20 target, shebang)"
+    - name: "esbuild ^0.25.0"
+      purpose_in_domain: "VS Code extension bundling (CJS, vscode external)"
+
+# ===========================================================================
+# RELATED CONVENTIONS
+# ===========================================================================
+related_conventions:
+  naming_patterns_in_domain: "kebab-case files, PascalCase classes, camelCase functions, UPPER_CASE constants"
+  structure_of_domain: "Monorepo: shared → cli + vscode. All logic in shared; consumers are thin wrappers."
+  error_handling_in_domain: "isNotFoundError/isPermissionError type guards. try/catch with graceful fallbacks. MCP tools return isError:true on failure."
+  testing_in_domain: "Vitest with v8 coverage. Shared: unit tests. CLI: command tests + E2E. VS Code: mock-based. 560+ tests."
+  documentation_in_domain: "ARCHITECTURE.md (comprehensive), STRATEGY.md (vision), SECURITY.md (Microsoft template), README.md, CHANGELOG.md (VS Code)"
+
+# ===========================================================================
+# RELATED DEPENDENCIES
+# ===========================================================================
+related_dependencies:
+  internal:
+    - component: "@llmwiki/shared → @llmwiki/cli"
+      relationship_to_domain: "CLI depends on shared"
+      direction: outbound
+    - component: "@llmwiki/shared → llmwiki-vscode"
+      relationship_to_domain: "VS Code extension depends on shared"
+      direction: outbound
+    - component: "MCP server → shared modules"
+      relationship_to_domain: "MCP tools import from wiki.ts, index-ops.ts, etc."
+      direction: inbound
+  external:
+    - name: "@modelcontextprotocol/sdk"
+      purpose_for_domain: "MCP protocol implementation"
+    - name: "gray-matter"
+      purpose_for_domain: "Frontmatter handling"
+    - name: "commander"
+      purpose_for_domain: "CLI framework"
+
+# ===========================================================================
+# DOMAIN SECURITY CONSIDERATIONS
+# ===========================================================================
+domain_security_considerations:
+  sensitive_areas:
+    - area: "Path traversal in MCP write tools"
+      location: "packages/shared/src/mcp/read-tools.ts:139-146"
+      concern: "assertWithinDir uses string prefix matching. Works on most systems but can be bypassed on case-insensitive file systems with mixed casing."
+    - area: "Input size limits on MCP tools"
+      location: "packages/shared/src/mcp/write-tools.ts:226-230"
+      concern: "Limits are set but not tested at boundary conditions (exactly at MAX_BODY_LENGTH)."
+    - area: "One remaining bare catch block"
+      location: "packages/shared/src/wiki.ts:231"
+      concern: "addCrosslinks catches all errors when reading target page title — masks non-ENOENT errors"
+  authentication_patterns_in_domain: "None — personal use only, runs on localhost. MCP uses stdio transport."
+  authorization_patterns_in_domain: "None — single-user by design."
+  data_validation_in_domain: "MCP tools validate input types, string lengths, array sizes. Frontmatter validated on write. Path traversal guards on all file operations."
+
+# ===========================================================================
+# TESTING PATTERNS
+# ===========================================================================
+testing_patterns:
+  framework: "Vitest v3 with v8 coverage"
+  coverage_areas:
+    - "packages/shared/src: 14 unit test files for all modules"
+    - "packages/shared/src/mcp: 4 test files (write-tools, server-integration, crosslinks-index, smart-ingest)"
+    - "packages/cli/src: 6 command test files + 2 unit tests + 1 E2E test"
+    - "packages/vscode/src: 6 mock-based test files + 1 integration suite (excluded from CI)"
+  test_organization: "tests/ directory mirrors packages/ structure: tests/shared/, tests/cli/, tests/vscode/"
+  mock_patterns:
+    - "VS Code extension tests mock vscode API via vi.mock('vscode')"
+    - "CLI E2E tests use real filesystem in temp directories"
+    - "Shared tests use in-memory temp dirs created with mkdtemp"
+
+# ===========================================================================
+# CYCLE-5 FOCUS AREA ANALYSIS
+# ===========================================================================
+# Ranked by compound value (impact × reusability × alignment with strategy)
+
+cycle5_focus_areas:
+
+  - rank: 1
+    area: "MCP Resources + Prompts"
+    impact: very_high
+    confidence: high
+    description: |
+      The MCP server currently only exposes tools. MCP Resources would let agents browse
+      wiki pages, index entries, and source files as first-class data — no tool call needed
+      for basic reads. MCP Prompts would provide reusable workflow templates (e.g., "ingest
+      this source and update related pages", "perform a full lint review and fix issues").
+      This transforms the wiki from a tool server into a knowledge server.
+    evidence:
+      - "server.ts:26 — only { tools: {} } capabilities declared"
+      - "MCP spec supports resources://, prompts://, and tools:// — llmwiki uses only tools"
+      - "Competitor tools (AnythingLLM, Dust) offer browsable knowledge APIs, not just function calls"
+    risk: low
+    risk_detail: "Additive change — existing tools unchanged. Resources are read-only by nature. MCP SDK already supports resources and prompts."
+    strategy_alignment: "Directly serves 'agent interop' goal — makes wiki a shared knowledge layer, not just a function endpoint"
+
+  - rank: 2
+    area: "GitHub Actions Hardening"
+    impact: high
+    confidence: high
+    description: |
+      Three new workflows would create a self-healing wiki:
+      1. lint.yml — scheduled weekly lint (cron) + manual dispatch. Runs `plaid wiki lint --json`
+         and opens an issue or PR comment if errors found.
+      2. PR-triggered wiki validation — on PRs that touch wiki/**, run lint and report as check.
+      3. lint-gate — block merge if wiki lint has errors (uses exit code 1 from lint).
+      This closes the automation loop: ingest is automated, but quality isn't.
+    evidence:
+      - "ingest.yml exists but no lint.yml or validation workflow"
+      - "ci.yml runs TypeScript lint but zero wiki content validation"
+      - "Strategy says 'Automated when you don't' — lint should be automated too"
+    risk: low
+    risk_detail: "Pure additions to .github/workflows/. No source code changes needed."
+    strategy_alignment: "Directly serves 'automated when you don't want it' goal and 'zero bookkeeping burden'"
+
+  - rank: 3
+    area: "Delete / Rename / Move Operations"
+    impact: high
+    confidence: high
+    description: |
+      The wiki has no delete, rename, or move operations — in CLI, MCP, or VS Code.
+      This is the #1 missing CRUD operation. A user cannot:
+      - Delete an obsolete page (must manually rm + clean index + clean log)
+      - Rename a page (must manually create new, copy content, update all backlinks, delete old)
+      - Move a page between directories (e.g., sources/ → concepts/)
+      
+      Needed: deletePage() + renamePage() in shared lib, wiki_delete_page + wiki_rename_page MCP tools,
+      `plaid wiki delete` + `plaid wiki rename` CLI commands, VS Code context menu actions.
+    evidence:
+      - "wiki.ts exports: readPage, writePage, listPages — no deletePage"
+      - "write-tools.ts: 7 tools — all create/update, none delete/rename"
+      - "commands.ts: 7 VS Code commands — none for delete/rename"
+    risk: medium
+    risk_detail: "Delete operations are destructive. Need confirmation prompts (CLI --yes, VS Code dialog), index cleanup, backlink warning. Rename needs backlink rewriting across all pages."
+    strategy_alignment: "Serves 'wiki compounds over time' — stale content needs pruning to keep signal-to-noise high"
+
+  - rank: 4
+    area: "VS Code Extension Enhancement"
+    impact: medium
+    confidence: high
+    description: |
+      Six improvements that compound value:
+      1. Smart Ingest command — use ingestWithContext() instead of plain ingestSource() to show
+         related pages and suggested actions after ingest.
+      2. Delete page from context menu — right-click a page in the tree view to delete it.
+      3. Rename page command — renames file, updates frontmatter, rewrites backlinks.
+      4. Drag-and-drop source upload — drag files from OS into Raw Sources tree view.
+      5. Webview for rendered wiki pages — preview markdown with working cross-references.
+      6. Quick pick for MCP tool invocation — expose MCP tools as VS Code commands for testing.
+    evidence:
+      - "commands.ts uses ingestSource() not ingestWithContext()"
+      - "No delete/rename commands in VS Code"
+      - "STRATEGY.md mentions 'drag-and-drop source upload' as desired feature"
+      - "No webview rendering — extension only opens raw markdown files"
+    risk: low_to_medium
+    risk_detail: "Webview and drag-drop add complexity. Smart ingest and delete are straightforward."
+    strategy_alignment: "Serves 'interactive when you want it' — reduces terminal dependency"
+
+  - rank: 5
+    area: "Test Reliability + Coverage"
+    impact: medium
+    confidence: high
+    description: |
+      Three quality improvements:
+      1. Fix E2E test flakiness — increase timeout from 5000ms to 15000ms for full workflow tests;
+         add retry logic for EBUSY errors on Windows temp dir cleanup.
+      2. Raise coverage thresholds — from 60/60/50/60 to 80/80/70/80. Current test count (560+)
+         likely already meets this; the threshold just needs updating.
+      3. Wire VS Code integration tests to CI — either add a job using @vscode/test-electron
+         or explicitly document as manual-only. This has been tech debt since cycle-2 (C-6).
+    evidence:
+      - "4 E2E tests fail on Windows (timeouts + EBUSY)"
+      - "vitest.config.ts thresholds: lines 60, functions 60, branches 50, statements 60"
+      - "cycle-2-review.md C-6: 'VS Code integration tests never wired to CI'"
+    risk: low
+    risk_detail: "Timeout increases and threshold bumps are low-risk. VS Code CI job may need platform-specific config."
+    strategy_alignment: "Infrastructure quality — enables faster iteration in future cycles"
+
+  - rank: 6
+    area: "Lint Auto-Fix Mode"
+    impact: medium
+    confidence: medium
+    description: |
+      The lint command reports findings but cannot fix them. A `plaid wiki lint --fix` mode could:
+      - Remove stale index entries (pointing to deleted files)
+      - Add missing pages to the index
+      - Add missing frontmatter fields with defaults
+      - Remove orphan pages (with confirmation)
+      This would make the scheduled lint Action self-healing, not just reporting.
+    evidence:
+      - "lint.ts returns findings but has no fix mode"
+      - "Stale entries and index completeness are deterministic fixes"
+      - "Frontmatter defaults are well-defined in AGENTS.md"
+    risk: medium
+    risk_detail: "Auto-deletion of orphan pages is destructive. Should require explicit --fix-orphans flag. Other fixes are safe."
+    strategy_alignment: "Directly serves 'zero bookkeeping burden' — lint repairs itself"
+
+  - rank: 7
+    area: "Search Improvements"
+    impact: medium
+    confidence: medium
+    description: |
+      Current search is substring-based (countOccurrences). At personal scale this works,
+      but three improvements would help:
+      1. Fuzzy matching — handle typos (e.g., "machne lerning" → "machine learning")
+      2. Tag-based filtering — `plaid wiki query --tag research "AI"` to narrow results
+      3. Date-range filtering — `plaid wiki query --since 2025-01 "AI"` for temporal relevance
+      The strategy explicitly says "don't build a vector database" but these are still
+      keyword-based improvements, not RAG.
+    evidence:
+      - "search.ts: simple indexOf-based counting"
+      - "query.ts: no tag or date filters"
+      - "STRATEGY.md: 'at personal scale, index + keyword search is sufficient'"
+    risk: low
+    risk_detail: "Additive improvements to existing query function. No architectural changes."
+    strategy_alignment: "Serves 'more compound value' — better search makes existing content more discoverable"
+
+# ===========================================================================
+# COMPETITOR INSIGHTS
+# ===========================================================================
+competitor_insights:
+  - tool: "AnythingLLM"
+    differentiator: "Pluggable LLM backends, local/offline, RAG chat"
+    lesson_for_llmwiki: "LLM-powered wikis that work offline and with any model backend have higher adoption. llmwiki's model-agnostic CLI approach is aligned."
+
+  - tool: "Dust"
+    differentiator: "Multi-source AI agents connecting Slack, Notion, GitHub, Drive"
+    lesson_for_llmwiki: "Cross-tool knowledge federation is powerful. llmwiki's MCP approach could support this — agents connecting to multiple wiki instances."
+
+  - tool: "Kortex (kAI)"
+    differentiator: "RAG assistant integrated with notes + tasks"
+    lesson_for_llmwiki: "Contextual suggestions after ingest (like ingestWithContext) are a competitive differentiator. llmwiki already has this but doesn't surface it in VS Code."
+
+  - tool: "Logseq"
+    differentiator: "Graph-based, open-source, strong backlinks"
+    lesson_for_llmwiki: "Backlinks are already implemented but not visualized. A VS Code webview showing the backlink graph would be a differentiator."
+
+  - tool: "NotebookLM"
+    differentiator: "Google's document analysis — audio overview, citations, multi-modal"
+    lesson_for_llmwiki: "Multi-modal source support (PDF, images) is a gap. llmwiki currently reads files as text only. Binary content types are detected but not processed."
+
+# ===========================================================================
+# RECOMMENDED CYCLE-5 SCOPE
+# ===========================================================================
+recommended_cycle5_scope:
+  theme: "Wiki Intelligence + Self-Healing Automation"
+  tagline: "Make the wiki smarter (MCP Resources/Prompts, delete/rename) and self-maintaining (GitHub Actions lint, auto-fix)"
+  
+  must_have:
+    - "MCP Resources — expose wiki pages and index as browsable MCP resources"
+    - "MCP Prompts — define reusable workflow templates for common agent tasks"
+    - "Delete page — shared lib + MCP tool + CLI command (with index cleanup + backlink warning)"
+    - "GitHub Actions lint.yml — scheduled weekly lint + manual dispatch"
+    - "Fix E2E test flakiness (timeout + EBUSY on Windows)"
+    - "Raise coverage thresholds to 80/80/70/80"
+
+  should_have:
+    - "Rename page — shared lib + MCP tool + CLI command (with backlink rewriting)"
+    - "PR-triggered wiki validation workflow"
+    - "VS Code smart ingest (use ingestWithContext)"
+    - "VS Code delete page context menu"
+    - "Lint --fix for stale entries and index completeness"
+
+  nice_to_have:
+    - "VS Code rename page command"
+    - "Tag-based query filtering"
+    - "MCP tool for lint auto-fix"
+    - "Backlink graph visualization (VS Code webview)"
+
+  estimated_task_count: "12-16 tasks across 3-4 waves"
+
+# ===========================================================================
+# TECHNICAL APPROACHES DISCOVERED
+# ===========================================================================
+technical_approaches:
+  - approach: "MCP Resources for wiki pages"
+    description: |
+      Register wiki pages as MCP Resources using resource:// URIs. Each page becomes
+      resource://wiki/{relative-path}. The index becomes resource://wiki/index.
+      Agents can list and read resources without tool calls, reducing latency and token usage.
+    source: "MCP specification (spec.modelcontextprotocol.io) — Resources section"
+    applicability: "Direct — @modelcontextprotocol/sdk already supports ListResourcesRequestSchema and ReadResourceRequestSchema"
+
+  - approach: "MCP Prompt templates"
+    description: |
+      Define reusable prompts like "ingest-and-integrate" (ingest source, find related pages,
+      suggest entity/concept pages to create) and "lint-and-fix" (run lint, auto-fix deterministic
+      issues, report remaining). Agents select prompts instead of composing tool chains from scratch.
+    source: "MCP specification — Prompts section"
+    applicability: "Direct — server.setRequestHandler(ListPromptsRequestSchema, ...) + GetPromptRequestSchema"
+
+  - approach: "Rename with backlink rewriting"
+    description: |
+      To rename a page: (1) read page, (2) write to new path with updated frontmatter, (3) scan all
+      pages for links to old path using getPageLinksDetailed, (4) rewrite links in each referencing
+      page, (5) update index entry path, (6) delete old file, (7) log the operation.
+      Use a transaction-like pattern: collect all changes first, then apply atomically.
+    source: "Logseq and Obsidian both implement rename-with-backlink-rewrite"
+    applicability: "Direct — all building blocks exist (getPageLinksDetailed, readPage, writePage, readIndex, writeIndex)"
+
+  - approach: "GitHub Actions lint with issue creation"
+    description: |
+      Scheduled workflow runs `plaid wiki lint --json`, parses output, and if errorCount > 0,
+      creates or updates a GitHub issue with findings. Uses actions/github-script for API calls.
+      Can also post as a PR check status on wiki/** changes.
+    source: "GitHub Actions documentation — schedule event + github-script action"
+    applicability: "Direct — lint already returns structured JSON with errorCount"
+
+# ===========================================================================
+# OPEN QUESTIONS
+# ===========================================================================
+open_questions:
+  - question: "Should MCP Resources be read-only or support resource subscriptions (real-time updates)?"
+    context: "MCP spec supports resource subscriptions for live updates. For a git-backed wiki, subscriptions would fire on file system changes. This adds complexity but enables agents to react to wiki updates."
+    type: nice_to_know
+    affects: ["MCP Resources implementation"]
+
+  - question: "Should delete operations be soft-delete (move to trash/) or hard-delete (rm)?"
+    context: "The wiki is git-backed, so hard-delete is recoverable via git. But a trash/ directory provides easier undo for non-git-savvy users."
+    type: research
+    affects: ["delete page implementation"]
+
+  - question: "Should lint --fix be exposed as an MCP tool?"
+    context: "If agents can fix lint issues, the wiki becomes self-healing via MCP. But destructive auto-fixes (orphan removal) need careful gating."
+    type: research
+    affects: ["lint auto-fix implementation", "MCP tool set"]
+
+  - question: "How should MCP Resources handle large wikis (1000+ pages)?"
+    context: "The MCP spec's list_resources returns all resources. For a wiki with many pages, this could be large. Pagination or hierarchical resource URIs (resource://wiki/entities/, resource://wiki/concepts/) may be needed."
+    type: research
+    affects: ["MCP Resources implementation"]
+
+# ===========================================================================
+# GAPS
+# ===========================================================================
+gaps:
+  - area: "No CRUD delete/rename/move operations"
+    description: "The wiki has create and update but no delete, rename, or move. This is the primary functional gap."
+    impact: research_blocker
+    affects: ["cycle-5 task planning for delete/rename features"]
+
+  - area: "MCP server only exposes tools — no resources or prompts"
+    description: "The MCP server is tools-only. Resources and Prompts are MCP primitives that would significantly improve agent experience."
+    impact: research_blocker
+    affects: ["cycle-5 MCP enhancement planning"]
+
+  - area: "No scheduled or PR-triggered wiki quality checks"
+    description: "GitHub Actions only has CI (code quality) and ingest (content creation). No workflow validates wiki content quality."
+    impact: nice_to_know
+    affects: ["cycle-5 Actions workflow planning"]
+
+  - area: "VS Code extension does not use ingestWithContext"
+    description: "The extension uses plain ingestSource() missing the related-pages and suggested-actions features added in cycle-4."
+    impact: nice_to_know
+    affects: ["cycle-5 VS Code enhancement planning"]
+
+  - area: "E2E test flakiness on Windows"
+    description: "4 tests fail due to timeouts (5000ms too short) and EBUSY on temp dir cleanup. Cross-platform reliability gap."
+    impact: nice_to_know
+    affects: ["cycle-5 test reliability work"]
+
+  - area: "Coverage thresholds not updated since early cycles"
+    description: "Thresholds at 60/60/50/60 despite 560+ tests. Likely already exceeding these but thresholds haven't been raised to prevent regression."
+    impact: nice_to_know
+    affects: ["cycle-5 quality baseline"]
