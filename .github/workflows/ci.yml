@@ -43,7 +43,22 @@ jobs:
       - name: Lint VS Code extension
         run: npm run lint --workspace=packages/vscode
 
-      - name: Test
-        run: npm test
-        # Note: VS Code extension integration tests require VS Code runtime
-        # and will be added as a separate CI job in task c2-12
+      - name: Test with coverage
+        run: npm run coverage
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            echo "### Coverage Summary" >> $GITHUB_STEP_SUMMARY
+            node -e "
+              const c = require('./coverage/coverage-summary.json').total;
+              const fmt = (m) => \`\${m.pct}% (\${m.covered}/\${m.total})\`;
+              console.log('| Metric | Coverage |');
+              console.log('|--------|----------|');
+              console.log(\`| Lines | \${fmt(c.lines)} |\`);
+              console.log(\`| Functions | \${fmt(c.functions)} |\`);
+              console.log(\`| Branches | \${fmt(c.branches)} |\`);
+              console.log(\`| Statements | \${fmt(c.statements)} |\`);
+            " >> $GITHUB_STEP_SUMMARY
+          fi
