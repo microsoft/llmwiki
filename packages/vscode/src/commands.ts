@@ -14,9 +14,11 @@ import {
   type IndexEntry,
 } from '@llmwiki/shared';
 import type { WikiPagesTreeDataProvider } from './wikiPagesTree';
+import type { RawSourcesTreeDataProvider } from './rawSourcesTree';
 
 interface TreeProviders {
   wikiPages: WikiPagesTreeDataProvider;
+  rawSources: RawSourcesTreeDataProvider;
 }
 
 export function registerCommands(
@@ -411,6 +413,7 @@ export function registerCommands(
   // ── llmwiki.refresh ──────────────────────────────────────────
   reg('llmwiki.refresh', async () => {
     providers.wikiPages.refresh();
+    providers.rawSources.refresh();
     vscode.window.showInformationMessage('LLM Wiki: views refreshed.');
   });
 }
