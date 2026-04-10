@@ -1,6 +1,7 @@
 import matter from 'gray-matter';
 import { readFile, writeFile, readdir, stat, mkdir } from 'node:fs/promises';
 import { join, dirname, extname } from 'node:path';
+import { isNotFoundError } from './errors.js';
 
 export interface WikiPageFrontmatter {
   type?: string;
@@ -38,9 +39,9 @@ export async function listPages(wikiDir: string): Promise<string[]> {
     return entries
       .filter((entry) => typeof entry === 'string' && extname(entry) === '.md')
       .map((entry) => join(wikiDir, entry as string));
-  } catch {
-    // ENOENT — wiki directory doesn't exist; return empty page list
-    return [];
+  } catch (err) {
+    if (isNotFoundError(err)) return [];
+    throw err;
   }
 }
 
@@ -51,9 +52,9 @@ export async function directoryExists(dirPath: string): Promise<boolean> {
   try {
     const s = await stat(dirPath);
     return s.isDirectory();
-  } catch {
-    // ENOENT — path doesn't exist or isn't accessible
-    return false;
+  } catch (err) {
+    if (isNotFoundError(err)) return false;
+    throw err;
   }
 }
 

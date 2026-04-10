@@ -1,5 +1,6 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { isNotFoundError } from './errors.js';
 
 export interface IndexEntry {
   path: string;
@@ -77,9 +78,9 @@ export async function readIndex(filePath: string): Promise<IndexEntry[]> {
   let content: string;
   try {
     content = await readFile(filePath, 'utf-8');
-  } catch {
-    // ENOENT — index file doesn't exist yet; return empty entries
-    return [];
+  } catch (err) {
+    if (isNotFoundError(err)) return [];
+    throw err;
   }
 
   const entries: IndexEntry[] = [];

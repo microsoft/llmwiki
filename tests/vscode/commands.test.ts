@@ -39,6 +39,8 @@ vi.mock('@llmwiki/shared', () => ({
   ingestSource: vi.fn(),
   queryWiki: vi.fn(),
   getWikiStatus: vi.fn(),
+  isNotFoundError: (err: unknown) =>
+    err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT',
 }));
 
 vi.mock('node:fs/promises', () => ({
@@ -236,7 +238,8 @@ describe('Command handlers', () => {
 
   describe('llmwiki.openPage', () => {
     it('should show warning when readIndex throws', async () => {
-      mockReadIndex.mockRejectedValue(new Error('File not found'));
+      const err = Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
+      mockReadIndex.mockRejectedValue(err);
 
       await commandHandlers['llmwiki.openPage']();
 

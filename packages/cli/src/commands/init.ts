@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { appendEntry, API_VERSION } from '@llmwiki/shared';
+import { appendEntry, API_VERSION, isNotFoundError } from '@llmwiki/shared';
 
 /**
  * Result of running the init command.
@@ -158,7 +158,8 @@ export async function initWiki(targetPath: string): Promise<InitResult> {
         warning: 'Wiki is already initialized (wiki/ directory exists)',
       };
     }
-  } catch {
+  } catch (err) {
+    if (!isNotFoundError(err)) throw err;
     // Directory does not exist — proceed with init
   }
 
