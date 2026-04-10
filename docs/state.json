@@ -1,21 +1,21 @@
 {
-  "cycle_id": "cycle-3",
-  "plan_id": "cycle-3",
+  "cycle_id": "cycle-4",
+  "plan_id": "cycle-4",
   "plan_path": "docs/plan/current/plan.yaml",
-  "status": "completing",
-  "started_at": "2026-04-10T05:50:00Z",
-  "completed_at": "2026-04-10T11:11:00Z",
+  "status": "active",
+  "started_at": "2026-04-10T11:37:00Z",
   "tasks": {
-    "c3-01": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T06:21:00Z", "completed_at": "2026-04-10T06:40:00Z", "merged_at": "2026-04-10T06:54:00Z", "branch": "task/cycle-3/c3-01", "pr": 36 },
-    "c3-02": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T07:01:00Z", "completed_at": "2026-04-10T07:12:00Z", "merged_at": "2026-04-10T07:13:00Z", "branch": "task/cycle-3/c3-02", "pr": 37 },
-    "c3-03": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T07:17:00Z", "completed_at": "2026-04-10T07:53:00Z", "merged_at": "2026-04-10T07:53:00Z", "branch": "task/cycle-3/c3-03", "pr": 38 },
-    "c3-04": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T08:04:00Z", "completed_at": "2026-04-10T08:07:00Z", "merged_at": "2026-04-10T08:16:00Z", "branch": "task/cycle-3/c3-04", "pr": 39 },
-    "c3-05": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T08:23:00Z", "completed_at": "2026-04-10T08:28:00Z", "merged_at": "2026-04-10T08:37:00Z", "branch": "task/cycle-3/c3-05", "pr": 40 },
-    "c3-06": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T08:37:00Z", "completed_at": "2026-04-10T08:45:00Z", "merged_at": "2026-04-10T09:03:00Z", "branch": "task/cycle-3/c3-06", "pr": 41 },
-    "c3-07": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T09:03:00Z", "completed_at": "2026-04-10T09:44:00Z", "merged_at": "2026-04-10T09:56:00Z", "branch": "task/cycle-3/c3-07", "pr": 42 },
-    "c3-08": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T09:56:00Z", "completed_at": "2026-04-10T09:58:00Z", "merged_at": "2026-04-10T10:07:00Z", "branch": "task/cycle-3/c3-08", "pr": 43 },
-    "c3-09": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T10:08:00Z", "completed_at": "2026-04-10T10:19:00Z", "merged_at": "2026-04-10T10:52:00Z", "branch": "task/cycle-3/c3-09", "pr": 44 },
-    "c3-10": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T10:27:00Z", "completed_at": "2026-04-10T10:38:00Z", "merged_at": "2026-04-10T11:01:00Z", "branch": "task/cycle-3/c3-10", "pr": 45 }
+    "c4-01": { "status": "pending", "attempts": 0 },
+    "c4-02": { "status": "pending", "attempts": 0 },
+    "c4-03": { "status": "pending", "attempts": 0 },
+    "c4-04": { "status": "pending", "attempts": 0 },
+    "c4-05": { "status": "pending", "attempts": 0 },
+    "c4-06": { "status": "pending", "attempts": 0 },
+    "c4-07": { "status": "pending", "attempts": 0 },
+    "c4-08": { "status": "pending", "attempts": 0 },
+    "c4-09": { "status": "pending", "attempts": 0 },
+    "c4-10": { "status": "pending", "attempts": 0 },
+    "c4-11": { "status": "pending", "attempts": 0 }
   },
   "cycle_history": [
     {
