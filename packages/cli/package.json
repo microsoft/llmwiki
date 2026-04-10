@@ -10,6 +10,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "commander": "^14.0.3",
     "@llmwiki/shared": "*"
   },
