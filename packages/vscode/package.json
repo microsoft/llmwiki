@@ -1,5 +1,5 @@
 {
-  "name": "@llmwiki/vscode",
+  "name": "llmwiki-vscode",
   "displayName": "LLM Wiki",
   "description": "Interactive wiki browsing powered by LLM maintenance",
   "version": "0.1.0",
@@ -10,6 +10,11 @@
   "categories": [
     "Other"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/microsoft/llmwiki",
+    "directory": "packages/vscode"
+  },
   "main": "./out/extension.js",
   "activationEvents": [
     "workspaceContains:wiki/index.md",
@@ -93,8 +98,10 @@
   },
   "scripts": {
     "build": "node esbuild.config.mjs",
+    "build:prod": "node esbuild.config.mjs --production",
     "lint": "tsc --noEmit",
     "watch": "node esbuild.config.mjs --watch",
+    "prepackage": "npm run build:prod",
     "package": "vsce package --no-dependencies"
   },
   "dependencies": {
@@ -106,6 +113,7 @@
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.25.0",
     "glob": "^13.0.6",
     "mocha": "^11.7.5",

@@ -1,7 +1,7 @@
 import * as esbuild from 'esbuild';
 
 const watch = process.argv.includes('--watch');
-const minify = process.argv.includes('--minify');
+const production = process.argv.includes('--production');
 
 const buildOptions = {
   entryPoints: ['src/extension.ts'],
@@ -12,7 +12,8 @@ const buildOptions = {
   format: 'cjs',
   outfile: 'out/extension.js',
   sourcemap: true,
-  minify,
+  minify: production,
+  treeShaking: true,
 };
 
 if (watch) {
@@ -21,5 +22,5 @@ if (watch) {
   console.log('Watching for changes...');
 } else {
   await esbuild.build(buildOptions);
-  console.log('Build complete: out/extension.js');
+  console.log(`Build complete: out/extension.js${production ? ' (minified)' : ''}`);
 }
