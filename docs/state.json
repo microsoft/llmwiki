@@ -24,7 +24,7 @@
     "c2-07": { "status": "completed", "attempts": 1, "pr": 28, "merged": true },
     "c2-08": { "status": "completed", "attempts": 1, "pr": 29, "merged": true },
     "c2-09": { "status": "completed", "attempts": 1, "pr": 30, "merged": true },
-    "c2-10": { "status": "pending", "attempts": 0, "pr": null, "merged": false },
+    "c2-10": { "status": "running", "attempts": 1, "pr": 31, "merged": false },
     "c2-11": { "status": "pending", "attempts": 0, "pr": null, "merged": false },
     "c2-12": { "status": "pending", "attempts": 0, "pr": null, "merged": false },
     "c2-13": { "status": "pending", "attempts": 0, "pr": null, "merged": false }
