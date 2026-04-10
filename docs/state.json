@@ -14,7 +14,7 @@
     "c4-07": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T15:02:00Z", "completed_at": "2026-04-10T15:20:00Z", "branch": "task/cycle-4/c4-07", "pr": 53, "note": "ingestWithContext + wiki_ingest_with_context MCP tool, 48 new tests. Merged PR #53." },
     "c4-08": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T15:50:00Z", "completed_at": "2026-04-10T16:04:00Z", "branch": "task/cycle-4/c4-08", "pr": 54, "note": "123 MCP integration tests: in-memory transport for all 14 tools, error cases, E2E subprocess, advanced workflows. Merged PR #54." },
     "c4-09": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T16:22:00Z", "completed_at": "2026-04-10T16:40:00Z", "branch": "task/cycle-4/c4-09", "pr": 55, "note": "Security review: 0 blockers, 4 concerns fixed (index injection, length limits, empty slugs, empty titles), 3 nits documented. 551 tests pass. Merged PR #55." },
-    "c4-10": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T16:51:00Z", "completed_at": "2026-04-10T16:58:00Z", "branch": "task/cycle-4/c4-10", "pr": 56, "note": "Documentation update: ARCHITECTURE.md, README.md, docs/mcp-tools.md, vscode/README.md — all 14 MCP tools documented. PR #56 reviewed LGTM." },
+    "c4-10": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T16:51:00Z", "completed_at": "2026-04-10T17:25:00Z", "branch": "task/cycle-4/c4-10", "pr": 56, "note": "Documentation update: ARCHITECTURE.md, README.md, docs/mcp-tools.md, vscode/README.md — all 14 MCP tools documented. Merged PR #56." },
     "c4-11": { "status": "pending", "attempts": 0 }
   },
   "cycle_history": [
