@@ -359,7 +359,12 @@ describe('ingestWithContext', () => {
 
     expect(result.ingest.status).toBe('success');
     // The existing AI page should be found as related
-    expect(result.related_pages.length).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(result.related_pages)).toBe(true);
+    for (const page of result.related_pages) {
+      expect(page).toHaveProperty('path');
+      expect(page).toHaveProperty('title');
+      expect(page).toHaveProperty('score');
+    }
   });
 });
 

@@ -457,10 +457,12 @@ export async function handleWriteToolCall(
 
     case 'wiki_ingest_with_context': {
       const sourcePath = requireString(args, 'sourcePath');
+      // S-7: Validate source path stays within project root
+      assertWithinDir(wikiRoot, sourcePath);
       const dryRun = args.dryRun === true;
       const force = args.force === true;
       const result = await ingestWithContext(sourcePath, wikiRoot, dryRun, force);
-      return JSON.stringify(result, null, 2);
+      return JSON.stringify(result);
     }
 
     default:

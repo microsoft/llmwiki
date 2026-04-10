@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { ingestSource, type IngestResult } from './ingest.js';
 import { queryWiki, type QueryResult } from './query.js';
+import { isNotFoundError, isPermissionError } from './errors.js';
 
 /** Info about a related wiki page */
 export interface PageInfo {
@@ -153,12 +154,27 @@ export async function ingestWithContext(
   let wordCount = 0;
   const contentType = detectContentType(sourcePath);
 
-  try {
-    const resolvedSource = resolve(sourcePath);
-    sourceContent = await readFile(resolvedSource, 'utf-8');
-    wordCount = countWords(sourceContent);
-  } catch {
-    // If we can't read the source, ingestSource will handle the error
+  // S-7: Prevent path traversal — source must be within project root
+  const resolvedSource = resolve(sourcePath);
+  const normalizedSource = resolvedSource.replace(/\\/g, '/');
+  const normalizedRoot = resolve(targetPath).replace(/\\/g, '/');
+  if (!normalizedSource.startsWith(normalizedRoot + '/') && normalizedSource !== normalizedRoot) {
+    throw new Error(`Source path escapes project root: ${sourcePath}`);
+  }
+
+  const BINARY_TYPES = new Set(['pdf', 'word', 'richtext']);
+
+  // Only read text-based sources for keyword analysis
+  if (!BINARY_TYPES.has(contentType)) {
+    try {
+      sourceContent = await readFile(resolvedSource, 'utf-8');
+      wordCount = countWords(sourceContent);
+    } catch (err: unknown) {
+      if (!isNotFoundError(err) && !isPermissionError(err)) {
+        throw err;
+      }
+      // If file not found or permission denied, ingestSource will handle it
+    }
   }
 
   // Perform mechanical ingest
@@ -186,8 +202,11 @@ export async function ingestWithContext(
         ]);
         relatedPages = relatedPages.filter((p) => !createdPaths.has(p.path));
       }
-    } catch {
-      // If query fails, continue with empty related pages
+    } catch (err: unknown) {
+      if (!isNotFoundError(err)) {
+        throw err;
+      }
+      // If query fails due to missing files, continue with empty related pages
     }
   }
 
