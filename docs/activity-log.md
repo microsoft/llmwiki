@@ -258,3 +258,10 @@
 - [2026-04-10T17:25:00Z] [commander] cycle=cycle-4 action=merge-pr pr=56 summary=Resolved merge conflicts and merged PR #56 (docs c4-10) via squash merge. Task c4-10 complete. 10/11 tasks done.
 
 - [2026-04-10T17:40:00Z] [commander] cycle=cycle-4 action=execute-task task=c4-11 summary=Completed task c4-11 (smart ingest workflow walkthrough): docs/workflows/smart-ingest.md (7-step guide with JSON examples) + 5 MCP integration tests. 560 tests pass. Opened PR #57.
+- [2026-04-10T17:42:08.921Z] [commander] cycle=108 action=execute-task summary=Completed task c4-11: merged PR #56 (docs c4-10), then implemented smart ingest workflow walkthrough with 7-step guide and 5 integration tests — opened PR #57.
+
+- [2026-04-10T17:45:12Z] [commander] cycle=cycle-4 action=review-pr pr=57 summary=Reviewed PR #57 (docs c4-11 smart ingest walkthrough): LGTM with 1 non-blocking concern. CI passing. Ready to merge.
+- [2026-04-10T17:46:36.294Z] [commander] cycle=109 action=review-pr summary=Reviewed PR #57 (docs c4-11 smart ingest walkthrough): LGTM with 1 non-blocking concern (status field mismatch in docs vs API), CI passing, ready to merge.
+
+- [2026-04-10T17:47:18Z] [commander] cycle=cycle-4 action=merge-pr pr=57 summary=Merged PR #57 (docs(c4-11): add smart ingest workflow walkthrough) via squash merge. Task c4-11 complete. All 11/11 cycle-4 tasks done.
+- [2026-04-10T17:47:18Z] [commander] cycle=cycle-4 action=complete-cycle summary=Cycle-4 completed: 11/11 tasks, 11 PRs merged (PRs #47-#57), 0 failures. Archived plan to docs/plan/cycle-4/. Running post-cycle maintenance (review, docs, cleanup) and cycle-5 research in parallel.
