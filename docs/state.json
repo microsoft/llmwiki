@@ -2,9 +2,9 @@
   "cycle_id": "cycle-2",
   "plan_id": "cycle-2",
   "plan_path": "docs/plan/current/plan.yaml",
-  "status": "active",
+  "status": "completed",
   "started_at": "2026-04-09T23:04:48Z",
-  "completed_at": null,
+  "completed_at": "2026-04-10T05:34:00Z",
   "score": {
     "tasks_completed": 13,
     "tasks_total": 13,
@@ -36,6 +36,16 @@
       "status": "completed",
       "started_at": "2026-04-09T18:41:00Z",
       "completed_at": "2026-04-09T22:42:05Z",
+      "tasks_completed": 13,
+      "tasks_total": 13,
+      "prs_merged": 13
+    },
+    {
+      "cycle_id": "cycle-2",
+      "title": "VS Code Extension + Monorepo Restructure",
+      "status": "completed",
+      "started_at": "2026-04-09T23:04:48Z",
+      "completed_at": "2026-04-10T05:34:00Z",
       "tasks_completed": 13,
       "tasks_total": 13,
       "prs_merged": 13
