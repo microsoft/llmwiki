@@ -1,5 +1,5 @@
 import { basename, dirname, join, relative } from 'node:path';
-import { listPages, readPage, getPageLinks } from './wiki.js';
+import { listPages, readPage } from './wiki.js';
 
 export interface BacklinkResult {
   /** Absolute path of the page containing the backlink */
@@ -16,7 +16,7 @@ export interface BacklinkResult {
  * `targetPage` should be a relative path (e.g. "concepts/ai.md") as it
  * appears in markdown link targets.
  *
- * Iterates all pages via `listPages()`, extracts links with `getPageLinks()`,
+ * Iterates all pages via `listPages()`, extracts markdown links,
  * and resolves each link relative to the source page's directory to compare
  * against the target.
  */
@@ -32,10 +32,6 @@ export async function getBacklinks(
 
   for (const pagePath of pages) {
     const page = await readPage(pagePath);
-    const links = getPageLinks(page.body);
-
-    // The link regex returns (linkText, linkTarget) — we need the text too
-    // Re-extract with text since getPageLinks only returns targets
     const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
     let match: RegExpExecArray | null;
     while ((match = linkRegex.exec(page.body)) !== null) {

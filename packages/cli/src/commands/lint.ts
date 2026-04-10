@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { lintWiki, type LintFinding, type LintResult } from '@llmwiki/shared';
+import { lintWiki, type LintResult } from '@llmwiki/shared';
 
 /**
  * Format lint result as human-readable output.

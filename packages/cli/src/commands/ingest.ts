@@ -3,7 +3,6 @@ import { stat } from 'node:fs/promises';
 import { Command } from 'commander';
 import { ingestSource, bulkIngest } from '@llmwiki/shared';
 export { type IngestResult, ingestSource } from '@llmwiki/shared';
-export { type BulkIngestResult, type BulkIngestOptions, type BulkIngestFileResult, bulkIngest } from '@llmwiki/shared';
 
 /**
  * Register the `ingest` subcommand on the wiki command group.
