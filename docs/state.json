@@ -2,8 +2,9 @@
   "cycle_id": "cycle-3",
   "plan_id": "cycle-3",
   "plan_path": "docs/plan/current/plan.yaml",
-  "status": "active",
+  "status": "completing",
   "started_at": "2026-04-10T05:50:00Z",
+  "completed_at": "2026-04-10T11:11:00Z",
   "tasks": {
     "c3-01": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T06:21:00Z", "completed_at": "2026-04-10T06:40:00Z", "merged_at": "2026-04-10T06:54:00Z", "branch": "task/cycle-3/c3-01", "pr": 36 },
     "c3-02": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T07:01:00Z", "completed_at": "2026-04-10T07:12:00Z", "merged_at": "2026-04-10T07:13:00Z", "branch": "task/cycle-3/c3-02", "pr": 37 },
@@ -36,6 +37,16 @@
       "tasks_completed": 13,
       "tasks_total": 13,
       "prs_merged": 13
+    },
+    {
+      "cycle_id": "cycle-3",
+      "title": "Infrastructure Hardening",
+      "status": "completed",
+      "started_at": "2026-04-10T05:50:00Z",
+      "completed_at": "2026-04-10T11:11:00Z",
+      "tasks_completed": 10,
+      "tasks_total": 10,
+      "prs_merged": 10
     }
   ]
 }
