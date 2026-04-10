@@ -3,12 +3,14 @@ import { join, resolve, relative } from 'node:path';
 import { listPages } from './wiki.js';
 import { readIndex } from './index-ops.js';
 import { readLog } from './log.js';
+import { API_VERSION } from './constants.js';
 
 /**
  * Result of running the status command.
  */
 export interface StatusResult {
   command: string;
+  api_version: string;
   source_count: number;
   wiki_page_count: number;
   last_ingest_date: string | null;
@@ -82,6 +84,7 @@ export async function getWikiStatus(targetPath: string): Promise<StatusResult> {
 
   return {
     command: 'status',
+    api_version: API_VERSION,
     source_count: sourceCount,
     wiki_page_count: wikiPageCount,
     last_ingest_date: lastIngestDate,

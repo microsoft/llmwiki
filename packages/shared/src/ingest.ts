@@ -4,12 +4,14 @@ import { writePage, directoryExists } from './wiki.js';
 import { addEntry, removeEntry } from './index-ops.js';
 import { appendEntry } from './log.js';
 import { slugify } from './utils.js';
+import { API_VERSION } from './constants.js';
 
 /**
  * Result of running the ingest command.
  */
 export interface IngestResult {
   command: string;
+  api_version: string;
   status: 'success' | 'error' | 'skipped';
   pages_created: string[];
   pages_updated: string[];
@@ -39,6 +41,7 @@ export async function ingestSource(
   if (!(await directoryExists(wikiDir))) {
     return {
       command: 'ingest',
+      api_version: API_VERSION,
       status: 'error',
       pages_created: [],
       pages_updated: [],
@@ -54,6 +57,7 @@ export async function ingestSource(
   if (!normalizedSource.startsWith(normalizedRoot + '/') && normalizedSource !== normalizedRoot) {
     return {
       command: 'ingest',
+      api_version: API_VERSION,
       status: 'error',
       pages_created: [],
       pages_updated: [],
@@ -69,6 +73,7 @@ export async function ingestSource(
     // ENOENT or EACCES — source file missing or not readable
     return {
       command: 'ingest',
+      api_version: API_VERSION,
       status: 'error',
       pages_created: [],
       pages_updated: [],
@@ -98,6 +103,7 @@ export async function ingestSource(
   if (summaryExists && !force) {
     return {
       command: 'ingest',
+      api_version: API_VERSION,
       status: 'skipped',
       pages_created: [],
       pages_updated: [],
@@ -161,6 +167,7 @@ export async function ingestSource(
 
   return {
     command: 'ingest',
+    api_version: API_VERSION,
     status: 'success',
     pages_created: pagesCreated,
     pages_updated: pagesUpdated,
