@@ -5,7 +5,7 @@
   "status": "active",
   "started_at": "2026-04-10T05:50:00Z",
   "tasks": {
-    "c3-01": { "status": "pending", "attempts": 0 },
+    "c3-01": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T06:21:00Z", "completed_at": "2026-04-10T06:40:00Z", "branch": "task/cycle-3/c3-01", "pr": 36 },
     "c3-02": { "status": "pending", "attempts": 0 },
     "c3-03": { "status": "pending", "attempts": 0 },
     "c3-04": { "status": "pending", "attempts": 0 },
