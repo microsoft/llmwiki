@@ -14,7 +14,7 @@
     "c3-07": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T09:03:00Z", "completed_at": "2026-04-10T09:44:00Z", "merged_at": "2026-04-10T09:56:00Z", "branch": "task/cycle-3/c3-07", "pr": 42 },
     "c3-08": { "status": "merged", "attempts": 1, "started_at": "2026-04-10T09:56:00Z", "completed_at": "2026-04-10T09:58:00Z", "merged_at": "2026-04-10T10:07:00Z", "branch": "task/cycle-3/c3-08", "pr": 43 },
     "c3-09": { "status": "running", "attempts": 1, "started_at": "2026-04-10T10:08:00Z", "branch": "task/cycle-3/c3-09" },
-    "c3-10": { "status": "pending", "attempts": 0 }
+    "c3-10": { "status": "running", "attempts": 1, "started_at": "2026-04-10T10:27:00Z", "branch": "task/cycle-3/c3-10" }
   },
   "cycle_history": [
     {
