@@ -1,0 +1,1003 @@
+plan_id: cycle-2
+objective: "Build VS Code extension for interactive wiki browsing on top of the CLI, with monorepo restructure and CLI API enhancements"
+created_at: "2025-07-17"
+created_by: gem-planner
+status: pending_approval
+research_confidence: high
+
+plan_metrics:
+  wave_1_task_count: 1
+  total_dependencies: 16
+  risk_score: medium
+
+tldr: |
+  Cycle-2 transforms the single-package CLI into an npm workspaces monorepo and builds a VS Code
+  extension for interactive wiki browsing. Wave 1 migrates to monorepo (packages/shared, packages/cli,
+  packages/vscode). Wave 2 adds missing CLI APIs (listSources, getBacklinks) and scaffolds the extension.
+  Wave 3 builds core extension features (tree views, command palette, status bar). Wave 4 adds advanced
+  tree views (sources, backlinks, lint findings). Wave 5 delivers testing and packaging.
+  Total: 13 tasks across 5 waves. 4-way parallelism in waves 2-4.
+
+open_questions:
+  - "VS Code Marketplace publisher ID — needed for packaging but not blocking development"
+  - "Extension icon — required for marketplace publishing, can be placeholder for now"
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: "Monorepo migration breaks existing 193 tests or CI workflow"
+      likelihood: medium
+      impact: critical
+      mitigation: "Run full test suite after each migration step. Keep original structure in git history for easy revert. CI workflow updated as part of the same task."
+    - scenario: "VS Code extension cannot import shared package — bundling resolution failures"
+      likelihood: medium
+      impact: high
+      mitigation: "Use esbuild with explicit externals. Test import resolution in isolation before building features. The embedded library approach is well-proven in Foam/Memo."
+    - scenario: "TreeDataProvider refresh causes performance issues with large wikis"
+      likelihood: low
+      impact: medium
+      mitigation: "Cache index reads. Use FileSystemWatcher debouncing (300ms). Lazy-load page bodies only on expand."
+    - scenario: "npm workspaces hoisting causes version conflicts with gray-matter or commander"
+      likelihood: low
+      impact: medium
+      mitigation: "Pin dependency versions. Use workspace protocol (workspace:*) for internal packages. Test with npm ci from clean state."
+  assumptions:
+    - "VS Code extension API ^1.85.0 is stable and sufficient for all planned features"
+    - "esbuild can bundle the shared package into the extension without issues"
+    - "The existing 193 tests will pass after monorepo migration with only import path changes"
+    - "Personal wiki scale (~100s of pages) means no need for pagination or virtual scrolling in tree views"
+    - "Built-in VS Code markdown preview is sufficient — no custom webview needed in cycle-2"
+
+implementation_specification:
+  code_structure: |
+    npm workspaces monorepo with three packages:
+    - packages/shared: Core wiki operations (wiki.ts, index.ts, log.ts) + new APIs (listSources, getBacklinks)
+    - packages/cli: Commander.js CLI entry point + command registration (thin wrapper over shared)
+    - packages/vscode: VS Code extension with tree views, command palette, status bar
+    Extension follows standard VS Code extension patterns: activate/deactivate entry point,
+    TreeDataProvider for each view, registerCommand for palette, StatusBarItem for stats.
+
+  affected_areas:
+    - "Root package.json — add workspaces configuration"
+    - "src/lib/ → packages/shared/src/ — move core libraries"
+    - "src/commands/ → packages/cli/src/commands/ — move CLI commands"
+    - "src/cli.ts → packages/cli/src/cli.ts — move entry point"
+    - "tests/ — reorganize to match monorepo structure"
+    - ".github/workflows/ci.yml — update for monorepo build"
+    - "packages/vscode/ — entirely new VS Code extension"
+
+  component_details:
+    - component: "@llmwiki/shared"
+      responsibility: "Core wiki CRUD operations, index management, log management, plus new listSources and getBacklinks APIs"
+      interfaces:
+        - "readPage(filePath) → WikiPage"
+        - "listPages(wikiDir) → string[]"
+        - "getPageLinks(content) → string[]"
+        - "readIndex(filePath) → IndexEntry[]"
+        - "findEntries(entries, options) → IndexEntry[]"
+        - "listSources(rawDir) → SourceFile[]"
+        - "getBacklinks(wikiDir, targetPage) → BacklinkResult[]"
+
+    - component: "@llmwiki/cli"
+      responsibility: "Commander.js CLI registration, formatting output, process exit codes — thin wrapper calling shared functions"
+      interfaces:
+        - "createProgram() → Command"
+        - "registerInitCommand(wiki) → void"
+        - "registerIngestCommand(wiki) → void"
+        - "registerQueryCommand(wiki) → void"
+        - "registerLintCommand(wiki) → void"
+        - "registerStatusCommand(wiki) → void"
+
+    - component: "@llmwiki/vscode"
+      responsibility: "VS Code extension providing interactive wiki browsing, command palette operations, and status bar"
+      interfaces:
+        - "activate(context) → void"
+        - "deactivate() → void"
+        - "WikiPagesTreeDataProvider implements TreeDataProvider"
+        - "RawSourcesTreeDataProvider implements TreeDataProvider"
+        - "BacklinksTreeDataProvider implements TreeDataProvider"
+        - "LintFindingsTreeDataProvider implements TreeDataProvider"
+
+  dependencies:
+    - component: "@llmwiki/cli"
+      relationship: "imports @llmwiki/shared for all wiki operations"
+    - component: "@llmwiki/vscode"
+      relationship: "imports @llmwiki/shared for wiki operations, uses vscode API for UI"
+
+  integration_points:
+    - "packages/shared/src/index.ts — barrel export for all shared APIs"
+    - "packages/vscode/package.json — contributes.commands, contributes.views, activationEvents"
+    - "packages/vscode/src/extension.ts — activate() registers all providers and commands"
+    - ".github/workflows/ci.yml — builds and tests all three packages"
+
+contracts:
+  - from_task: c2-01
+    to_task: c2-02
+    interface: "packages/shared/ exists with src/wiki.ts, src/index.ts, src/log.ts and a barrel src/index.ts export"
+    format: "npm workspace package @llmwiki/shared with TypeScript source files"
+
+  - from_task: c2-01
+    to_task: c2-03
+    interface: "packages/cli/src/commands/ contains ingest.ts, status.ts with imports from @llmwiki/shared"
+    format: "npm workspace package @llmwiki/cli with updated import paths"
+
+  - from_task: c2-01
+    to_task: c2-04
+    interface: "packages/vscode/ directory exists with package.json stub that depends on @llmwiki/shared"
+    format: "Empty npm workspace package @llmwiki/vscode with workspace:* dependency"
+
+  - from_task: c2-01
+    to_task: c2-05
+    interface: "Root package.json has workspaces field, each package has its own build/test scripts"
+    format: "npm workspaces configuration with per-package scripts"
+
+  - from_task: c2-02
+    to_task: c2-09
+    interface: "listSources(rawDir) → Promise<SourceFile[]> where SourceFile = { name, path, size, modified, extension }"
+    format: "Exported function from @llmwiki/shared"
+
+  - from_task: c2-02
+    to_task: c2-10
+    interface: "getBacklinks(wikiDir, targetPage) → Promise<BacklinkResult[]> where BacklinkResult = { sourcePage, sourceTitle, linkText }"
+    format: "Exported function from @llmwiki/shared"
+
+  - from_task: c2-04
+    to_task: c2-06
+    interface: "Extension activation point registers view containers, extension.ts exports activate/deactivate"
+    format: "VS Code extension with package.json contributes.viewsContainers and contributes.views"
+
+  - from_task: c2-04
+    to_task: c2-07
+    interface: "Extension package.json declares command contributions, extension.ts provides activation context"
+    format: "VS Code extension with contributes.commands array"
+
+  - from_task: c2-04
+    to_task: c2-08
+    interface: "Extension activation context for creating StatusBarItem, dispose on deactivate"
+    format: "VS Code ExtensionContext with subscriptions array"
+
+  - from_task: c2-06
+    to_task: c2-09
+    interface: "Established TreeDataProvider pattern (base class or pattern) for consistent tree view implementation"
+    format: "WikiPagesTreeDataProvider as reference implementation"
+
+  - from_task: c2-06
+    to_task: c2-10
+    interface: "Established TreeDataProvider pattern for consistent tree view implementation"
+    format: "WikiPagesTreeDataProvider as reference implementation"
+
+  - from_task: c2-06
+    to_task: c2-11
+    interface: "Established TreeDataProvider pattern for consistent tree view implementation"
+    format: "WikiPagesTreeDataProvider as reference implementation"
+
+tasks:
+  - id: c2-01
+    title: "Migrate to npm workspaces monorepo"
+    description: |
+      Restructure the single-package project into an npm workspaces monorepo with three packages:
+      packages/shared (@llmwiki/shared), packages/cli (@llmwiki/cli), and packages/vscode (@llmwiki/vscode).
+
+      Move src/lib/ (wiki.ts, index.ts, log.ts) to packages/shared/src/ with a barrel index.ts export.
+      Move src/cli.ts and src/commands/ to packages/cli/src/ with imports updated to use @llmwiki/shared.
+      Create packages/vscode/ as an empty scaffold (just package.json with workspace:* dep on shared).
+
+      Update root package.json to declare workspaces. Create tsconfig.base.json for shared compiler options.
+      Each package gets its own tsconfig.json extending the base. Move tests/ to match: tests/shared/,
+      tests/cli/, preserving existing test files with updated import paths.
+
+      Update .github/workflows/ci.yml to run build and test across all packages.
+      All 193 existing tests must pass after migration.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    conflicts_with: []
+    context_files:
+      - path: package.json
+        description: "Current single-package config — needs workspaces field"
+      - path: tsconfig.json
+        description: "Current tsconfig — becomes tsconfig.base.json"
+      - path: tsup.config.ts
+        description: "Current build config — moves to packages/cli/"
+      - path: src/lib/wiki.ts
+        description: "Core lib — moves to packages/shared/src/"
+      - path: src/lib/index.ts
+        description: "Index operations — moves to packages/shared/src/"
+      - path: src/lib/log.ts
+        description: "Log operations — moves to packages/shared/src/"
+      - path: src/cli.ts
+        description: "CLI entry point — moves to packages/cli/src/"
+      - path: .github/workflows/ci.yml
+        description: "CI workflow — needs monorepo build steps"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Initial planning — foundational structural change"
+        timestamp: "2025-07-17"
+        estimated_effort: large
+        estimated_files: 3
+        estimated_lines: 300
+        focus_area: "monorepo restructure"
+        verification:
+          - "npm install succeeds at root with workspaces"
+          - "npm run build in packages/shared produces dist/"
+          - "npm run build in packages/cli produces dist/cli.js"
+          - "All 193 existing tests pass with updated import paths"
+          - "npm test at root runs tests across all packages"
+          - "CI workflow passes on GitHub Actions"
+        acceptance_criteria:
+          - "Root package.json has workspaces: ['packages/*']"
+          - "packages/shared/package.json exists with name @llmwiki/shared"
+          - "packages/cli/package.json exists with name @llmwiki/cli, depends on @llmwiki/shared"
+          - "packages/vscode/package.json exists with name @llmwiki/vscode, depends on @llmwiki/shared"
+          - "tsconfig.base.json at root with shared compiler options"
+          - "src/lib/ files moved to packages/shared/src/ with barrel export"
+          - "src/cli.ts and src/commands/ moved to packages/cli/src/"
+          - "All existing tests pass (193 tests)"
+        failure_modes:
+          - scenario: "Circular dependency between shared and cli packages"
+            likelihood: low
+            impact: high
+            mitigation: "shared has zero dependency on cli — already verified in research. Only cli→shared direction."
+          - scenario: "Test imports break due to path changes"
+            likelihood: high
+            impact: medium
+            mitigation: "Update imports systematically using find-replace. Run tests after each package migration."
+        tech_stack:
+          - "npm workspaces"
+          - "TypeScript project references"
+          - "tsup (cli bundling)"
+        test_coverage: "All existing 193 tests must pass"
+
+  - id: c2-02
+    title: "Add listSources and getBacklinks APIs to shared package"
+    description: |
+      Add two new functions to packages/shared for use by the VS Code extension tree views:
+
+      1. listSources(rawDir: string): Promise<SourceFile[]>
+         List all files in raw/ with metadata (name, relative path, size in bytes, modified ISO date, extension).
+         Use readdir with recursive flag and stat each file. Return empty array if raw/ doesn't exist.
+
+      2. getBacklinks(wikiDir: string, targetPage: string): Promise<BacklinkResult[]>
+         Find all wiki pages that contain links pointing to targetPage. Iterate all pages via listPages(),
+         call getPageLinks() on each, filter for links resolving to targetPage. Return source page path,
+         title (from frontmatter), and link text.
+
+      Export both from the shared barrel index.ts. Write unit tests for each function.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies:
+      - c2-01
+    conflicts_with: []
+    context_files:
+      - path: src/lib/wiki.ts
+        description: "Contains getPageLinks() and listPages() — foundation for getBacklinks"
+      - path: src/commands/status.ts
+        description: "Contains readdir(rawDir) pattern — reference for listSources"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "New shared APIs required by extension tree views"
+        timestamp: "2025-07-17"
+        estimated_effort: small
+        estimated_files: 3
+        estimated_lines: 120
+        focus_area: "shared library API expansion"
+        verification:
+          - "listSources returns file metadata for each file in raw/"
+          - "listSources returns empty array when raw/ doesn't exist"
+          - "listSources handles nested subdirectories in raw/"
+          - "getBacklinks returns all pages linking to a target page"
+          - "getBacklinks returns empty array when no pages link to target"
+          - "Both functions are exported from @llmwiki/shared barrel"
+        acceptance_criteria:
+          - "listSources(rawDir) exported from packages/shared and returns SourceFile[]"
+          - "getBacklinks(wikiDir, targetPage) exported from packages/shared and returns BacklinkResult[]"
+          - "SourceFile interface: { name, path, size, modified, extension }"
+          - "BacklinkResult interface: { sourcePage, sourceTitle, linkText }"
+          - "Unit tests cover happy path, empty dir, and nested files"
+          - "All tests pass"
+        failure_modes:
+          - scenario: "getBacklinks is slow on wikis with many pages due to reading all files"
+            likelihood: low
+            impact: medium
+            mitigation: "At personal scale (~100s pages), sequential reads are fast enough. Add caching in cycle-3 if needed."
+        tech_stack:
+          - "TypeScript"
+          - "node:fs/promises"
+          - "gray-matter (existing)"
+        test_coverage: "Unit tests for both functions with edge cases"
+
+  - id: c2-03
+    title: "Fix audit findings from cycle-1 review"
+    description: |
+      Address three audit findings from the post-cycle-1 review:
+
+      S-7 (security): ingest.ts accepts arbitrary file paths — add path validation to ensure the resolved
+      source path does not escape the project root via path traversal (e.g., ../../etc/passwd). Use
+      resolve() and check that the resolved path starts with the expected base directory.
+
+      Q-1 (quality): 12 bare catch {} blocks across lib/ and commands/ — narrow each catch to specific
+      error types or at minimum add a comment explaining why the error is swallowed. Where possible,
+      catch only the expected error (e.g., ENOENT for missing files).
+
+      Q-2 (quality): readdir in status.ts missing recursive flag — the raw/ directory may contain
+      subdirectories. Use { recursive: true } and filter to files only, matching listPages() behavior.
+
+      Write tests for the path validation security fix.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies:
+      - c2-01
+    conflicts_with: []
+    context_files:
+      - path: src/commands/ingest.ts
+        description: "S-7: needs path traversal validation on source argument"
+      - path: src/commands/status.ts
+        description: "Q-2: readdir(rawDir) missing recursive flag"
+      - path: src/lib/wiki.ts
+        description: "Q-1: bare catch blocks in listPages, directoryExists"
+      - path: src/lib/index.ts
+        description: "Q-1: bare catch block in readIndex"
+      - path: src/lib/log.ts
+        description: "Q-1: bare catch blocks in appendEntry, readLog"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Address security and quality audit findings from cycle-1 review"
+        timestamp: "2025-07-17"
+        estimated_effort: small
+        estimated_files: 3
+        estimated_lines: 80
+        focus_area: "security hardening and code quality"
+        verification:
+          - "ingest rejects paths that escape the project root with a clear error message"
+          - "ingest rejects symlinks pointing outside the project root"
+          - "All catch blocks either specify error type or have explanatory comment"
+          - "status.ts readdir uses recursive: true and filters to files"
+          - "All existing tests still pass"
+        acceptance_criteria:
+          - "ingestSource validates source path doesn't escape project root via resolve() check"
+          - "Path traversal attempt returns IngestResult with status='error' and descriptive message"
+          - "All bare catch {} blocks narrowed or documented across lib/ and commands/"
+          - "status.ts readdir uses recursive flag for accurate source counting"
+          - "New test: ingest rejects ../../etc/passwd style paths"
+        failure_modes:
+          - scenario: "Path validation is too strict and rejects valid paths on Windows (backslashes)"
+            likelihood: medium
+            impact: medium
+            mitigation: "Normalize paths with resolve() before comparison. Test on both forward-slash and backslash paths."
+        tech_stack:
+          - "TypeScript"
+          - "node:path (resolve, relative)"
+        test_coverage: "Tests for path traversal rejection, valid paths acceptance"
+        requires_review: true
+        review_depth: standard
+        review_security_sensitive: true
+
+  - id: c2-04
+    title: "Scaffold VS Code extension package"
+    description: |
+      Create the packages/vscode extension with minimal but complete scaffolding:
+
+      1. package.json: name @llmwiki/vscode, displayName "LLM Wiki", engines.vscode ^1.85.0,
+         main "./out/extension.js", activationEvents (workspaceContains:wiki/index.md, onCommand:llmwiki.init),
+         contributes.commands (llmwiki.init, llmwiki.ingest, llmwiki.query, llmwiki.lint, llmwiki.status,
+         llmwiki.openPage, llmwiki.refresh), contributes.viewsContainers.activitybar (llmwiki-explorer),
+         contributes.views.llmwiki-explorer (wikiPages, rawSources, backlinks, lintFindings).
+
+      2. tsconfig.json extending ../../tsconfig.base.json, targeting ES2022, outDir ./out.
+
+      3. esbuild.config.mjs for bundling: entry src/extension.ts, bundle true, platform node,
+         external ['vscode'], format cjs, outfile out/extension.js.
+
+      4. src/extension.ts with activate(context) and deactivate() stubs. activate() should log
+         activation and set context key llmwiki.isWikiWorkspace to true.
+
+      5. .vscodeignore for lean packaging.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies:
+      - c2-01
+    conflicts_with: []
+    context_files:
+      - path: docs/plan/current/research_cycle2_vscode_extension.yaml
+        description: "Research findings with exact activation events, commands, view IDs, bundling config"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Extension scaffold — foundation for all VS Code features"
+        timestamp: "2025-07-17"
+        estimated_effort: medium
+        estimated_files: 3
+        estimated_lines: 250
+        focus_area: "VS Code extension scaffolding"
+        verification:
+          - "npm run build in packages/vscode produces out/extension.js"
+          - "Extension activates when wiki/index.md exists in workspace"
+          - "All 7 commands appear in contribution points"
+          - "4 tree view IDs declared in package.json"
+          - "esbuild bundles with vscode as external"
+        acceptance_criteria:
+          - "packages/vscode/package.json has correct activationEvents, contributes.commands, contributes.views"
+          - "src/extension.ts exports activate() and deactivate() functions"
+          - "esbuild.config.mjs bundles extension with vscode external"
+          - "npm run build produces out/extension.js"
+          - "Extension can be loaded in VS Code Extension Development Host without errors"
+        failure_modes:
+          - scenario: "esbuild cannot resolve @llmwiki/shared imports in extension bundle"
+            likelihood: medium
+            impact: high
+            mitigation: "Configure esbuild to follow workspace symlinks. Alternatively, add shared as non-external and let esbuild inline it."
+        tech_stack:
+          - "VS Code Extension API ^1.85.0"
+          - "@types/vscode"
+          - "esbuild"
+          - "TypeScript"
+        test_coverage: null
+
+  - id: c2-05
+    title: "Update CI workflow for monorepo builds"
+    description: |
+      Update .github/workflows/ci.yml to build and test all three packages in the monorepo.
+      The workflow should:
+      1. npm ci at root (installs all workspace dependencies)
+      2. Build packages in order: shared → cli → vscode (respects dependency graph)
+      3. Run lint (tsc --noEmit) for each package
+      4. Run tests for shared and cli packages (vscode tests need VS Code runtime, separate job later)
+      5. Verify the CLI binary still works via existing e2e tests
+
+      Also update .github/workflows/ingest.yml if any paths changed (CLI binary location).
+    wave: 2
+    agent: gem-devops
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies:
+      - c2-01
+    conflicts_with: []
+    context_files:
+      - path: .github/workflows/ci.yml
+        description: "Current CI — single-package build/test"
+      - path: .github/workflows/ingest.yml
+        description: "Auto-ingest workflow — may need path updates"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "CI must support monorepo structure"
+        timestamp: "2025-07-17"
+        estimated_effort: small
+        estimated_files: 2
+        estimated_lines: 60
+        focus_area: "CI/CD pipeline"
+        verification:
+          - "CI workflow builds all three packages"
+          - "CI runs tests for shared and cli packages"
+          - "CI fails if any package build or test fails"
+          - "ingest.yml still triggers correctly on raw/** pushes"
+        acceptance_criteria:
+          - "ci.yml builds packages/shared, packages/cli, packages/vscode in correct order"
+          - "ci.yml runs tests for shared and cli packages"
+          - "Workflow passes on GitHub Actions"
+          - "ingest.yml updated if CLI binary path changed"
+        failure_modes:
+          - scenario: "Workspace hoisting causes CI npm ci to fail"
+            likelihood: low
+            impact: high
+            mitigation: "Use exact node version. Test npm ci locally before pushing. Add package-lock.json to git."
+        environment: development
+        requires_approval: false
+        devops_security_sensitive: false
+
+  - id: c2-06
+    title: "Implement WikiPages TreeDataProvider"
+    description: |
+      Create the primary tree view showing all wiki pages organized by category (matching index.md structure).
+
+      WikiPagesTreeDataProvider implements vscode.TreeDataProvider<WikiTreeItem>:
+      - Top-level nodes: categories from index.md (Entities, Concepts, Sources)
+      - Child nodes: individual pages within each category (title, path, summary as description)
+      - Clicking a page opens it in the editor
+      - Refresh triggered by FileSystemWatcher on wiki/**/*.md
+      - Uses readIndex() from @llmwiki/shared to populate data
+
+      WikiTreeItem extends vscode.TreeItem with contextValue for category vs page distinction.
+      Register the provider on the 'wikiPages' view ID declared in package.json.
+    wave: 3
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies:
+      - c2-04
+    conflicts_with: []
+    context_files:
+      - path: src/lib/index.ts
+        description: "readIndex() returns IndexEntry[] with category, title, path, summary, tags"
+      - path: docs/plan/current/research_cycle2_vscode_extension.yaml
+        description: "WikiPagesTreeDataProvider design from research (lines 78-86)"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Core tree view — establishes pattern for all other tree views"
+        timestamp: "2025-07-17"
+        estimated_effort: medium
+        estimated_files: 3
+        estimated_lines: 200
+        focus_area: "VS Code tree view"
+        verification:
+          - "Tree view shows categories from index.md as top-level nodes"
+          - "Expanding a category shows its pages"
+          - "Clicking a page opens it in the editor"
+          - "Tree refreshes when wiki files change"
+          - "Empty wiki shows 'No pages found' welcome content"
+        acceptance_criteria:
+          - "WikiPagesTreeDataProvider registered on 'wikiPages' view"
+          - "Categories appear as collapsible tree items"
+          - "Pages show title as label, summary as description"
+          - "TreeItem.command opens the page file on click"
+          - "FileSystemWatcher triggers refresh on wiki/**/*.md changes"
+          - "Provider exports refresh() method for manual refresh"
+        failure_modes:
+          - scenario: "readIndex returns paths relative to wiki/ but tree view needs absolute paths"
+            likelihood: medium
+            impact: low
+            mitigation: "Join workspace folder path + 'wiki/' + entry.path to construct absolute URI for opening files"
+        tech_stack:
+          - "VS Code TreeDataProvider API"
+          - "@llmwiki/shared (readIndex)"
+          - "vscode.workspace.createFileSystemWatcher"
+        test_coverage: "Unit tests for tree item creation from IndexEntry data"
+
+  - id: c2-07
+    title: "Implement command palette integration"
+    description: |
+      Wire all 6 declared commands to actual handlers in the extension:
+
+      1. llmwiki.init: Call initWiki(workspaceFolder). Show info message with result. Only available when
+         wiki/index.md does NOT exist (use when clause).
+      2. llmwiki.ingest: Show file picker (defaultUri: raw/). Call ingestSource(selectedFile, workspaceFolder, false).
+         Show result notification. Also register as context menu on explorer for raw/ files.
+      3. llmwiki.query: Show InputBox for query string. Call queryWiki(input, workspaceFolder). Show results
+         in a QuickPick list. Selecting a result opens the page.
+      4. llmwiki.lint: Call lintWiki(workspaceFolder). Show summary notification. Refresh lint tree view.
+      5. llmwiki.status: Call getWikiStatus(workspaceFolder). Show formatted info message.
+      6. llmwiki.openPage: Show QuickPick of all pages (from readIndex). Selecting opens the page.
+      7. llmwiki.refresh: Refresh all tree views manually.
+
+      All commands import functions from @llmwiki/shared. Use vscode.window for user interaction.
+    wave: 3
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies:
+      - c2-04
+    conflicts_with: []
+    context_files:
+      - path: docs/plan/current/research_cycle2_vscode_extension.yaml
+        description: "Command palette design with IDs, titles, when clauses (lines 142-173)"
+      - path: src/commands/init.ts
+        description: "initWiki() signature and InitResult interface"
+      - path: src/commands/ingest.ts
+        description: "ingestSource() signature and IngestResult interface"
+      - path: src/commands/query.ts
+        description: "queryWiki() signature and QueryOutput interface"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Command palette is the primary interaction model alongside tree views"
+        timestamp: "2025-07-17"
+        estimated_effort: medium
+        estimated_files: 3
+        estimated_lines: 250
+        focus_area: "VS Code command registration"
+        verification:
+          - "Each command appears in the command palette with 'LLM Wiki:' prefix"
+          - "Init command only shows when wiki/index.md is absent"
+          - "Ingest shows file picker defaulting to raw/"
+          - "Query shows InputBox and then QuickPick with results"
+          - "Lint shows summary notification and refreshes lint tree"
+          - "Status shows formatted info message"
+          - "OpenPage shows QuickPick of all indexed pages"
+        acceptance_criteria:
+          - "All 7 commands registered in activate() and disposed properly"
+          - "Commands call @llmwiki/shared functions directly (no child_process)"
+          - "User feedback via vscode.window.showInformationMessage/showErrorMessage"
+          - "Query results displayed in QuickPick with title and path"
+          - "File picker for ingest defaults to workspace raw/ folder"
+          - "Commands gracefully handle uninitialized wiki (show init prompt)"
+        failure_modes:
+          - scenario: "Commands fail silently because shared functions throw unexpected errors"
+            likelihood: medium
+            impact: medium
+            mitigation: "Wrap each command handler in try/catch. Show error message to user. Log to output channel."
+        tech_stack:
+          - "VS Code commands API"
+          - "VS Code window API (InputBox, QuickPick, showInformationMessage)"
+          - "@llmwiki/shared"
+        test_coverage: "Unit tests for command handler logic (mocked vscode API)"
+
+  - id: c2-08
+    title: "Implement status bar integration"
+    description: |
+      Add a status bar item showing wiki stats at a glance:
+
+      Text format: "$(book) Wiki: {pageCount} pages"
+      Tooltip: "Sources: {sourceCount} | Last ingest: {date} | Coverage: {pct}%"
+      Command on click: llmwiki.status (shows full status).
+      Alignment: left side of status bar.
+      Visibility: only when llmwiki.isWikiWorkspace context is true.
+
+      Refresh the status bar data:
+      - On activation (initial load)
+      - When FileSystemWatcher detects changes in wiki/ or raw/
+      - Debounce refreshes (300ms) to avoid excessive stat calls
+
+      Uses getWikiStatus() from @llmwiki/shared for data.
+    wave: 3
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies:
+      - c2-04
+    conflicts_with: []
+    context_files:
+      - path: src/commands/status.ts
+        description: "getWikiStatus() returns StatusResult with all needed counts"
+      - path: docs/plan/current/research_cycle2_vscode_extension.yaml
+        description: "Status bar design (lines 183-188)"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Status bar provides at-a-glance wiki health info"
+        timestamp: "2025-07-17"
+        estimated_effort: small
+        estimated_files: 2
+        estimated_lines: 80
+        focus_area: "VS Code status bar"
+        verification:
+          - "Status bar item appears when wiki workspace is active"
+          - "Shows page count with book icon"
+          - "Tooltip shows source count, last ingest, coverage"
+          - "Clicking opens full status view"
+          - "Updates when wiki files change (debounced)"
+        acceptance_criteria:
+          - "StatusBarItem created with book icon and page count"
+          - "Tooltip shows source_count, last_ingest_date, index_coverage_pct"
+          - "Click triggers llmwiki.status command"
+          - "FileSystemWatcher updates status bar on wiki/ and raw/ changes"
+          - "Refresh debounced to 300ms"
+          - "Item hidden when not in a wiki workspace"
+        failure_modes:
+          - scenario: "Frequent file saves cause status bar flicker from rapid refreshes"
+            likelihood: medium
+            impact: low
+            mitigation: "Debounce with 300ms delay. Cache last status result. Only update display if values changed."
+        tech_stack:
+          - "VS Code StatusBarItem API"
+          - "@llmwiki/shared (getWikiStatus)"
+        test_coverage: null
+
+  - id: c2-09
+    title: "Implement RawSources TreeDataProvider"
+    description: |
+      Create a tree view showing all files in the raw/ source directory:
+
+      RawSourcesTreeDataProvider implements vscode.TreeDataProvider:
+      - Flat list of files (or grouped by subdirectory if raw/ has subdirs)
+      - Each item shows filename as label, size + modified date as description
+      - Clicking opens the file in the editor
+      - Context menu: "Ingest this source" action (calls llmwiki.ingest with the file)
+      - Refresh on FileSystemWatcher for raw/**
+      - Uses listSources() from @llmwiki/shared
+
+      Register on the 'rawSources' view ID. Show "No sources yet" welcome when raw/ is empty.
+    wave: 4
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies:
+      - c2-02
+      - c2-06
+    conflicts_with: []
+    context_files:
+      - path: docs/plan/current/research_cycle2_vscode_extension.yaml
+        description: "RawSources design (lines 88-93)"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Source browsing enables drag-and-drop ingest workflow"
+        timestamp: "2025-07-17"
+        estimated_effort: small
+        estimated_files: 2
+        estimated_lines: 120
+        focus_area: "VS Code tree view for raw sources"
+        verification:
+          - "Tree shows all files in raw/ with name and metadata"
+          - "Clicking a source file opens it in editor"
+          - "Right-click shows 'Ingest this source' context menu"
+          - "Tree updates when files are added to raw/"
+          - "Empty raw/ shows welcome content"
+        acceptance_criteria:
+          - "RawSourcesTreeDataProvider registered on 'rawSources' view"
+          - "Displays file name, size, modified date for each source"
+          - "Context menu item triggers ingest for selected file"
+          - "FileSystemWatcher on raw/** triggers refresh"
+          - "Handles empty raw/ directory gracefully"
+        failure_modes:
+          - scenario: "Large binary files in raw/ cause slow metadata reads"
+            likelihood: low
+            impact: low
+            mitigation: "stat() is fast even on large files — only reads metadata, not content"
+        tech_stack:
+          - "VS Code TreeDataProvider API"
+          - "@llmwiki/shared (listSources)"
+        test_coverage: "Unit tests for tree item creation from SourceFile data"
+
+  - id: c2-10
+    title: "Implement Backlinks TreeDataProvider"
+    description: |
+      Create a tree view showing all pages that link TO the currently active editor file:
+
+      BacklinksTreeDataProvider implements vscode.TreeDataProvider:
+      - Watches vscode.window.onDidChangeActiveTextEditor to track current file
+      - When active file is a wiki page (inside wiki/), calls getBacklinks() for that page
+      - Shows each linking page as a tree item with title and link text as description
+      - Clicking navigates to the linking page
+      - Shows "No backlinks" when no pages link to the current file
+      - Shows "Open a wiki page to see backlinks" when no editor is active or file is not in wiki/
+
+      Register on the 'backlinks' view ID. Uses getBacklinks() from @llmwiki/shared.
+    wave: 4
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies:
+      - c2-02
+      - c2-06
+    conflicts_with: []
+    context_files:
+      - path: src/lib/wiki.ts
+        description: "getPageLinks() — used by getBacklinks under the hood"
+      - path: docs/plan/current/research_cycle2_vscode_extension.yaml
+        description: "Backlinks design (lines 102-105)"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Backlinks panel is core wiki navigation feature (inspired by Foam/Memo)"
+        timestamp: "2025-07-17"
+        estimated_effort: small
+        estimated_files: 2
+        estimated_lines: 130
+        focus_area: "VS Code backlinks tree view"
+        verification:
+          - "Backlinks tree updates when switching between wiki pages"
+          - "Shows all pages that contain links to the current page"
+          - "Clicking a backlink opens the source page"
+          - "Shows 'No backlinks' when no pages link to current file"
+          - "Shows guidance when no wiki page is active"
+        acceptance_criteria:
+          - "BacklinksTreeDataProvider registered on 'backlinks' view"
+          - "Responds to active editor changes"
+          - "Correctly identifies current file as wiki page (path inside wiki/)"
+          - "Shows source page title and link text for each backlink"
+          - "Handles non-wiki files gracefully (shows guidance message)"
+        failure_modes:
+          - scenario: "getBacklinks called on every editor switch causes lag"
+            likelihood: low
+            impact: medium
+            mitigation: "Debounce editor change events (200ms). Cache results per page path. Invalidate on wiki file changes."
+        tech_stack:
+          - "VS Code TreeDataProvider API"
+          - "vscode.window.onDidChangeActiveTextEditor"
+          - "@llmwiki/shared (getBacklinks)"
+        test_coverage: "Unit tests for tree item creation from BacklinkResult data"
+
+  - id: c2-11
+    title: "Implement LintFindings TreeDataProvider"
+    description: |
+      Create a tree view showing lint findings organized by severity:
+
+      LintFindingsTreeDataProvider implements vscode.TreeDataProvider:
+      - Top-level nodes: severity groups (Errors, Warnings, Info) with counts
+      - Child nodes: individual findings (message as label, file as description)
+      - Clicking a finding opens the related file
+      - Refresh triggered by llmwiki.lint command (not automatic — lint is expensive)
+      - Show "Run lint to check wiki health" when no lint results exist
+      - Uses lintWiki() from @llmwiki/shared
+
+      Severity icons: error → $(error), warning → $(warning), info → $(info).
+      Register on the 'lintFindings' view ID.
+    wave: 4
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies:
+      - c2-06
+    conflicts_with: []
+    context_files:
+      - path: src/commands/lint.ts
+        description: "lintWiki() returns LintResult with findings array, severity counts"
+      - path: docs/plan/current/research_cycle2_vscode_extension.yaml
+        description: "LintFindings design (lines 95-100)"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Lint findings tree is unique to llmwiki — no competitor has this"
+        timestamp: "2025-07-17"
+        estimated_effort: small
+        estimated_files: 2
+        estimated_lines: 140
+        focus_area: "VS Code lint findings tree view"
+        verification:
+          - "Tree shows findings grouped by severity"
+          - "Each severity group shows count in description"
+          - "Clicking a finding opens the related file"
+          - "Tree updates after running llmwiki.lint command"
+          - "Shows guidance message when no lint results exist"
+        acceptance_criteria:
+          - "LintFindingsTreeDataProvider registered on 'lintFindings' view"
+          - "Findings grouped by severity with appropriate icons"
+          - "Finding click navigates to the related file"
+          - "llmwiki.lint command triggers tree refresh"
+          - "Empty state shows run-lint guidance"
+        failure_modes:
+          - scenario: "Lint takes several seconds on large wikis, UI appears frozen"
+            likelihood: low
+            impact: medium
+            mitigation: "Run lintWiki in a Promise with progress notification (vscode.window.withProgress). Show spinner in tree during lint."
+        tech_stack:
+          - "VS Code TreeDataProvider API"
+          - "@llmwiki/shared (lintWiki)"
+        test_coverage: "Unit tests for tree item creation from LintFinding data"
+
+  - id: c2-12
+    title: "Set up extension testing infrastructure"
+    description: |
+      Create the testing setup for the VS Code extension with two tiers:
+
+      1. Unit tests (vitest): Test tree data provider logic, command handler helpers, and status bar
+         formatting in isolation. Mock the vscode API using a lightweight mock module. Place in
+         tests/vscode/unit/. These run in CI without a VS Code instance.
+
+      2. Integration test scaffold (@vscode/test-electron): Create the infrastructure to run tests
+         inside a real VS Code instance. Set up runTest.ts launcher, test suite entry point, and
+         one smoke test that verifies extension activation. Place in tests/vscode/integration/.
+         These run locally (not in CI initially — needs display server).
+
+      Write at least 10 unit tests covering: WikiPagesTreeDataProvider (getChildren, getTreeItem),
+      command handler error paths, status bar update logic.
+    wave: 5
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies:
+      - c2-06
+      - c2-07
+    conflicts_with: []
+    context_files:
+      - path: vitest.config.ts
+        description: "Existing vitest config — extension unit tests follow same pattern"
+      - path: docs/plan/current/research_cycle2_vscode_extension.yaml
+        description: "Testing framework recommendations (lines 209-222)"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Extension needs automated testing before packaging"
+        timestamp: "2025-07-17"
+        estimated_effort: medium
+        estimated_files: 3
+        estimated_lines: 250
+        focus_area: "extension testing"
+        verification:
+          - "vitest runs extension unit tests successfully"
+          - "vscode mock module provides TreeDataProvider, window, workspace stubs"
+          - "@vscode/test-electron scaffold exists with runTest launcher"
+          - "At least 10 unit tests pass"
+          - "Integration smoke test verifies activation"
+        acceptance_criteria:
+          - "tests/vscode/unit/ contains unit tests using vitest"
+          - "vscode API mock module covers TreeDataProvider, commands, window, workspace"
+          - "tests/vscode/integration/ has @vscode/test-electron scaffold"
+          - "10+ unit tests covering tree providers and command handlers"
+          - "npm test at root includes extension unit tests"
+        failure_modes:
+          - scenario: "vscode API mock is incomplete, tests are brittle"
+            likelihood: medium
+            impact: medium
+            mitigation: "Mock only the APIs actually used. Use interface-based design so providers are testable with plain objects."
+        tech_stack:
+          - "vitest"
+          - "@vscode/test-electron"
+          - "TypeScript"
+        test_coverage: "10+ unit tests, 1 integration smoke test"
+
+  - id: c2-13
+    title: "Configure extension bundling and packaging"
+    description: |
+      Set up the complete build-to-package pipeline for the VS Code extension:
+
+      1. esbuild production build: Minification enabled, sourcemaps, tree-shaking. Ensure @llmwiki/shared
+         is inlined (NOT external) since it's our code. Only vscode is external.
+
+      2. .vscodeignore: Exclude src/, tests/, node_modules/, *.ts, tsconfig.json — only ship out/,
+         package.json, README.md, CHANGELOG.md, LICENSE.
+
+      3. Package script: npm run package → vsce package → produces .vsix file. Add @vscode/vsce as
+         devDependency.
+
+      4. README.md for extension: Features list, screenshots placeholder, installation instructions,
+         command reference, configuration reference.
+
+      5. CHANGELOG.md stub with v0.1.0 entry.
+
+      Verify the .vsix file can be installed locally via "Extensions: Install from VSIX".
+    wave: 5
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies:
+      - c2-04
+      - c2-06
+    conflicts_with: []
+    context_files:
+      - path: docs/plan/current/research_cycle2_vscode_extension.yaml
+        description: "Bundling config and publishing requirements (lines 191-238)"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Extension must be packageable for distribution"
+        timestamp: "2025-07-17"
+        estimated_effort: small
+        estimated_files: 3
+        estimated_lines: 150
+        focus_area: "extension bundling and distribution"
+        verification:
+          - "npm run build in packages/vscode produces minified out/extension.js"
+          - "npm run package produces a .vsix file"
+          - ".vsix can be installed in VS Code via 'Install from VSIX'"
+          - "Extension activates and tree views work after VSIX install"
+          - ".vsix is under 500KB (bundled, minified, no dev files)"
+        acceptance_criteria:
+          - "esbuild produces minified out/extension.js with @llmwiki/shared inlined"
+          - "vsce package produces valid .vsix file"
+          - ".vscodeignore excludes source files and dev dependencies"
+          - "README.md documents features and commands"
+          - "CHANGELOG.md has v0.1.0 entry"
+          - ".vsix installable and functional in VS Code"
+        failure_modes:
+          - scenario: "@llmwiki/shared not properly inlined — extension fails at runtime with module not found"
+            likelihood: medium
+            impact: high
+            mitigation: "Verify esbuild resolves workspace:* dependencies. Add build verification step that checks the bundle includes shared code."
+        tech_stack:
+          - "esbuild"
+          - "@vscode/vsce"
+        test_coverage: null
+        task_type: documentation
+        audience: developers
+
+planning_pass: 1
+planning_history:
+  - pass: 1
+    reason: "Initial cycle-2 planning based on research findings and strategy priorities"
+    timestamp: "2025-07-17"
