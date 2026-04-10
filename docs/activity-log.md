@@ -1,3 +1,4 @@
+- [2026-04-10T19:08:00Z] [commander] cycle=cycle-5 action=merge-pr pr=60 summary=Merged PR #60 (feat(c5-03): MCP Resources) via squash merge. Wave 1 complete (c5-01, c5-02, c5-03). Starting wave 2 tasks.
 - [2026-04-10T19:01:00Z] [commander] cycle=cycle-5 action=execute-task task=c5-03 summary=Recovered completed c5-03 (MCP Resources) from branch — 590 tests pass, opened PR #60. Wave 1 complete (c5-01, c5-02, c5-03 done).
 - [2026-04-10T18:22:00Z] [commander] cycle=cycle-5 action=merge-pr pr=58 summary=Merged PR #58 (plan: cycle-5 -- Wiki Intelligence + Self-Healing Automation) via squash merge. Cycle-5 plan active with 14 tasks across 4 waves. Starting task c5-01 (delete page operation).
 - [2026-04-10T18:22:00Z] [commander] cycle=cycle-5 action=execute-task task=c5-01 summary=Started task c5-01 (delete page operation to shared library) — delegated to gem-orchestrator on branch task/cycle-5/c5-01.
