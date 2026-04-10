@@ -12,15 +12,18 @@ export function registerIngestCommand(wiki: Command): void {
     .argument('<source>', 'Path to the source file to ingest')
     .option('--path <dir>', 'Target directory', '.')
     .option('--dry-run', 'Preview changes without writing files', false)
-    .action(async (source: string, options: { path: string; dryRun: boolean }, cmd: Command) => {
+    .option('--force', 'Re-ingest even if source was already ingested', false)
+    .action(async (source: string, options: { path: string; dryRun: boolean; force: boolean }, cmd: Command) => {
       const jsonMode = cmd.parent?.opts().json ?? false;
-      const result = await ingestSource(source, options.path, options.dryRun);
+      const result = await ingestSource(source, options.path, options.dryRun, options.force);
 
       if (jsonMode) {
         console.log(JSON.stringify(result));
       } else if (result.status === 'error') {
         console.error(`✗ ${result.error}`);
         process.exitCode = 1;
+      } else if (result.status === 'skipped') {
+        console.log(`⊘ ${result.message}`);
       } else if (result.dry_run) {
         console.log('Dry run — no files written');
         console.log(`  Would create: ${result.pages_created.join(', ')}`);

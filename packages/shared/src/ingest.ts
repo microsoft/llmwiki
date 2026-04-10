@@ -1,7 +1,7 @@
 import { readFile, stat, access, constants } from 'node:fs/promises';
 import { join, resolve, basename, extname, relative } from 'node:path';
 import { writePage, directoryExists } from './wiki.js';
-import { addEntry } from './index-ops.js';
+import { addEntry, removeEntry } from './index-ops.js';
 import { appendEntry } from './log.js';
 import { slugify } from './utils.js';
 
@@ -10,11 +10,12 @@ import { slugify } from './utils.js';
  */
 export interface IngestResult {
   command: string;
-  status: 'success' | 'error';
+  status: 'success' | 'error' | 'skipped';
   pages_created: string[];
   pages_updated: string[];
   dry_run: boolean;
   error?: string;
+  message?: string;
 }
 
 /**
@@ -27,6 +28,7 @@ export async function ingestSource(
   sourcePath: string,
   targetPath: string,
   dryRun: boolean,
+  force: boolean = false,
 ): Promise<IngestResult> {
   const root = resolve(targetPath);
   const wikiDir = join(root, 'wiki');
@@ -84,6 +86,26 @@ export async function ingestSource(
   const summaryRelPath = `sources/${slug}-summary.md`;
   const summaryFullPath = join(wikiDir, summaryRelPath);
 
+  // Duplicate detection — check if summary page already exists
+  let summaryExists = false;
+  try {
+    await access(summaryFullPath, constants.F_OK);
+    summaryExists = true;
+  } catch {
+    // ENOENT — summary does not exist yet; proceed normally
+  }
+
+  if (summaryExists && !force) {
+    return {
+      command: 'ingest',
+      status: 'skipped',
+      pages_created: [],
+      pages_updated: [],
+      dry_run: dryRun,
+      message: 'Source already ingested. Use --force to re-ingest.',
+    };
+  }
+
   // Build content excerpt (first ~500 characters)
   const excerpt = sourceContent.length > 500
     ? sourceContent.slice(0, 500) + '…'
@@ -111,7 +133,10 @@ export async function ingestSource(
     });
     pagesCreated.push(summaryRelPath);
 
-    // Update index
+    // Update index (remove existing entry first when force-overwriting to prevent duplicates)
+    if (force && summaryExists) {
+      await removeEntry(indexPath, summaryRelPath);
+    }
     await addEntry(indexPath, {
       path: summaryRelPath,
       title: sourceFilename,
