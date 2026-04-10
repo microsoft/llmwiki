@@ -4,6 +4,7 @@ import { slugify } from '../utils.js';
 import { readIndex, writeIndex, updateIndexEntry } from '../index-ops.js';
 import type { IndexEntry } from '../index-ops.js';
 import { isNotFoundError } from '../errors.js';
+import { ingestWithContext } from '../ingest-context.js';
 import {
   assertWithinDir,
   requireString,
@@ -187,6 +188,32 @@ export const WRITE_TOOLS: ToolDefinition[] = [
         },
       },
       required: ['pagePath'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'wiki_ingest_with_context',
+    description:
+      'Ingest a source file into the wiki and return enhanced context including related pages, word count, content type, and suggested next actions. Use this instead of plain ingest when you want to understand how the source relates to existing wiki content.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sourcePath: {
+          type: 'string',
+          description:
+            'Path to the source file to ingest (relative to project root)',
+        },
+        dryRun: {
+          type: 'boolean',
+          description: 'If true, simulate ingest without writing files',
+        },
+        force: {
+          type: 'boolean',
+          description:
+            'If true, re-ingest even if source was already ingested',
+        },
+      },
+      required: ['sourcePath'],
       additionalProperties: false,
     },
   },
@@ -426,6 +453,14 @@ export async function handleWriteToolCall(
         path: pagePath,
         fieldsUpdated: Object.keys(updates),
       });
+    }
+
+    case 'wiki_ingest_with_context': {
+      const sourcePath = requireString(args, 'sourcePath');
+      const dryRun = args.dryRun === true;
+      const force = args.force === true;
+      const result = await ingestWithContext(sourcePath, wikiRoot, dryRun, force);
+      return JSON.stringify(result, null, 2);
     }
 
     default:

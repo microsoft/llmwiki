@@ -9,6 +9,7 @@ export * from './lint.js';
 export * from './utils.js';
 export * from './search.js';
 export * from './ingest.js';
+export * from './ingest-context.js';
 export * from './bulk-ingest.js';
 export * from './query.js';
 export * from './status.js';
