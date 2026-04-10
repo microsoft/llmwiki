@@ -1,24 +1,26 @@
 import * as vscode from 'vscode';
 import { join, resolve, basename, extname, relative } from 'node:path';
-import { readFile, writeFile, readdir, mkdir, stat, access, constants } from 'node:fs/promises';
+import { readFile, writeFile, readdir, mkdir, stat } from 'node:fs/promises';
 import {
   readIndex,
   readPage,
   writePage,
   listPages,
-  getPageLinks,
   readLog,
   addEntry,
   appendEntry,
   directoryExists,
+  lintWiki,
   type IndexEntry,
 } from '@llmwiki/shared';
 import type { WikiPagesTreeDataProvider } from './wikiPagesTree';
 import type { RawSourcesTreeDataProvider } from './rawSourcesTree';
+import type { LintFindingsTreeDataProvider } from './lintFindingsTree';
 
 interface TreeProviders {
   wikiPages: WikiPagesTreeDataProvider;
   rawSources: RawSourcesTreeDataProvider;
+  lintFindings: LintFindingsTreeDataProvider;
 }
 
 export function registerCommands(
@@ -256,76 +258,18 @@ export function registerCommands(
       return;
     }
 
-    const normalizePath = (p: string) => p.replace(/\\/g, '/');
-
-    const allPages = await listPages(wikiDir);
-    const wikiPages = allPages.filter((p) => {
-      const rel = normalizePath(relative(wikiDir, p));
-      return rel !== 'index.md' && rel !== 'log.md';
-    });
-
-    const existingPagePaths = new Set(wikiPages.map((p) => normalizePath(relative(wikiDir, p))));
-
-    const pageLinksMap = new Map<string, string[]>();
-    const inboundLinks = new Set<string>();
-
-    for (const pagePath of wikiPages) {
-      try {
-        const page = await readPage(pagePath);
-        const links = getPageLinks(page.body);
-        const resolvedLinks: string[] = [];
-        for (const link of links) {
-          const resolved = resolve(pagePath, '..', link);
-          const rel = normalizePath(relative(wikiDir, resolved));
-          resolvedLinks.push(rel);
-          inboundLinks.add(rel);
-        }
-        pageLinksMap.set(pagePath, resolvedLinks);
-      } catch {
-        // skip unreadable pages
-      }
-    }
-
-    const indexEntries = await readIndex(indexPath);
-    const indexedPaths = new Set(indexEntries.map((e) => normalizePath(e.path)));
-
-    let errorCount = 0;
-    let warningCount = 0;
-    let infoCount = 0;
-
-    // broken-links
-    for (const [pagePath, links] of pageLinksMap) {
-      for (const linkRel of links) {
-        if (!existingPagePaths.has(linkRel)) errorCount++;
-      }
-    }
-    // orphan-pages
-    for (const pageRel of existingPagePaths) {
-      if (!inboundLinks.has(pageRel) && !indexedPaths.has(pageRel)) warningCount++;
-    }
-    // index-completeness
-    for (const pageRel of existingPagePaths) {
-      if (!indexedPaths.has(pageRel)) warningCount++;
-    }
-    // stale-entries
-    for (const entry of indexEntries) {
-      const fullPath = join(wikiDir, normalizePath(entry.path));
-      try {
-        await access(fullPath, constants.F_OK);
-      } catch {
-        errorCount++;
-      }
-    }
+    const result = await lintWiki(workspaceFolder);
+    providers.lintFindings.setFindings(result.findings);
 
     const parts: string[] = [];
-    if (errorCount > 0) parts.push(`${errorCount} error(s)`);
-    if (warningCount > 0) parts.push(`${warningCount} warning(s)`);
+    if (result.errorCount > 0) parts.push(`${result.errorCount} error(s)`);
+    if (result.warningCount > 0) parts.push(`${result.warningCount} warning(s)`);
 
     if (parts.length === 0) {
       vscode.window.showInformationMessage('Lint: no issues found ✓');
     } else {
       const summary = parts.join(', ');
-      if (errorCount > 0) {
+      if (result.errorCount > 0) {
         vscode.window.showWarningMessage(`Lint: ${summary}`);
       } else {
         vscode.window.showInformationMessage(`Lint: ${summary}`);

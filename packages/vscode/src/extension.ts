@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { WikiPagesTreeDataProvider } from './wikiPagesTree';
 import { RawSourcesTreeDataProvider } from './rawSourcesTree';
 import { BacklinksTreeDataProvider } from './backlinksTree';
+import { LintFindingsTreeDataProvider } from './lintFindingsTree';
 import { registerCommands } from './commands';
 import { createStatusBar } from './statusBar';
 
@@ -40,11 +41,14 @@ export function activate(context: vscode.ExtensionContext): void {
   rawWatcher.onDidCreate(() => rawSourcesProvider.refresh());
   rawWatcher.onDidDelete(() => rawSourcesProvider.refresh());
 
-  registerCommands(context, workspaceFolder, { wikiPages: wikiPagesProvider, rawSources: rawSourcesProvider }, outputChannel);
+  const lintFindingsProvider = new LintFindingsTreeDataProvider(workspaceFolder);
+  const lintFindingsRegistration = vscode.window.registerTreeDataProvider('lintFindings', lintFindingsProvider);
+
+  registerCommands(context, workspaceFolder, { wikiPages: wikiPagesProvider, rawSources: rawSourcesProvider, lintFindings: lintFindingsProvider }, outputChannel);
 
   const statusBar = createStatusBar(context, workspaceFolder);
 
-  context.subscriptions.push(treeRegistration, watcher, wikiPagesProvider, rawSourcesRegistration, rawWatcher, rawSourcesProvider, backlinksRegistration, backlinksProvider, statusBar);
+  context.subscriptions.push(treeRegistration, watcher, wikiPagesProvider, rawSourcesRegistration, rawWatcher, rawSourcesProvider, backlinksRegistration, backlinksProvider, lintFindingsRegistration, lintFindingsProvider, statusBar);
 }
 
 export function deactivate(): void {
