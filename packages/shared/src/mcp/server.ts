@@ -6,6 +6,7 @@ import {
 import { READ_TOOLS, handleReadToolCall } from './read-tools.js';
 import type { ToolArgs } from './read-tools.js';
 import { WRITE_TOOLS, handleWriteToolCall } from './write-tools.js';
+import { registerResources } from './resources.js';
 
 const READ_TOOL_NAMES = new Set(READ_TOOLS.map((t) => t.name));
 const WRITE_TOOL_NAMES = new Set(WRITE_TOOLS.map((t) => t.name));
@@ -23,7 +24,7 @@ const WRITE_TOOL_NAMES = new Set(WRITE_TOOLS.map((t) => t.name));
 export function createMcpServer(wikiRoot: string): Server {
   const server = new Server(
     { name: 'llmwiki', version: '0.1.0' },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {}, resources: {} } },
   );
 
   // Unified tool listing: read + write tools
@@ -52,6 +53,9 @@ export function createMcpServer(wikiRoot: string): Server {
       };
     }
   });
+
+  // Resource handlers (browsable wiki content)
+  registerResources(server, wikiRoot);
 
   return server;
 }
