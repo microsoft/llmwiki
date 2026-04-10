@@ -10,7 +10,7 @@
     "c4-03": { "status": "completed", "attempts": 2, "started_at": "2026-04-10T13:19:00Z", "completed_at": "2026-04-10T13:37:00Z", "branch": "task/cycle-4/c4-03", "pr": 49, "note": "Deduplicated regex, extracted initWiki to shared, removed passWithNoTests. Merged PR #49." },
     "c4-04": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T13:37:00Z", "completed_at": "2026-04-10T13:59:00Z", "branch": "task/cycle-4/c4-04", "pr": 50, "note": "wiki_write_page + wiki_update_page MCP tools, 14 tests. Merged PR #50." },
     "c4-05": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T14:00:00Z", "completed_at": "2026-04-10T14:28:00Z", "branch": "task/cycle-4/c4-05", "pr": 51, "note": "createEntityPage + createConceptPage + MCP tools, 23 new tests. Merged PR #51." },
-    "c4-06": { "status": "pending", "attempts": 0 },
+    "c4-06": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T14:30:00Z", "completed_at": "2026-04-10T14:53:00Z", "branch": "task/cycle-4/c4-06", "pr": 52, "note": "addCrosslinks + updateIndexEntry + 2 MCP tools, 16+ tests. Opened PR #52." },
     "c4-07": { "status": "pending", "attempts": 0 },
     "c4-08": { "status": "pending", "attempts": 0 },
     "c4-09": { "status": "pending", "attempts": 0 },
