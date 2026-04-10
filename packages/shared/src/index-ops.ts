@@ -78,6 +78,7 @@ export async function readIndex(filePath: string): Promise<IndexEntry[]> {
   try {
     content = await readFile(filePath, 'utf-8');
   } catch {
+    // ENOENT — index file doesn't exist yet; return empty entries
     return [];
   }
 

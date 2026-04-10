@@ -192,6 +192,35 @@ describe('ingestSource', () => {
     expect(page.body).toContain('raw/sample.md');
     expect(page.body).toContain('bytes');
   });
+
+  it('should reject source path that escapes project root via ../', async () => {
+    const result = await ingestSource('../../etc/passwd', tmpDir, false);
+
+    expect(result.status).toBe('error');
+    expect(result.error).toContain('Source path escapes project root');
+    expect(result.pages_created).toEqual([]);
+    expect(result.pages_updated).toEqual([]);
+  });
+
+  it('should reject absolute path outside project root', async () => {
+    const outsidePath = process.platform === 'win32' ? 'C:\\Windows\\System32\\config' : '/etc/passwd';
+    const result = await ingestSource(outsidePath, tmpDir, false);
+
+    expect(result.status).toBe('error');
+    expect(result.error).toContain('Source path escapes project root');
+    expect(result.pages_created).toEqual([]);
+    expect(result.pages_updated).toEqual([]);
+  });
+
+  it('should accept source path within project root', async () => {
+    const sourceFile = join(tmpDir, 'raw', 'valid-source.md');
+    await writeFile(sourceFile, 'Valid content.', 'utf-8');
+
+    const result = await ingestSource(sourceFile, tmpDir, false);
+
+    expect(result.status).toBe('success');
+    expect(result.pages_created).toContain('sources/valid-source-summary.md');
+  });
 });
 
 describe('ingest CLI integration', () => {

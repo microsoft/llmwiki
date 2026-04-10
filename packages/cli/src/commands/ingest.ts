@@ -55,11 +55,26 @@ export async function ingestSource(
     };
   }
 
-  // Validate source file exists
+  // S-7: Prevent path traversal — source must be within project root
   const resolvedSource = resolve(sourcePath);
+  const normalizedSource = resolvedSource.replace(/\\/g, '/');
+  const normalizedRoot = root.replace(/\\/g, '/');
+  if (!normalizedSource.startsWith(normalizedRoot + '/') && normalizedSource !== normalizedRoot) {
+    return {
+      command: 'ingest',
+      status: 'error',
+      pages_created: [],
+      pages_updated: [],
+      dry_run: dryRun,
+      error: `Source path escapes project root: ${sourcePath}`,
+    };
+  }
+
+  // Validate source file exists
   try {
     await access(resolvedSource, constants.R_OK);
   } catch {
+    // ENOENT or EACCES — source file missing or not readable
     return {
       command: 'ingest',
       status: 'error',

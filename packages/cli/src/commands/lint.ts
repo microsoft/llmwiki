@@ -23,12 +23,13 @@ async function fileExists(filePath: string): Promise<boolean> {
     await access(filePath, constants.F_OK);
     return true;
   } catch {
+    // ENOENT — file doesn't exist
     return false;
   }
 }
 
 /**
- * Normalize a path to use forward slashes for consistent comparison.
+ * Normalize a pathto use forward slashes for consistent comparison.
  */
 function normalizePath(p: string): string {
   return p.replace(/\\/g, '/');
