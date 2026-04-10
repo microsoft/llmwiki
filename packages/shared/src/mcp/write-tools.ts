@@ -1,5 +1,6 @@
 import { join } from 'node:path';
-import { readPage, writePage } from '../wiki.js';
+import { readPage, writePage, createEntityPage, createConceptPage } from '../wiki.js';
+import { slugify } from '../utils.js';
 import { readIndex, writeIndex } from '../index-ops.js';
 import type { IndexEntry } from '../index-ops.js';
 import { isNotFoundError } from '../errors.js';
@@ -49,6 +50,56 @@ export const WRITE_TOOLS: ToolDefinition[] = [
         },
       },
       required: ['pagePath', 'title', 'type', 'body'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'wiki_create_entity',
+    description:
+      'Create a new wiki entity page at wiki/entities/{slug}.md with proper frontmatter and auto-register it in the index.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Entity name (used as title and slugified for filename)',
+        },
+        content: {
+          type: 'string',
+          description: 'Markdown body content for the entity page',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional list of tags',
+        },
+      },
+      required: ['name', 'content'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'wiki_create_concept',
+    description:
+      'Create a new wiki concept page at wiki/concepts/{slug}.md with proper frontmatter and auto-register it in the index.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Concept name (used as title and slugified for filename)',
+        },
+        content: {
+          type: 'string',
+          description: 'Markdown body content for the concept page',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional list of tags',
+        },
+      },
+      required: ['name', 'content'],
       additionalProperties: false,
     },
   },
@@ -178,6 +229,46 @@ export async function handleWriteToolCall(
         path: pagePath,
         title,
         type,
+        tags,
+      });
+    }
+
+    case 'wiki_create_entity': {
+      const entityName = requireString(args, 'name');
+      const content = requireString(args, 'content');
+      const tags = optionalStringArray(args, 'tags') ?? [];
+
+      // Validate the derived path stays within wiki dir
+      const slug = slugify(entityName);
+      assertWithinDir(wikiDir, `entities/${slug}.md`);
+
+      const result = await createEntityPage(wikiDir, entityName, content, tags);
+
+      return JSON.stringify({
+        status: 'created',
+        path: result.path,
+        title: entityName,
+        type: 'entity',
+        tags,
+      });
+    }
+
+    case 'wiki_create_concept': {
+      const conceptName = requireString(args, 'name');
+      const content = requireString(args, 'content');
+      const tags = optionalStringArray(args, 'tags') ?? [];
+
+      // Validate the derived path stays within wiki dir
+      const slug = slugify(conceptName);
+      assertWithinDir(wikiDir, `concepts/${slug}.md`);
+
+      const result = await createConceptPage(wikiDir, conceptName, content, tags);
+
+      return JSON.stringify({
+        status: 'created',
+        path: result.path,
+        title: conceptName,
+        type: 'concept',
         tags,
       });
     }

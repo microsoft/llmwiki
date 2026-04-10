@@ -2,6 +2,9 @@ import matter from 'gray-matter';
 import { readFile, writeFile, readdir, stat, mkdir } from 'node:fs/promises';
 import { join, dirname, extname } from 'node:path';
 import { isNotFoundError } from './errors.js';
+import { slugify } from './utils.js';
+import { addEntry } from './index-ops.js';
+import type { IndexEntry } from './index-ops.js';
 
 export interface WikiPageFrontmatter {
   type?: string;
@@ -85,4 +88,87 @@ export function getPageLinksDetailed(content: string): PageLinkDetail[] {
 
 export function getPageLinks(content: string): string[] {
   return getPageLinksDetailed(content).map((link) => link.target);
+}
+
+export interface CreatePageResult {
+  path: string;
+  indexEntry: IndexEntry;
+}
+
+/**
+ * Create an entity page at wiki/entities/{slug}.md with proper frontmatter
+ * and register it in the wiki index.
+ */
+export async function createEntityPage(
+  wikiDir: string,
+  name: string,
+  content: string,
+  tags: string[] = [],
+): Promise<CreatePageResult> {
+  const slug = slugify(name);
+  const relPath = `entities/${slug}.md`;
+  const fullPath = join(wikiDir, relPath);
+  const now = new Date().toISOString();
+
+  await writePage(fullPath, {
+    frontmatter: {
+      type: 'entity',
+      title: name,
+      tags,
+      created: now,
+    },
+    body: content,
+  });
+
+  const indexEntry: IndexEntry = {
+    path: relPath,
+    title: name,
+    summary: '',
+    category: 'Entities',
+    tags,
+  };
+
+  const indexPath = join(wikiDir, 'index.md');
+  await addEntry(indexPath, indexEntry);
+
+  return { path: relPath, indexEntry };
+}
+
+/**
+ * Create a concept page at wiki/concepts/{slug}.md with proper frontmatter
+ * and register it in the wiki index.
+ */
+export async function createConceptPage(
+  wikiDir: string,
+  name: string,
+  content: string,
+  tags: string[] = [],
+): Promise<CreatePageResult> {
+  const slug = slugify(name);
+  const relPath = `concepts/${slug}.md`;
+  const fullPath = join(wikiDir, relPath);
+  const now = new Date().toISOString();
+
+  await writePage(fullPath, {
+    frontmatter: {
+      type: 'concept',
+      title: name,
+      tags,
+      created: now,
+    },
+    body: content,
+  });
+
+  const indexEntry: IndexEntry = {
+    path: relPath,
+    title: name,
+    summary: '',
+    category: 'Concepts',
+    tags,
+  };
+
+  const indexPath = join(wikiDir, 'index.md');
+  await addEntry(indexPath, indexEntry);
+
+  return { path: relPath, indexEntry };
 }
