@@ -10,7 +10,7 @@
     "tasks_total": 13,
     "tasks_failed": 0,
     "prs_merged": 8,
-    "prs_open": 0,
+    "prs_open": 1,
     "completion_rate": 0.615,
     "retry_rate": 0.0
   },
@@ -23,7 +23,7 @@
     "c2-06": { "status": "completed", "attempts": 1, "pr": 27, "merged": true },
     "c2-07": { "status": "completed", "attempts": 1, "pr": 28, "merged": true },
     "c2-08": { "status": "completed", "attempts": 1, "pr": 29, "merged": true },
-    "c2-09": { "status": "pending", "attempts": 0, "pr": null, "merged": false },
+    "c2-09": { "status": "running", "attempts": 1, "pr": 30, "merged": false },
     "c2-10": { "status": "pending", "attempts": 0, "pr": null, "merged": false },
     "c2-11": { "status": "pending", "attempts": 0, "pr": null, "merged": false },
     "c2-12": { "status": "pending", "attempts": 0, "pr": null, "merged": false },
