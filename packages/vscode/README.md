@@ -14,8 +14,7 @@ Interactive wiki browsing powered by LLM maintenance. Browse, query, and manage 
 
 ## Screenshots
 
-<!-- TODO: Add screenshots -->
-_Screenshots coming soon._
+_See the [Wiki Pages](#views), [Raw Sources](#views), [Backlinks](#views), and [Lint Findings](#views) tree views in the VS Code Activity Bar after initializing a wiki._
 
 ## Installation
 

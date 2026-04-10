@@ -174,6 +174,7 @@ Example output from `plaid wiki --json ingest raw/notes.md`:
 ```json
 {
   "command": "ingest",
+  "api_version": "1",
   "status": "success",
   "pages_created": ["sources/notes-summary.md"],
   "pages_updated": ["index.md", "log.md"],

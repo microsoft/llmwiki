@@ -230,6 +230,7 @@ All commands produce human-readable output by default. With `--json` on the `wik
 ```json
 {
   "command": "ingest",
+  "api_version": "1",
   "status": "success",
   "pages_created": ["sources/my-report-summary.md"],
   "pages_updated": ["index.md", "log.md"],
@@ -240,6 +241,7 @@ All commands produce human-readable output by default. With `--json` on the `wik
 ```json
 {
   "command": "lint",
+  "api_version": "1",
   "findings": [
     { "severity": "error", "category": "broken-links", "message": "...", "file": "..." }
   ],
@@ -252,6 +254,7 @@ All commands produce human-readable output by default. With `--json` on the `wik
 ```json
 {
   "command": "status",
+  "api_version": "1",
   "source_count": 5,
   "wiki_page_count": 3,
   "last_ingest_date": "2025-01-15",
@@ -271,6 +274,7 @@ llmwiki/
 │   ├── shared/                     # @llmwiki/shared — core wiki operations
 │   │   ├── src/
 │   │   │   ├── index.ts            # Barrel export (re-exports all modules)
+│   │   │   ├── constants.ts       # API_VERSION constant for JSON output versioning
 │   │   │   ├── wiki.ts             # readPage, writePage, listPages, getPageLinks, directoryExists
 │   │   │   ├── index-ops.ts        # readIndex, writeIndex, addEntry, removeEntry, findEntries
 │   │   │   ├── log.ts              # appendEntry, readLog, getRecentEntries
@@ -614,6 +618,7 @@ extension.ts
 
 | Module | Exports | Purpose |
 |--------|---------|---------|
+| `constants.ts` | `API_VERSION` | API version string (`'1'`) included in all JSON output for forward compatibility. |
 | `wiki.ts` | `readPage`, `writePage`, `listPages`, `getPageLinks`, `directoryExists` | Read/write wiki pages with gray-matter frontmatter. List `.md` files recursively. Extract internal markdown links. |
 | `index-ops.ts` | `readIndex`, `writeIndex`, `addEntry`, `removeEntry`, `findEntries` | Parse and serialize the categorized `index.md` format. CRUD operations on index entries. |
 | `log.ts` | `appendEntry`, `readLog`, `getRecentEntries` | Append timestamped entries to `log.md`. Parse log entries. Retrieve recent entries. |
