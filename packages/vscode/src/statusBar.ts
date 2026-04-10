@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
-import { join, relative } from 'node:path';
-import { readdir } from 'node:fs/promises';
-import { readIndex, listPages, readLog, directoryExists } from '@llmwiki/shared';
+import { join } from 'node:path';
+import { directoryExists, getWikiStatus } from '@llmwiki/shared';
 
 const DEBOUNCE_MS = 300;
 
@@ -52,9 +51,6 @@ export class StatusBarManager implements vscode.Disposable {
 
   private async _refresh(): Promise<void> {
     const wikiDir = join(this._workspaceFolder, 'wiki');
-    const indexPath = join(wikiDir, 'index.md');
-    const logPath = join(wikiDir, 'log.md');
-    const rawDir = join(this._workspaceFolder, 'raw');
 
     const exists = await directoryExists(wikiDir);
     if (!exists) {
@@ -63,45 +59,11 @@ export class StatusBarManager implements vscode.Disposable {
       return;
     }
 
-    // Source count
-    let sourceCount = 0;
-    try {
-      const rawEntries = await readdir(rawDir, { withFileTypes: true, recursive: true });
-      sourceCount = rawEntries.filter((e) => e.isFile()).length;
-    } catch {
-      // raw/ doesn't exist
-    }
+    const status = await getWikiStatus(this._workspaceFolder);
 
-    // Page count
-    const allPages = await listPages(wikiDir);
-    const wikiPages = allPages.filter((p) => {
-      const rel = relative(wikiDir, p).replace(/\\/g, '/');
-      return rel !== 'index.md' && rel !== 'log.md';
-    });
-    const wikiPageCount = wikiPages.length;
-
-    // Last ingest date
-    const logEntries = await readLog(logPath);
-    const ingestEntries = logEntries.filter((e) => e.verb.toLowerCase().includes('ingest'));
-    const lastIngestDate = ingestEntries.length > 0
-      ? ingestEntries[ingestEntries.length - 1].date
-      : null;
-
-    // Coverage
-    const indexEntries = await readIndex(indexPath);
-    const indexedPaths = new Set(indexEntries.map((e) => e.path));
-    const orphanPageCount = wikiPages.filter((p) => {
-      const rel = relative(wikiDir, p).replace(/\\/g, '/');
-      return !indexedPaths.has(rel);
-    }).length;
-    const indexedPageCount = wikiPageCount - orphanPageCount;
-    const coveragePct = wikiPageCount > 0
-      ? Math.round((indexedPageCount / wikiPageCount) * 100)
-      : 100;
-
-    this._item.text = `$(book) Wiki: ${wikiPageCount} pages`;
+    this._item.text = `$(book) Wiki: ${status.wiki_page_count} pages`;
     this._item.tooltip =
-      `Sources: ${sourceCount} | Last ingest: ${lastIngestDate ?? 'never'} | Coverage: ${coveragePct}%`;
+      `Sources: ${status.source_count} | Last ingest: ${status.last_ingest_date ?? 'never'} | Coverage: ${status.index_coverage_pct}%`;
   }
 
   dispose(): void {

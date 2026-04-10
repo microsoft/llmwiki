@@ -66,6 +66,7 @@ vi.mock('@llmwiki/shared', () => ({
   listPages: vi.fn(),
   readLog: vi.fn(),
   directoryExists: vi.fn(),
+  getWikiStatus: vi.fn(),
 }));
 
 // ── node:fs/promises mock ──────────────────────────────────────
@@ -74,7 +75,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 import { createStatusBar, StatusBarManager } from '../../packages/vscode/src/statusBar';
-import { readIndex, listPages, readLog, directoryExists } from '@llmwiki/shared';
+import { readIndex, listPages, readLog, directoryExists, getWikiStatus } from '@llmwiki/shared';
 import { readdir } from 'node:fs/promises';
 import * as vscode from 'vscode';
 import { join } from 'node:path';
@@ -83,6 +84,7 @@ const mockReadIndex = readIndex as Mock;
 const mockListPages = listPages as Mock;
 const mockReadLog = readLog as Mock;
 const mockDirectoryExists = directoryExists as Mock;
+const mockGetWikiStatus = getWikiStatus as Mock;
 const mockReaddir = readdir as Mock;
 const mockCreateStatusBarItem = vscode.window.createStatusBarItem as Mock;
 const mockCreateFileSystemWatcher = vscode.workspace.createFileSystemWatcher as Mock;
@@ -101,42 +103,21 @@ function setupWikiNotExists(): void {
 }
 
 function setupDefaultStats(overrides?: {
-  pages?: string[];
+  wikiPageCount?: number;
   sourceCount?: number;
-  logEntries?: Array<{ date: string; verb: string; subject: string; details: string }>;
-  indexEntries?: Array<{ path: string; title: string; summary: string; category: string; tags: string[] }>;
+  lastIngestDate?: string | null;
+  coveragePct?: number;
+  orphanPageCount?: number;
 }): void {
-  const wikiDir = join(WORKSPACE, 'wiki');
-  const pages = overrides?.pages ?? [
-    join(wikiDir, 'entities/alan-turing.md'),
-    join(wikiDir, 'concepts/neural-networks.md'),
-    join(wikiDir, 'index.md'),
-    join(wikiDir, 'log.md'),
-  ];
-  mockListPages.mockResolvedValue(pages);
-
-  if ((overrides?.sourceCount ?? 2) > 0) {
-    const files = Array.from({ length: overrides?.sourceCount ?? 2 }, (_, i) => ({
-      isFile: () => true,
-      name: `file${i}.txt`,
-    }));
-    mockReaddir.mockResolvedValue(files);
-  } else {
-    mockReaddir.mockRejectedValue(new Error('ENOENT'));
-  }
-
-  mockReadLog.mockResolvedValue(
-    overrides?.logEntries ?? [
-      { date: '2024-01-15', verb: 'ingested', subject: 'file.txt', details: 'test' },
-    ],
-  );
-
-  mockReadIndex.mockResolvedValue(
-    overrides?.indexEntries ?? [
-      { path: 'entities/alan-turing.md', title: 'Turing', summary: 's', category: 'Entities', tags: [] },
-      { path: 'concepts/neural-networks.md', title: 'NN', summary: 's', category: 'Concepts', tags: [] },
-    ],
-  );
+  mockGetWikiStatus.mockResolvedValue({
+    command: 'status',
+    source_count: overrides?.sourceCount ?? 2,
+    wiki_page_count: overrides?.wikiPageCount ?? 2,
+    last_ingest_date: overrides && 'lastIngestDate' in overrides ? overrides.lastIngestDate : '2024-01-15',
+    last_lint_date: null,
+    orphan_page_count: overrides?.orphanPageCount ?? 0,
+    index_coverage_pct: overrides?.coveragePct ?? 100,
+  });
 }
 
 const mockContext = {
@@ -252,9 +233,7 @@ describe('StatusBarManager', () => {
     it('should show "never" when no ingest entries exist', async () => {
       setupWikiExists();
       setupDefaultStats({
-        logEntries: [
-          { date: '2024-01-10', verb: 'initialized', subject: 'wiki', details: 'init' },
-        ],
+        lastIngestDate: null,
       });
 
       manager = createStatusBar(mockContext, WORKSPACE);
@@ -269,19 +248,10 @@ describe('StatusBarManager', () => {
 
     it('should compute coverage correctly with orphan pages', async () => {
       setupWikiExists();
-      const wikiDir = join(WORKSPACE, 'wiki');
       setupDefaultStats({
-        pages: [
-          join(wikiDir, 'entities/alan-turing.md'),
-          join(wikiDir, 'concepts/neural-networks.md'),
-          join(wikiDir, 'concepts/orphan.md'),
-          join(wikiDir, 'index.md'),
-          join(wikiDir, 'log.md'),
-        ],
-        indexEntries: [
-          { path: 'entities/alan-turing.md', title: 'Turing', summary: 's', category: 'Entities', tags: [] },
-          { path: 'concepts/neural-networks.md', title: 'NN', summary: 's', category: 'Concepts', tags: [] },
-        ],
+        wikiPageCount: 3,
+        orphanPageCount: 1,
+        coveragePct: 67,
       });
 
       manager = createStatusBar(mockContext, WORKSPACE);
@@ -307,11 +277,7 @@ describe('StatusBarManager', () => {
 
       vi.clearAllMocks();
       setupWikiExists();
-      setupDefaultStats({ pages: [
-        join(WIKI_DIR, 'entities/new-page.md'),
-        join(WIKI_DIR, 'index.md'),
-        join(WIKI_DIR, 'log.md'),
-      ] });
+      setupDefaultStats({ wikiPageCount: 1 });
 
       // Fire multiple change events rapidly
       mockWatchers[0]._fireChange();
@@ -319,7 +285,7 @@ describe('StatusBarManager', () => {
       mockWatchers[0]._fireDelete();
 
       // listPages should not have been called yet (debounce pending)
-      expect(mockListPages).not.toHaveBeenCalled();
+      expect(mockGetWikiStatus).not.toHaveBeenCalled();
 
       // Advance past debounce
       await vi.advanceTimersByTimeAsync(300);
@@ -327,17 +293,14 @@ describe('StatusBarManager', () => {
       await vi.runAllTimersAsync();
 
       // Should have called only once due to debounce
-      expect(mockListPages).toHaveBeenCalledTimes(1);
+      expect(mockGetWikiStatus).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('error handling', () => {
     it('should not throw when refresh encounters errors', async () => {
       setupWikiExists();
-      mockListPages.mockRejectedValue(new Error('disk error'));
-      mockReaddir.mockRejectedValue(new Error('ENOENT'));
-      mockReadLog.mockRejectedValue(new Error('disk error'));
-      mockReadIndex.mockRejectedValue(new Error('disk error'));
+      mockGetWikiStatus.mockRejectedValue(new Error('disk error'));
 
       expect(() => {
         manager = createStatusBar(mockContext, WORKSPACE);
@@ -394,7 +357,7 @@ describe('StatusBarManager', () => {
 
       // Advance past debounce time — refresh should NOT have fired
       await vi.advanceTimersByTimeAsync(500);
-      expect(mockListPages).not.toHaveBeenCalled();
+      expect(mockGetWikiStatus).not.toHaveBeenCalled();
     });
   });
 
@@ -402,13 +365,10 @@ describe('StatusBarManager', () => {
     it('should report 100% coverage when there are zero wiki pages', async () => {
       setupWikiExists();
       setupDefaultStats({
-        pages: [
-          join(WIKI_DIR, 'index.md'),
-          join(WIKI_DIR, 'log.md'),
-        ],
-        indexEntries: [],
+        wikiPageCount: 0,
         sourceCount: 0,
-        logEntries: [],
+        lastIngestDate: null,
+        coveragePct: 100,
       });
 
       manager = createStatusBar(mockContext, WORKSPACE);
@@ -422,20 +382,10 @@ describe('StatusBarManager', () => {
 
     it('should handle readdir returning a mix of files and directories', async () => {
       setupWikiExists();
-      mockListPages.mockResolvedValue([
-        join(WIKI_DIR, 'entities/page.md'),
-        join(WIKI_DIR, 'index.md'),
-        join(WIKI_DIR, 'log.md'),
-      ]);
-      mockReaddir.mockResolvedValue([
-        { isFile: () => true, name: 'a.txt' },
-        { isFile: () => false, name: 'subdir' },
-        { isFile: () => true, name: 'b.txt' },
-      ]);
-      mockReadLog.mockResolvedValue([]);
-      mockReadIndex.mockResolvedValue([
-        { path: 'entities/page.md', title: 'P', summary: 's', category: 'E', tags: [] },
-      ]);
+      setupDefaultStats({
+        wikiPageCount: 1,
+        sourceCount: 2,
+      });
 
       manager = createStatusBar(mockContext, WORKSPACE);
       await vi.runAllTimersAsync();
