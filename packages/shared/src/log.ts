@@ -1,5 +1,6 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { appendFile, readFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { isNotFoundError } from './errors.js';
 
 export interface LogEntry {
   date: string;
@@ -20,15 +21,8 @@ export async function appendEntry(
   const date = entry.date ?? new Date().toISOString().slice(0, 10);
   const formatted = `## [${date}] ${entry.verb} | ${entry.subject}\n\n${entry.details}\n\n`;
 
-  let existing = '';
-  try {
-    existing = await readFile(logPath, 'utf-8');
-  } catch {
-    // File does not exist yet — will be created
-  }
-
   await mkdir(dirname(logPath), { recursive: true });
-  await writeFile(logPath, existing + formatted, 'utf-8');
+  await appendFile(logPath, formatted, 'utf-8');
 }
 
 /**
@@ -39,9 +33,9 @@ export async function readLog(logPath: string): Promise<LogEntry[]> {
   let content: string;
   try {
     content = await readFile(logPath, 'utf-8');
-  } catch {
-    // ENOENT — log file doesn't exist yet; return empty entries
-    return [];
+  } catch (err) {
+    if (isNotFoundError(err)) return [];
+    throw err;
   }
 
   if (!content.trim()) {

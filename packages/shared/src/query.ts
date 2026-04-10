@@ -6,6 +6,7 @@ import { appendEntry } from './log.js';
 import { countOccurrences } from './search.js';
 import { excerpt } from './utils.js';
 import { API_VERSION } from './constants.js';
+import { isNotFoundError } from './errors.js';
 
 export interface QueryResult {
   title: string;
@@ -94,7 +95,8 @@ export async function queryWiki(
       for (const term of terms) {
         bodyScore += countOccurrences(body, term);
       }
-    } catch {
+    } catch (err) {
+      if (!isNotFoundError(err)) throw err;
       // Page file missing — use index score only
     }
 

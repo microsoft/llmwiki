@@ -4,6 +4,7 @@ import { listPages } from './wiki.js';
 import { readIndex } from './index-ops.js';
 import { readLog } from './log.js';
 import { API_VERSION } from './constants.js';
+import { isNotFoundError } from './errors.js';
 
 /**
  * Result of running the status command.
@@ -35,7 +36,8 @@ export async function getWikiStatus(targetPath: string): Promise<StatusResult> {
   try {
     const rawEntries = await readdir(rawDir, { withFileTypes: true, recursive: true });
     sourceCount = rawEntries.filter((e) => e.isFile()).length;
-  } catch {
+  } catch (err) {
+    if (!isNotFoundError(err)) throw err;
     // ENOENT — raw/ doesn't exist; 0 sources
   }
 

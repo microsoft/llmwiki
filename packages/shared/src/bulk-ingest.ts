@@ -5,6 +5,7 @@ import { ingestSource, type IngestResult } from './ingest.js';
 import { slugify } from './utils.js';
 import { directoryExists } from './wiki.js';
 import { API_VERSION } from './constants.js';
+import { isNotFoundError } from './errors.js';
 
 export interface BulkIngestOptions {
   dryRun?: boolean;
@@ -76,7 +77,8 @@ export async function bulkIngest(
       try {
         await access(summaryPath, constants.F_OK);
         exists = true;
-      } catch {
+      } catch (err) {
+        if (!isNotFoundError(err)) throw err;
         // Does not exist — will ingest
       }
       if (exists) {

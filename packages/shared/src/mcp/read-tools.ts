@@ -10,6 +10,7 @@ import { lintWiki } from '../lint.js';
 import { listPages, readPage } from '../wiki.js';
 import { listSources } from '../sources.js';
 import { readIndex } from '../index-ops.js';
+import { isNotFoundError } from '../errors.js';
 
 /** JSON-Schema definition for a single MCP tool. */
 interface ToolDefinition {
@@ -182,7 +183,8 @@ async function handleToolCall(
           try {
             const page = await readPage(p);
             return { path: p, frontmatter: page.frontmatter };
-          } catch {
+          } catch (err) {
+            if (!isNotFoundError(err)) throw err;
             return { path: p, frontmatter: {} };
           }
         }),

@@ -10,6 +10,7 @@ import {
   bulkIngest,
   queryWiki,
   getWikiStatus,
+  isNotFoundError,
   type IndexEntry,
 } from '@llmwiki/shared';
 import type { WikiPagesTreeDataProvider } from './wikiPagesTree';
@@ -244,7 +245,8 @@ export function registerCommands(
     let entries: IndexEntry[];
     try {
       entries = await readIndex(indexPath);
-    } catch {
+    } catch (err) {
+      if (!isNotFoundError(err)) throw err;
       vscode.window.showWarningMessage('Wiki not initialized. Run "LLM Wiki: Initialize Wiki" first.');
       return;
     }

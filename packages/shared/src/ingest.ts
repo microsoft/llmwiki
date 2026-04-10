@@ -5,6 +5,7 @@ import { addEntry, removeEntry } from './index-ops.js';
 import { appendEntry } from './log.js';
 import { slugify } from './utils.js';
 import { API_VERSION } from './constants.js';
+import { isNotFoundError, isPermissionError } from './errors.js';
 
 /**
  * Result of running the ingest command.
@@ -69,17 +70,19 @@ export async function ingestSource(
   // Validate source file exists
   try {
     await access(resolvedSource, constants.R_OK);
-  } catch {
-    // ENOENT or EACCES — source file missing or not readable
-    return {
-      command: 'ingest',
-      api_version: API_VERSION,
-      status: 'error',
-      pages_created: [],
-      pages_updated: [],
-      dry_run: dryRun,
-      error: `Source file not found: ${sourcePath}`,
-    };
+  } catch (err) {
+    if (isNotFoundError(err) || isPermissionError(err)) {
+      return {
+        command: 'ingest',
+        api_version: API_VERSION,
+        status: 'error',
+        pages_created: [],
+        pages_updated: [],
+        dry_run: dryRun,
+        error: `Source file not found: ${sourcePath}`,
+      };
+    }
+    throw err;
   }
 
   // Read source file
@@ -96,7 +99,8 @@ export async function ingestSource(
   try {
     await access(summaryFullPath, constants.F_OK);
     summaryExists = true;
-  } catch {
+  } catch (err) {
+    if (!isNotFoundError(err)) throw err;
     // ENOENT — summary does not exist yet; proceed normally
   }
 

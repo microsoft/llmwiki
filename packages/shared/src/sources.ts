@@ -1,5 +1,6 @@
 import { readdir, stat } from 'node:fs/promises';
 import { join, extname, basename } from 'node:path';
+import { isNotFoundError } from './errors.js';
 
 export interface SourceFile {
   /** File name including extension */
@@ -22,9 +23,9 @@ export async function listSources(rawDir: string): Promise<SourceFile[]> {
   let entries: string[];
   try {
     entries = await readdir(rawDir, { recursive: true }) as unknown as string[];
-  } catch {
-    // ENOENT — raw directory doesn't exist; return empty list
-    return [];
+  } catch (err) {
+    if (isNotFoundError(err)) return [];
+    throw err;
   }
 
   const results: SourceFile[] = [];
@@ -42,7 +43,8 @@ export async function listSources(rawDir: string): Promise<SourceFile[]> {
           extension: extname(entry),
         });
       }
-    } catch {
+    } catch (err) {
+      if (!isNotFoundError(err)) throw err;
       // Skip entries that can't be stat'd (e.g. broken symlinks)
     }
   }

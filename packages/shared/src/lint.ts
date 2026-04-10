@@ -3,6 +3,7 @@ import { join, resolve, relative, dirname } from 'node:path';
 import { listPages, readPage, getPageLinks, type WikiPageFrontmatter } from './wiki.js';
 import { readIndex } from './index-ops.js';
 import { API_VERSION } from './constants.js';
+import { isNotFoundError } from './errors.js';
 
 export interface LintFinding {
   severity: 'error' | 'warning' | 'info';
@@ -25,9 +26,9 @@ async function fileExists(filePath: string): Promise<boolean> {
   try {
     await access(filePath, constants.F_OK);
     return true;
-  } catch {
-    // ENOENT — file doesn't exist
-    return false;
+  } catch (err) {
+    if (isNotFoundError(err)) return false;
+    throw err;
   }
 }
 
@@ -87,7 +88,8 @@ export async function lintWiki(
         inboundLinks.add(rel);
       }
       pageLinks.set(pagePath, resolvedLinks);
-    } catch {
+    } catch (err) {
+      if (!isNotFoundError(err)) throw err;
       // Could not read page — skip
     }
   }

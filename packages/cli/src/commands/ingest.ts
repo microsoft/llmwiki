@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { Command } from 'commander';
-import { ingestSource, bulkIngest } from '@llmwiki/shared';
+import { ingestSource, bulkIngest, isNotFoundError } from '@llmwiki/shared';
 export { type IngestResult, ingestSource } from '@llmwiki/shared';
 
 /**
@@ -86,7 +86,8 @@ async function isDirectory(path: string): Promise<boolean> {
   try {
     const s = await stat(path);
     return s.isDirectory();
-  } catch {
-    return false;
+  } catch (err) {
+    if (isNotFoundError(err)) return false;
+    throw err;
   }
 }
