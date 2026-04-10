@@ -29,7 +29,7 @@ async function fileExists(filePath: string): Promise<boolean> {
 }
 
 /**
- * Normalize a pathto use forward slashes for consistent comparison.
+ * Normalize a path to use forward slashes for consistent comparison.
  */
 function normalizePath(p: string): string {
   return p.replace(/\\/g, '/');
