@@ -1,5 +1,5 @@
 import { basename, dirname, join, relative } from 'node:path';
-import { listPages, readPage } from './wiki.js';
+import { listPages, readPage, getPageLinksDetailed } from './wiki.js';
 
 export interface BacklinkResult {
   /** Absolute path of the page containing the backlink */
@@ -32,31 +32,19 @@ export async function getBacklinks(
 
   for (const pagePath of pages) {
     const page = await readPage(pagePath);
-    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-    let match: RegExpExecArray | null;
-    while ((match = linkRegex.exec(page.body)) !== null) {
-      const linkText = match[1];
-      const linkTarget = match[2];
+    const links = getPageLinksDetailed(page.body);
 
-      // Skip external and non-.md links (same filter as getPageLinks)
-      if (
-        !linkTarget.endsWith('.md') ||
-        linkTarget.startsWith('http://') ||
-        linkTarget.startsWith('https://')
-      ) {
-        continue;
-      }
-
+    for (const { text, target } of links) {
       // Resolve the link relative to the source page's directory
       const sourceDir = dirname(pagePath);
-      const resolvedAbsolute = join(sourceDir, linkTarget);
+      const resolvedAbsolute = join(sourceDir, target);
       const resolvedRelative = relative(wikiDir, resolvedAbsolute).replace(/\\/g, '/');
 
       if (resolvedRelative === normTarget) {
         results.push({
           sourcePage: pagePath,
           sourceTitle: page.frontmatter.title ?? basename(pagePath, '.md'),
-          linkText,
+          linkText: text,
         });
       }
     }

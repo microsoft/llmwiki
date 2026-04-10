@@ -3,7 +3,7 @@ import { ingestSource } from '../../../packages/cli/src/commands/ingest.js';
 import { readPage } from '../../../packages/shared/src/wiki.js';
 import { readIndex } from '../../../packages/shared/src/index-ops.js';
 import { readLog } from '../../../packages/shared/src/log.js';
-import { initWiki } from '../../../packages/cli/src/commands/init.js';
+import { initWiki } from '../../../packages/shared/src/init.js';
 import { createProgram } from '../../../packages/cli/src/cli.js';
 import { mkdtemp, rm, writeFile, readFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
