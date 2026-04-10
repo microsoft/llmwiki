@@ -7,7 +7,9 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "main": "./out/extension.js",
   "activationEvents": [
     "workspaceContains:wiki/index.md",
@@ -15,13 +17,34 @@
   ],
   "contributes": {
     "commands": [
-      { "command": "llmwiki.init", "title": "LLM Wiki: Initialize Wiki" },
-      { "command": "llmwiki.ingest", "title": "LLM Wiki: Ingest Source" },
-      { "command": "llmwiki.query", "title": "LLM Wiki: Query Wiki" },
-      { "command": "llmwiki.lint", "title": "LLM Wiki: Lint Wiki" },
-      { "command": "llmwiki.status", "title": "LLM Wiki: Show Status" },
-      { "command": "llmwiki.openPage", "title": "LLM Wiki: Open Page" },
-      { "command": "llmwiki.refresh", "title": "LLM Wiki: Refresh" }
+      {
+        "command": "llmwiki.init",
+        "title": "LLM Wiki: Initialize Wiki"
+      },
+      {
+        "command": "llmwiki.ingest",
+        "title": "LLM Wiki: Ingest Source"
+      },
+      {
+        "command": "llmwiki.query",
+        "title": "LLM Wiki: Query Wiki"
+      },
+      {
+        "command": "llmwiki.lint",
+        "title": "LLM Wiki: Lint Wiki"
+      },
+      {
+        "command": "llmwiki.status",
+        "title": "LLM Wiki: Show Status"
+      },
+      {
+        "command": "llmwiki.openPage",
+        "title": "LLM Wiki: Open Page"
+      },
+      {
+        "command": "llmwiki.refresh",
+        "title": "LLM Wiki: Refresh"
+      }
     ],
     "viewsContainers": {
       "activitybar": [
@@ -34,10 +57,22 @@
     },
     "views": {
       "llmwiki-explorer": [
-        { "id": "wikiPages", "name": "Wiki Pages" },
-        { "id": "rawSources", "name": "Raw Sources" },
-        { "id": "backlinks", "name": "Backlinks" },
-        { "id": "lintFindings", "name": "Lint Findings" }
+        {
+          "id": "wikiPages",
+          "name": "Wiki Pages"
+        },
+        {
+          "id": "rawSources",
+          "name": "Raw Sources"
+        },
+        {
+          "id": "backlinks",
+          "name": "Backlinks"
+        },
+        {
+          "id": "lintFindings",
+          "name": "Lint Findings"
+        }
       ]
     },
     "menus": {
@@ -66,9 +101,14 @@
     "@llmwiki/shared": "*"
   },
   "devDependencies": {
+    "@types/glob": "^9.0.0",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.25.0",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.5",
     "typescript": "^5.4.0"
   }
 }
