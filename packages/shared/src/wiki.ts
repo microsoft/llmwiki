@@ -1,6 +1,6 @@
 import matter from 'gray-matter';
 import { readFile, writeFile, readdir, stat, mkdir } from 'node:fs/promises';
-import { join, dirname, extname } from 'node:path';
+import { join, dirname, extname, relative } from 'node:path';
 import { isNotFoundError } from './errors.js';
 import { slugify } from './utils.js';
 import { addEntry } from './index-ops.js';
@@ -171,4 +171,105 @@ export async function createConceptPage(
   await addEntry(indexPath, indexEntry);
 
   return { path: relPath, indexEntry };
+}
+
+/**
+ * Append "See also" crosslinks to a wiki page.
+ * Validates all source and target pages exist, reads target titles from
+ * frontmatter, and appends (or extends) a "## See also" section with
+ * relative markdown links.  Duplicate links are silently skipped.
+ */
+export async function addCrosslinks(
+  wikiDir: string,
+  fromPage: string,
+  toPages: string[],
+): Promise<void> {
+  if (toPages.length === 0) return;
+
+  const fromFull = join(wikiDir, fromPage);
+
+  // Validate fromPage exists
+  try {
+    await stat(fromFull);
+  } catch (err) {
+    if (isNotFoundError(err)) {
+      throw new Error(`Source page not found: ${fromPage}`);
+    }
+    throw err;
+  }
+
+  // Validate all toPages exist, collect missing
+  const missing: string[] = [];
+  for (const tp of toPages) {
+    try {
+      await stat(join(wikiDir, tp));
+    } catch (err) {
+      if (isNotFoundError(err)) {
+        missing.push(tp);
+      } else {
+        throw err;
+      }
+    }
+  }
+  if (missing.length > 0) {
+    throw new Error(`Target pages not found: ${missing.join(', ')}`);
+  }
+
+  // Read the source page
+  const page = await readPage(fromFull);
+
+  // Build link entries for each target page
+  const linkLines: string[] = [];
+  for (const tp of toPages) {
+    const toFull = join(wikiDir, tp);
+    let title: string;
+    try {
+      const targetPage = await readPage(toFull);
+      title =
+        (targetPage.frontmatter.title as string) ||
+        tp.replace(/\.md$/, '').split('/').pop()!;
+    } catch {
+      title = tp.replace(/\.md$/, '').split('/').pop()!;
+    }
+    const relLink = relative(dirname(fromFull), toFull).replace(/\\/g, '/');
+    linkLines.push(`- [${title}](${relLink})`);
+  }
+
+  // Check if "## See also" section exists
+  const seeAlsoHeader = '## See also';
+  const seeAlsoIndex = page.body.indexOf(seeAlsoHeader);
+
+  let newBody: string;
+  if (seeAlsoIndex !== -1) {
+    // Find the end of the See also section (next ## heading or end of body)
+    const afterHeader = seeAlsoIndex + seeAlsoHeader.length;
+    const nextHeadingMatch = page.body.slice(afterHeader).search(/\n## /);
+    const sectionEnd =
+      nextHeadingMatch !== -1 ? afterHeader + nextHeadingMatch : page.body.length;
+
+    // Get existing links to avoid duplicates
+    const existingSection = page.body.slice(afterHeader, sectionEnd);
+    const existingLinks = new Set(
+      existingSection
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.startsWith('- [')),
+    );
+
+    const newLinks = linkLines.filter((l) => !existingLinks.has(l));
+    if (newLinks.length === 0) return;
+
+    // Insert new links at the end of the existing section
+    const before = page.body.slice(0, sectionEnd).trimEnd();
+    const after = page.body.slice(sectionEnd);
+    newBody = before + '\n' + newLinks.join('\n') + after;
+  } else {
+    newBody =
+      page.body.trimEnd() + '\n\n' + seeAlsoHeader + '\n\n' + linkLines.join('\n');
+  }
+
+  await writePage(fromFull, {
+    frontmatter: page.frontmatter,
+    body: newBody,
+  });
 }

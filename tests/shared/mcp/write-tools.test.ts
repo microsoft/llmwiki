@@ -643,6 +643,284 @@ describe('wiki_create_concept', () => {
 });
 
 // ---------------------------------------------------------------------------
+// wiki_add_crosslinks
+// ---------------------------------------------------------------------------
+
+describe('wiki_add_crosslinks', () => {
+  beforeEach(async () => {
+    // Create source and target pages
+    await handleWriteToolCall(
+      'wiki_write_page',
+      {
+        pagePath: 'concepts/ai.md',
+        title: 'AI',
+        type: 'concept',
+        tags: ['ai'],
+        body: 'Artificial Intelligence overview.',
+      },
+      wikiRoot,
+    );
+    await handleWriteToolCall(
+      'wiki_write_page',
+      {
+        pagePath: 'entities/openai.md',
+        title: 'OpenAI',
+        type: 'entity',
+        tags: ['company'],
+        body: 'OpenAI is an AI company.',
+      },
+      wikiRoot,
+    );
+    await handleWriteToolCall(
+      'wiki_write_page',
+      {
+        pagePath: 'concepts/ml.md',
+        title: 'Machine Learning',
+        type: 'concept',
+        tags: ['ml'],
+        body: 'ML is a subset of AI.',
+      },
+      wikiRoot,
+    );
+  });
+
+  it('should add crosslinks and return status updated', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_add_crosslinks',
+      {
+        pagePath: 'concepts/ai.md',
+        targetPages: ['entities/openai.md'],
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe('updated');
+    expect(parsed.path).toBe('concepts/ai.md');
+    expect(parsed.crosslinks).toEqual(['entities/openai.md']);
+
+    // Verify the page has a See also section
+    const page = await readPage(join(wikiDir, 'concepts', 'ai.md'));
+    expect(page.body).toContain('## See also');
+    expect(page.body).toContain('entities/openai.md');
+  });
+
+  it('should add multiple crosslinks', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_add_crosslinks',
+      {
+        pagePath: 'concepts/ai.md',
+        targetPages: ['entities/openai.md', 'concepts/ml.md'],
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.crosslinks).toEqual(['entities/openai.md', 'concepts/ml.md']);
+
+    const page = await readPage(join(wikiDir, 'concepts', 'ai.md'));
+    // Links use relative paths from source page location
+    expect(page.body).toContain('openai.md');
+    expect(page.body).toContain('ml.md');
+  });
+
+  it('should reject empty targetPages', async () => {
+    await expect(
+      handleWriteToolCall(
+        'wiki_add_crosslinks',
+        {
+          pagePath: 'concepts/ai.md',
+          targetPages: [],
+        },
+        wikiRoot,
+      ),
+    ).rejects.toThrow("'targetPages' must be a non-empty array of strings");
+  });
+
+  it('should reject missing targetPages', async () => {
+    await expect(
+      handleWriteToolCall(
+        'wiki_add_crosslinks',
+        {
+          pagePath: 'concepts/ai.md',
+        },
+        wikiRoot,
+      ),
+    ).rejects.toThrow("'targetPages' must be a non-empty array of strings");
+  });
+
+  it('should throw when target page does not exist', async () => {
+    await expect(
+      handleWriteToolCall(
+        'wiki_add_crosslinks',
+        {
+          pagePath: 'concepts/ai.md',
+          targetPages: ['entities/nonexistent.md'],
+        },
+        wikiRoot,
+      ),
+    ).rejects.toThrow('Target pages not found: entities/nonexistent.md');
+  });
+
+  it('should block path traversal on pagePath', async () => {
+    await expect(
+      handleWriteToolCall(
+        'wiki_add_crosslinks',
+        {
+          pagePath: '../../etc/passwd',
+          targetPages: ['entities/openai.md'],
+        },
+        wikiRoot,
+      ),
+    ).rejects.toThrow('Path traversal detected');
+  });
+
+  it('should block path traversal on targetPages', async () => {
+    await expect(
+      handleWriteToolCall(
+        'wiki_add_crosslinks',
+        {
+          pagePath: 'concepts/ai.md',
+          targetPages: ['../../etc/passwd'],
+        },
+        wikiRoot,
+      ),
+    ).rejects.toThrow('Path traversal detected');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// wiki_update_index
+// ---------------------------------------------------------------------------
+
+describe('wiki_update_index', () => {
+  beforeEach(async () => {
+    // Create a page so there's an index entry
+    await handleWriteToolCall(
+      'wiki_write_page',
+      {
+        pagePath: 'concepts/ai.md',
+        title: 'AI',
+        type: 'concept',
+        tags: ['ai'],
+        body: 'Artificial Intelligence overview.',
+      },
+      wikiRoot,
+    );
+  });
+
+  it('should update summary in the index', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_update_index',
+      {
+        pagePath: 'concepts/ai.md',
+        summary: 'A brief overview of AI',
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe('updated');
+    expect(parsed.path).toBe('concepts/ai.md');
+    expect(parsed.fieldsUpdated).toContain('summary');
+
+    const entries = await readIndex(indexPath);
+    const entry = entries.find((e) => e.path === 'concepts/ai.md');
+    expect(entry!.summary).toBe('A brief overview of AI');
+  });
+
+  it('should update tags in the index', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_update_index',
+      {
+        pagePath: 'concepts/ai.md',
+        tags: ['ai', 'ml', 'deep-learning'],
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe('updated');
+    expect(parsed.fieldsUpdated).toContain('tags');
+
+    const entries = await readIndex(indexPath);
+    const entry = entries.find((e) => e.path === 'concepts/ai.md');
+    expect(entry!.tags).toEqual(['ai', 'ml', 'deep-learning']);
+  });
+
+  it('should update category in the index', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_update_index',
+      {
+        pagePath: 'concepts/ai.md',
+        category: 'Topics',
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe('updated');
+    expect(parsed.fieldsUpdated).toContain('category');
+
+    const entries = await readIndex(indexPath);
+    const entry = entries.find((e) => e.path === 'concepts/ai.md');
+    expect(entry!.category).toBe('Topics');
+  });
+
+  it('should update multiple fields at once', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_update_index',
+      {
+        pagePath: 'concepts/ai.md',
+        summary: 'Updated summary',
+        tags: ['updated'],
+        category: 'NewCategory',
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe('updated');
+    expect(parsed.fieldsUpdated).toEqual(expect.arrayContaining(['summary', 'tags', 'category']));
+
+    const entries = await readIndex(indexPath);
+    const entry = entries.find((e) => e.path === 'concepts/ai.md');
+    expect(entry!.summary).toBe('Updated summary');
+    expect(entry!.tags).toEqual(['updated']);
+    expect(entry!.category).toBe('NewCategory');
+  });
+
+  it('should return not_found for non-existent entry', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_update_index',
+      {
+        pagePath: 'nonexistent/page.md',
+        summary: 'Does not exist',
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe('not_found');
+    expect(parsed.path).toBe('nonexistent/page.md');
+  });
+
+  it('should return fieldsUpdated as empty array when no optional fields provided', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_update_index',
+      {
+        pagePath: 'concepts/ai.md',
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe('updated');
+    expect(parsed.fieldsUpdated).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Unknown tool
 // ---------------------------------------------------------------------------
 

@@ -165,6 +165,29 @@ export async function removeEntry(
 }
 
 /**
+ * Update metadata fields (summary, tags, category) for an existing index entry.
+ * Returns `true` if the entry was found and updated, `false` if not found.
+ */
+export async function updateIndexEntry(
+  filePath: string,
+  pagePath: string,
+  updates: Partial<Omit<IndexEntry, 'path'>>,
+): Promise<boolean> {
+  const entries = await readIndex(filePath);
+  const idx = entries.findIndex((e) => e.path === pagePath);
+  if (idx < 0) return false;
+
+  const entry = entries[idx];
+  if (updates.title !== undefined) entry.title = updates.title;
+  if (updates.summary !== undefined) entry.summary = updates.summary;
+  if (updates.tags !== undefined) entry.tags = updates.tags;
+  if (updates.category !== undefined) entry.category = updates.category;
+
+  await writeIndex(filePath, entries);
+  return true;
+}
+
+/**
  * Search entries by title substring and/or tags.
  * Title matching is case-insensitive. Tag matching requires at least
  * one of the provided tags to be present on the entry.
@@ -187,3 +210,4 @@ export function findEntries(
     return true;
   });
 }
+

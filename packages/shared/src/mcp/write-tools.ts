@@ -1,7 +1,7 @@
 import { join } from 'node:path';
-import { readPage, writePage, createEntityPage, createConceptPage } from '../wiki.js';
+import { readPage, writePage, createEntityPage, createConceptPage, addCrosslinks } from '../wiki.js';
 import { slugify } from '../utils.js';
-import { readIndex, writeIndex } from '../index-ops.js';
+import { readIndex, writeIndex, updateIndexEntry } from '../index-ops.js';
 import type { IndexEntry } from '../index-ops.js';
 import { isNotFoundError } from '../errors.js';
 import {
@@ -134,6 +134,56 @@ export const WRITE_TOOLS: ToolDefinition[] = [
         bodyReplace: {
           type: 'string',
           description: 'Content to replace the entire body with',
+        },
+      },
+      required: ['pagePath'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'wiki_add_crosslinks',
+    description:
+      'Add cross-reference links ("See also" section) from one wiki page to one or more target pages. Validates all target pages exist.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pagePath: {
+          type: 'string',
+          description: 'Relative path of the source page within wiki/ (e.g. "concepts/ai.md")',
+        },
+        targetPages: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Array of relative paths to link to (e.g. ["entities/openai.md"])',
+        },
+      },
+      required: ['pagePath', 'targetPages'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'wiki_update_index',
+    description:
+      'Update metadata (summary, tags, category) for an existing entry in the wiki index. Returns success/failure.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pagePath: {
+          type: 'string',
+          description: 'Path of the index entry to update (e.g. "concepts/ai.md")',
+        },
+        summary: {
+          type: 'string',
+          description: 'New summary text (optional)',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'New tags list (optional)',
+        },
+        category: {
+          type: 'string',
+          description: 'New category (optional)',
         },
       },
       required: ['pagePath'],
@@ -333,6 +383,48 @@ export async function handleWriteToolCall(
         frontmatter: mergedFrontmatter,
         bodyUpdated: bodyAppend !== undefined || bodyReplace !== undefined,
         indexUpdated: metadataChanged,
+      });
+    }
+
+    case 'wiki_add_crosslinks': {
+      const pagePath = requireString(args, 'pagePath');
+      const targetPages = optionalStringArray(args, 'targetPages');
+      if (!targetPages || targetPages.length === 0) {
+        throw new Error("'targetPages' must be a non-empty array of strings");
+      }
+
+      // Validate paths stay within wiki dir
+      assertWithinDir(wikiDir, pagePath);
+      for (const tp of targetPages) {
+        assertWithinDir(wikiDir, tp);
+      }
+
+      await addCrosslinks(wikiDir, pagePath, targetPages);
+
+      return JSON.stringify({
+        status: 'updated',
+        path: pagePath,
+        crosslinks: targetPages,
+      });
+    }
+
+    case 'wiki_update_index': {
+      const pagePath = requireString(args, 'pagePath');
+      const summary = optionalString(args, 'summary');
+      const tags = optionalStringArray(args, 'tags');
+      const category = optionalString(args, 'category');
+
+      const updates: Partial<Omit<IndexEntry, 'path'>> = {};
+      if (summary !== undefined) updates.summary = summary;
+      if (tags !== undefined) updates.tags = tags;
+      if (category !== undefined) updates.category = category;
+
+      const updated = await updateIndexEntry(indexPath, pagePath, updates);
+
+      return JSON.stringify({
+        status: updated ? 'updated' : 'not_found',
+        path: pagePath,
+        fieldsUpdated: Object.keys(updates),
       });
     }
 
