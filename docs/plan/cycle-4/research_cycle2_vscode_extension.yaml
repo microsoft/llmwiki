@@ -1,0 +1,999 @@
+plan_id: cycle-2
+objective: "Research architecture and patterns for VS Code extension wrapping the llmwiki CLI, plus CLI improvements needed to support it"
+focus_area: vscode_extension_and_cli_evolution
+created_at: "2025-07-17"
+created_by: gem-researcher
+status: completed
+
+tldr: |
+  - The CLI already exports clean async functions (initWiki, ingestSource, queryWiki, lintWiki, getWikiStatus) with typed result interfaces — the extension should import these directly as a library rather than shelling out to child_process.
+  - Best monorepo structure: npm workspaces with packages/cli, packages/vscode, packages/shared (shared types + lib/) — minimal migration since src/lib/ already contains pure, reusable functions with no commander dependency.
+  - Competitor analysis (Foam, Dendron, Memo) shows the winning pattern is TreeDataProvider for wiki browsing + backlinks panel + command palette integration — no need for heavyweight webview except for rendered page preview.
+  - Key CLI gaps for extension support: no file watcher / change events, no "list all pages with metadata" command, no backlinks/cross-reference query API, and the query command uses naive substring search (no TF-IDF or fuzzy match).
+  - Extension activation should use workspaceContains:wiki/index.md to avoid loading in non-wiki workspaces; esbuild for bundling with vscode as external.
+
+research_metadata:
+  methodology: "Hybrid retrieval: full source code read of all 8 src/ files + 11 test files, web search for VS Code extension API patterns, competitor architectures (Foam/Dendron/Memo), monorepo strategies, and publishing workflows"
+  scope: "Complete read of all production source code (8 files, ~750 lines), all test structure (11 test files), both CI workflows, package.json, tsconfig.json, tsup.config.ts. External research on VS Code APIs, competitor extensions, monorepo patterns."
+  confidence: high
+  coverage: 100
+  decision_blockers: 2
+  research_blockers: 0
+
+# =============================================================================
+# SECTION 1: VS CODE EXTENSION ARCHITECTURE
+# =============================================================================
+
+vscode_extension_architecture:
+  cli_invocation_strategy:
+    recommendation_basis: "Analysis of existing codebase structure"
+    options:
+      - option: "embedded_library"
+        description: "Import CLI functions directly as a TypeScript library"
+        evidence: |
+          The CLI already separates logic from commander registration cleanly:
+          - initWiki(targetPath) → Promise<InitResult>
+          - ingestSource(sourcePath, targetPath, dryRun) → Promise<IngestResult>
+          - queryWiki(queryStr, targetPath, save) → Promise<QueryOutput>
+          - lintWiki(targetPath, categories?) → Promise<LintResult>
+          - getWikiStatus(targetPath) → Promise<StatusResult>
+          All functions accept plain string paths and return typed interfaces.
+          None depend on commander, process.argv, or console.log.
+          The lib/ layer (wiki.ts, index.ts, log.ts) is fully decoupled.
+        pros:
+          - "Zero serialization overhead — direct function calls with typed returns"
+          - "Shared types between extension and CLI at compile time"
+          - "No PATH resolution, no binary installation requirement"
+          - "Better error handling — catch exceptions directly vs parsing stderr"
+        cons:
+          - "Tight coupling between extension and CLI versions"
+          - "Must restructure as monorepo to share code"
+
+      - option: "child_process"
+        description: "Shell out to the CLI binary using child_process.execFile"
+        evidence: |
+          The --json flag already produces structured JSON for all commands.
+          The e2e tests (tests/e2e/cli.test.ts) demonstrate this exact pattern —
+          they use execFile(NODE, [CLI_PATH, 'wiki', ...args]) and parse JSON output.
+        pros:
+          - "Full decoupling — extension and CLI can version independently"
+          - "Works even if CLI is installed globally or via npx"
+          - "Already proven pattern in the e2e test suite"
+        cons:
+          - "Process spawn overhead on every operation"
+          - "Must parse JSON strings and handle serialization errors"
+          - "Error messages lose type information"
+
+      chosen_pattern: "embedded_library (primary) with child_process fallback"
+      rationale: |
+        The codebase is perfectly structured for embedded use. All business logic
+        functions are exported independently of the commander registration functions.
+        The lib/ layer (wiki.ts, index.ts, log.ts) has zero CLI dependencies.
+        Use embedded imports for monorepo builds; support child_process as fallback
+        for users who install the CLI separately.
+
+  tree_view_design:
+    api: "vscode.TreeDataProvider<T>"
+    providers_needed:
+      - provider: "WikiPagesTreeDataProvider"
+        data_source: "readIndex(wiki/index.md) → IndexEntry[]"
+        structure: "Category (H2 headings) → Individual pages"
+        fields_per_node: "title, path, summary, tags, category"
+        refresh_trigger: "FileSystemWatcher on wiki/**/*.md"
+        existing_support: |
+          IndexEntry already has: path, title, summary, category, tags.
+          readIndex() parses the categorized markdown index.
+          findEntries() supports title and tag filtering.
+
+      - provider: "RawSourcesTreeDataProvider"
+        data_source: "readdir(raw/) recursive"
+        structure: "Flat list or subdirectory grouping"
+        refresh_trigger: "FileSystemWatcher on raw/**"
+        existing_support: "getWikiStatus() counts raw files but doesn't list them."
+        gap: "Need a listSources() function that returns file metadata"
+
+      - provider: "LintFindingsTreeDataProvider"
+        data_source: "lintWiki() → LintResult.findings[]"
+        structure: "Severity (error/warning/info) → Individual findings"
+        fields_per_node: "severity, category, message, file"
+        refresh_trigger: "Manual (on command) or on wiki file save"
+        existing_support: "LintFinding has severity, category, message, file — ready to use"
+
+      - provider: "BacklinksTreeDataProvider"
+        data_source: "Needs new API — scan all pages for links to active file"
+        structure: "Flat list of pages linking to the current editor file"
+        gap: "getPageLinks() extracts outbound links; need getBacklinks(targetPage) for inbound"
+
+    competitor_patterns:
+      foam:
+        tree_views: "NotesTreeDataProvider, TagsTreeDataProvider, OrphansTreeDataProvider, PlaceholdersTreeDataProvider"
+        refresh: "FileSystemWatcher + workspace events"
+        architecture: "FoamWorkspace model with FoamGraph for relationship tracking"
+        lesson: "Multiple focused tree views > one monolithic tree"
+
+      dendron:
+        tree_views: "Custom hierarchical tree using dot-notation (project.topic.detail)"
+        architecture: "Client-server model — VS Code extension as client, express.js backend server"
+        refresh: "Server-mediated updates"
+        lesson: "Client-server is overengineered for our scale; direct function calls are better"
+
+      memo:
+        tree_views: "Standard VS Code file explorer + backlinks panel"
+        architecture: "Lightweight, file-based, no custom tree hierarchy"
+        refresh: "VS Code built-in file watcher"
+        lesson: "Minimalist approach works well for small-to-medium wikis — matches our scope"
+
+  webview_design:
+    purpose: "Rendered markdown preview for wiki pages"
+    approach: "Use VS Code built-in markdown preview (vscode.commands.executeCommand('markdown.showPreview'))"
+    custom_webview_needed: false
+    rationale: |
+      VS Code's built-in markdown preview already renders .md files with frontmatter.
+      Custom webview only needed if we want: interactive cross-reference graphs,
+      custom frontmatter rendering, or embedded query results.
+      Recommendation: start with built-in preview, add custom webview in cycle-3
+      only if user feedback demands it.
+    future_webview_candidates:
+      - "Wiki graph visualization (like Foam's graph view)"
+      - "Query result synthesis view"
+      - "Dashboard showing status + recent activity"
+
+  command_palette:
+    commands:
+      - id: "llmwiki.init"
+        title: "LLM Wiki: Initialize Wiki"
+        implementation: "initWiki(workspaceFolder)"
+        when: "workspaceFolderCount > 0 && !workspaceContains:wiki/index.md"
+
+      - id: "llmwiki.ingest"
+        title: "LLM Wiki: Ingest Source"
+        implementation: "ingestSource(selectedFile, workspaceFolder, false)"
+        when: "workspaceContains:wiki/index.md"
+        input: "File picker or right-click context menu on raw/ files"
+
+      - id: "llmwiki.query"
+        title: "LLM Wiki: Search Wiki"
+        implementation: "queryWiki(inputBoxValue, workspaceFolder)"
+        when: "workspaceContains:wiki/index.md"
+        input: "InputBox with query string"
+
+      - id: "llmwiki.lint"
+        title: "LLM Wiki: Lint Wiki"
+        implementation: "lintWiki(workspaceFolder)"
+        when: "workspaceContains:wiki/index.md"
+
+      - id: "llmwiki.status"
+        title: "LLM Wiki: Show Status"
+        implementation: "getWikiStatus(workspaceFolder)"
+        when: "workspaceContains:wiki/index.md"
+
+      - id: "llmwiki.openPage"
+        title: "LLM Wiki: Open Wiki Page"
+        implementation: "Quick pick from readIndex() results → open in editor"
+        when: "workspaceContains:wiki/index.md"
+
+  activation_events:
+    - "workspaceContains:wiki/index.md"
+    - "onCommand:llmwiki.init"
+    rationale: |
+      Only activate when the workspace contains a wiki (wiki/index.md exists)
+      or when the user explicitly runs the init command.
+      Never use "*" — it degrades VS Code startup performance.
+
+  status_bar:
+    items:
+      - text: "$(book) Wiki: {pageCount} pages"
+        tooltip: "Source count, last ingest, index coverage"
+        command: "llmwiki.status"
+        data_source: "getWikiStatus() — cached, refreshed on file changes"
+        alignment: "left"
+
+  bundling:
+    tool: "esbuild"
+    config:
+      entry: "./src/extension.ts"
+      bundle: true
+      platform: "node"
+      target: "node20"
+      external: ["vscode"]
+      format: "cjs"
+      sourcemap: true
+      minify: true
+      outfile: "./out/extension.js"
+    rationale: |
+      esbuild is the recommended VS Code extension bundler (official docs).
+      Already used by the CLI (via tsup which wraps esbuild).
+      Must mark 'vscode' as external — it's provided by the runtime.
+      CJS format required for VS Code extensions (main field in package.json).
+
+  testing:
+    frameworks:
+      - name: "@vscode/test-electron"
+        purpose: "Integration tests that run inside a real VS Code instance"
+        use_for: "Testing tree views, command registration, activation, webview rendering"
+
+      - name: "vitest"
+        purpose: "Unit tests for shared library code and extension logic"
+        use_for: "Testing data transformation, tree item creation, configuration handling"
+        existing_usage: "Already used for CLI — 192+ tests across unit, command, e2e suites"
+
+    recommended_split:
+      unit: "Tree data provider logic, status bar formatting, config handling — vitest"
+      integration: "Command execution, tree view rendering, activation — @vscode/test-electron"
+      e2e: "Full user workflows in VS Code — @vscode/test-electron"
+
+  publishing:
+    tool: "@vscode/vsce"
+    steps:
+      - "Create Azure DevOps account + Personal Access Token (PAT)"
+      - "Register publisher via marketplace.visualstudio.com/manage"
+      - "vsce login <publisher>"
+      - "vsce package → creates .vsix file"
+      - "vsce publish → pushes to VS Code Marketplace"
+    manifest_fields:
+      publisher: "TBD — needs Azure DevOps account"
+      engines_vscode: "^1.85.0"
+      categories: ["Other"]
+      activationEvents: ["workspaceContains:wiki/index.md", "onCommand:llmwiki.init"]
+      icon: "Required — 128x128 PNG"
+
+# =============================================================================
+# SECTION 2: CLI IMPROVEMENTS NEEDED FOR EXTENSION
+# =============================================================================
+
+cli_gaps_for_extension:
+  missing_apis:
+    - gap: "listSources(rawDir) → SourceFile[]"
+      description: "List all files in raw/ with metadata (name, size, modified date, extension)"
+      needed_by: "RawSourcesTreeDataProvider"
+      severity: "required"
+      implementation_estimate: "~20 lines, similar to listPages()"
+
+    - gap: "getBacklinks(wikiDir, targetPage) → BacklinkResult[]"
+      description: "Find all pages that contain links pointing to a given page"
+      needed_by: "BacklinksTreeDataProvider, cross-reference features"
+      severity: "required"
+      implementation_estimate: |
+        ~40 lines. Uses existing getPageLinks() to build reverse index.
+        Iterate all pages, call getPageLinks(), filter for targetPage.
+        Can be cached for performance.
+
+    - gap: "getPageMetadata(wikiDir, pagePath) → WikiPage"
+      description: "Read a single page with frontmatter — already exists as readPage(), but extension needs it exposed cleanly"
+      needed_by: "Page detail view, hover info"
+      severity: "nice_to_have"
+      existing: "readPage() in wiki.ts already does this — just needs re-export"
+
+    - gap: "watchWiki(wikiDir, callback) → Disposable"
+      description: "File watcher that emits events when wiki pages change"
+      needed_by: "Tree view auto-refresh, status bar updates"
+      severity: "nice_to_have_in_cli"
+      note: "Extension can use vscode.workspace.createFileSystemWatcher() directly — this doesn't need to be in the CLI"
+
+    - gap: "listAllPagesWithMetadata(wikiDir) → PageSummary[]"
+      description: "Batch read: list all wiki pages with their frontmatter (type, title, tags, created, updated) without full body"
+      needed_by: "WikiPagesTreeDataProvider when index.md is incomplete or for full-fidelity browsing"
+      severity: "recommended"
+      implementation_estimate: "~30 lines. Iterate listPages(), readPage() each, return array of {path, frontmatter}."
+
+  json_output_gaps:
+    - gap: "ingest result lacks source_path in JSON"
+      description: "IngestResult has pages_created and pages_updated but not the original source path (resolved)"
+      location: "src/commands/ingest.ts:11 — IngestResult interface"
+      fix: "Add source_path: string field to IngestResult"
+
+    - gap: "status result lacks page list"
+      description: "StatusResult has counts but no list of pages — extension needs the actual pages for tree view"
+      location: "src/commands/status.ts:11 — StatusResult interface"
+      fix: "Either add pages[] to StatusResult or use readIndex() separately"
+
+    - gap: "lint result lacks fix actions"
+      description: "LintResult reports findings but has no structured fix suggestions for the --fix flag"
+      location: "src/commands/lint.ts:14 — LintResult interface"
+      fix: "Add optional fix_action field to LintFinding for auto-remediation"
+
+  query_improvements:
+    current_approach: "Naive substring matching with occurrence counting (countOccurrences)"
+    location: "src/commands/query.ts:26-37"
+    limitations:
+      - "No word boundary matching — 'agent' matches 'reagent'"
+      - "No fuzzy matching or typo tolerance"
+      - "No TF-IDF or relevance scoring — raw occurrence count favors long documents"
+      - "No stemming — 'running' won't match 'run'"
+    extension_impact: |
+      The query command powers the search feature in the extension.
+      Poor search quality directly impacts user experience.
+      Consider upgrading to at minimum word-boundary matching and TF-IDF scoring.
+    strategic_note: |
+      Per STRATEGY.md: "At personal scale (~100s of sources), the index file + QMD search is sufficient."
+      For cycle-2, word-boundary matching may be sufficient.
+      Full search engine (qmd integration) deferred per strategy.
+
+  cross_reference_analysis:
+    current_state: |
+      getPageLinks(content) extracts outbound markdown links from page body.
+      Lint checks for broken links, orphan pages, stale entries, missing pages.
+      No programmatic API to query "what links to X" (backlinks).
+    strategy_claim: "Cross-references are already built"
+    actual: |
+      Cross-references are partially built:
+      - Outbound link extraction: YES (getPageLinks in wiki.ts)
+      - Broken link detection: YES (lint broken-links category)
+      - Orphan detection: YES (lint orphan-pages category)
+      - Backlink query API: NO — must iterate all pages and check links
+      - Cross-reference graph structure: NO — no in-memory graph model
+    recommendation: |
+      Add a buildLinkGraph(wikiDir) function that returns:
+      { outbound: Map<string, string[]>, inbound: Map<string, string[]> }
+      This enables both the backlinks panel and graph visualization features.
+
+  llm_integration_points:
+    strategy_claim: "LLM does all the maintenance — summarizing, cross-referencing, filing, updating"
+    current_state: |
+      The ingest command creates a basic summary page with content preview
+      but does NOT invoke any LLM for summarization.
+      The query command does substring search but does NOT invoke an LLM
+      for synthesis.
+      No LLM integration exists in the current codebase.
+    extension_relevance: |
+      The VS Code extension could provide the LLM integration layer:
+      - Use VS Code's built-in Copilot API (vscode.lm namespace) for LLM calls
+      - Or shell out to an external LLM CLI tool
+      - Extension can intercept ingest and query commands to add LLM processing
+    deferral_note: "LLM integration is a separate concern from the VS Code extension shell — can be cycle-3"
+
+# =============================================================================
+# SECTION 3: MONOREPO STRUCTURE
+# =============================================================================
+
+monorepo_restructure:
+  current_structure:
+    type: "single-package"
+    root: "package.json (llmwiki)"
+    entry: "src/cli.ts"
+    build: "tsup → dist/cli.js"
+    test: "vitest → tests/**/*.test.ts"
+
+  proposed_structure:
+    type: "npm-workspaces monorepo"
+    layout: |
+      llmwiki/
+      ├── package.json              # root: workspaces config, shared scripts
+      ├── tsconfig.base.json        # shared TypeScript settings
+      ├── packages/
+      │   ├── shared/               # @llmwiki/shared
+      │   │   ├── package.json
+      │   │   ├── tsconfig.json     # references tsconfig.base.json
+      │   │   └── src/
+      │   │       ├── wiki.ts       # ← moved from src/lib/wiki.ts
+      │   │       ├── index.ts      # ← moved from src/lib/index.ts
+      │   │       ├── log.ts        # ← moved from src/lib/log.ts
+      │   │       └── types.ts      # shared interfaces (IndexEntry, WikiPage, etc.)
+      │   ├── cli/                   # @llmwiki/cli
+      │   │   ├── package.json      # depends on @llmwiki/shared
+      │   │   ├── tsconfig.json
+      │   │   ├── tsup.config.ts
+      │   │   └── src/
+      │   │       ├── cli.ts        # ← moved from src/cli.ts
+      │   │       └── commands/     # ← moved from src/commands/
+      │   └── vscode/               # @llmwiki/vscode
+      │       ├── package.json      # depends on @llmwiki/shared, vscode
+      │       ├── tsconfig.json
+      │       ├── esbuild.config.mjs
+      │       └── src/
+      │           ├── extension.ts  # activate/deactivate entry point
+      │           ├── tree/         # TreeDataProviders
+      │           ├── commands/     # command palette handlers
+      │           └── statusbar/    # status bar items
+      └── tests/
+          ├── shared/               # unit tests for shared lib
+          ├── cli/                   # CLI-specific tests
+          └── vscode/               # extension integration tests
+
+  migration_path:
+    step_1: "Add workspaces field to root package.json"
+    step_2: "Create packages/shared/ with src/lib/ files and shared interfaces"
+    step_3: "Create packages/cli/ with src/cli.ts and src/commands/"
+    step_4: "Update imports: commands import from @llmwiki/shared"
+    step_5: "Create packages/vscode/ with extension scaffold"
+    step_6: "Move tests to match new structure"
+    step_7: "Update CI workflow to build all packages"
+
+  code_sharing_analysis:
+    already_shareable:
+      - file: "src/lib/wiki.ts"
+        exports: ["readPage", "writePage", "listPages", "getPageLinks", "WikiPage", "WikiPageFrontmatter"]
+        dependencies: ["gray-matter", "node:fs/promises", "node:path"]
+        cli_dependency: false
+
+      - file: "src/lib/index.ts"
+        exports: ["readIndex", "writeIndex", "addEntry", "removeEntry", "findEntries", "IndexEntry", "FindOptions"]
+        dependencies: ["node:fs/promises", "node:path"]
+        cli_dependency: false
+
+      - file: "src/lib/log.ts"
+        exports: ["appendEntry", "readLog", "getRecentEntries", "LogEntry"]
+        dependencies: ["node:fs/promises", "node:path"]
+        cli_dependency: false
+
+    needs_refactoring:
+      - file: "src/commands/init.ts"
+        issue: "initWiki() is clean but AGENTS_CONTENT template is embedded as a string constant"
+        action: "Move template to shared/templates/ or keep in CLI — extension doesn't need to init independently"
+
+      - file: "src/commands/query.ts"
+        issue: "slugifyQuery() is a utility that could be shared"
+        action: "Move to shared/utils.ts"
+
+      - file: "src/commands/status.ts"
+        issue: "getWikiStatus() is pure logic, not CLI-specific"
+        action: "Move to shared/ — extension needs this directly"
+
+      - file: "src/commands/lint.ts"
+        issue: "lintWiki() is pure logic, not CLI-specific"
+        action: "Move to shared/ — extension needs this directly"
+
+      - file: "src/commands/ingest.ts"
+        issue: "ingestSource() is pure logic, not CLI-specific"
+        action: "Move to shared/ — extension needs this directly"
+
+  alternative_approach:
+    description: "Keep single package, add extension as separate repo"
+    pros:
+      - "No migration overhead"
+      - "CLI can be published independently"
+    cons:
+      - "No shared types at compile time"
+      - "Duplicated interfaces or runtime JSON parsing"
+      - "Harder to keep CLI and extension in sync"
+    verdict: "Monorepo is better given the tight coupling and shared TypeScript types"
+
+# =============================================================================
+# SECTION 4: COMPETITOR ANALYSIS
+# =============================================================================
+
+competitor_analysis:
+  foam:
+    repo: "github.com/foambubble/foam"
+    description: "Personal knowledge management and sharing system for VS Code"
+    architecture: "Modular feature system with FoamWorkspace model"
+    key_patterns:
+      - pattern: "Multiple focused TreeDataProviders"
+        detail: "Separate providers for Notes, Tags, Orphans, Placeholders"
+        applicability: "HIGH — matches our index-based categories"
+      - pattern: "FoamGraph for relationship tracking"
+        detail: "In-memory graph of note connections, updated on file changes"
+        applicability: "MEDIUM — we need this for backlinks; buildLinkGraph() proposal"
+      - pattern: "Event-driven refresh via FileSystemWatcher"
+        detail: "Watches .md files, triggers provider refresh on change"
+        applicability: "HIGH — standard VS Code pattern"
+      - pattern: "WikiLink syntax [[note]]"
+        detail: "Custom link format with auto-complete"
+        applicability: "LOW — we use standard markdown links [text](path.md)"
+    strengths: "Graph visualization, modular architecture, active community"
+    weaknesses: "Complex setup (template repo), many recommended extensions"
+    lesson_for_llmwiki: "Use multiple focused tree views, not one monolithic tree"
+
+  dendron:
+    repo: "github.com/dendronhq/dendron"
+    description: "Hierarchical note-taking for VS Code with dot-notation naming"
+    architecture: "Client-server model — VS Code extension + express.js backend"
+    key_patterns:
+      - pattern: "Hierarchy-driven tree view"
+        detail: "Notes organized by dot-delimited naming (project.topic.detail)"
+        applicability: "LOW — our wiki uses directory-based organization, not dot-notation"
+      - pattern: "Powerful note lookup with fuzzy search"
+        detail: "Quick-pick based note finder, scalable to thousands of notes"
+        applicability: "MEDIUM — we should add a similar quick-pick for Open Wiki Page"
+      - pattern: "Client-server architecture"
+        detail: "Extension spawns express.js server for heavy operations"
+        applicability: "NONE — overengineered for our scale. Direct function calls are sufficient."
+    strengths: "Scales to large knowledge bases, powerful refactoring tools"
+    weaknesses: "Complex architecture, steep learning curve"
+    status: "Still available on marketplace but development appears slowed"
+    lesson_for_llmwiki: "Don't overengineer — our ~100s of pages don't need a server"
+
+  memo:
+    repo: "github.com/kortina/vscode-markdown-notes"
+    description: "Lightweight markdown notes with wiki-links and backlinks"
+    architecture: "Minimal — file-based, uses VS Code built-in features heavily"
+    key_patterns:
+      - pattern: "Backlinks panel as a tree view"
+        detail: "Shows all notes referencing the current note"
+        applicability: "HIGH — exactly what we need for BacklinksTreeDataProvider"
+      - pattern: "Go to Definition for wiki links"
+        detail: "Ctrl+click on [[link]] navigates to target note"
+        applicability: "MEDIUM — adapt for standard markdown links"
+      - pattern: "Minimal custom UI, maximum VS Code reuse"
+        detail: "Uses built-in file explorer, markdown preview, quick pick"
+        applicability: "HIGH — matches our strategy of minimal infrastructure"
+    strengths: "Simple, fast, low maintenance, integrates naturally with VS Code"
+    weaknesses: "No graph view, no advanced organization features"
+    lesson_for_llmwiki: "Start minimal — built-in VS Code features cover 80% of the need"
+
+  synthesis:
+    recommended_approach: |
+      Combine Memo's minimalism with Foam's multiple focused tree views:
+      1. WikiPagesTreeDataProvider (like Foam's NotesTreeDataProvider, organized by index.md categories)
+      2. BacklinksTreeDataProvider (like Memo's backlinks panel)
+      3. LintFindingsTreeDataProvider (unique to llmwiki — no competitor has this)
+      4. Built-in markdown preview for page rendering (like Memo)
+      5. Quick pick for note lookup (inspired by Dendron's lookup)
+      6. Defer graph visualization to cycle-3 (Foam-inspired)
+
+# =============================================================================
+# SECTION 5: FILES ANALYZED
+# =============================================================================
+
+files_analyzed:
+  - file: cli.ts
+    path: src/cli.ts
+    purpose: "CLI entry point — creates commander program, registers wiki subcommand group with --json flag, registers all 5 subcommands"
+    key_elements:
+      - element: createProgram
+        type: function
+        location: "src/cli.ts:18"
+        description: "Creates and configures the commander program with wiki subcommand. Exported for testing."
+    language: TypeScript
+    lines: 44
+
+  - file: wiki.ts
+    path: src/lib/wiki.ts
+    purpose: "Core wiki page read/write operations — frontmatter parsing, page listing, link extraction"
+    key_elements:
+      - element: WikiPage
+        type: interface
+        location: "src/lib/wiki.ts:15"
+        description: "Core data type: { frontmatter: WikiPageFrontmatter, body: string }"
+      - element: readPage
+        type: function
+        location: "src/lib/wiki.ts:20"
+        description: "Reads and parses a markdown file with gray-matter frontmatter"
+      - element: listPages
+        type: function
+        location: "src/lib/wiki.ts:35"
+        description: "Recursively lists all .md files in wiki directory"
+      - element: getPageLinks
+        type: function
+        location: "src/lib/wiki.ts:46"
+        description: "Extracts internal markdown links from content via regex"
+    language: TypeScript
+    lines: 58
+
+  - file: index.ts
+    path: src/lib/index.ts
+    purpose: "Index file management — parse, write, add/remove entries, search by title/tags"
+    key_elements:
+      - element: IndexEntry
+        type: interface
+        location: "src/lib/index.ts:4"
+        description: "{ path, title, summary, category, tags } — primary data model for tree view"
+      - element: readIndex
+        type: function
+        location: "src/lib/index.ts:76"
+        description: "Parses markdown index file into IndexEntry array (grouped by H2 categories)"
+      - element: findEntries
+        type: function
+        location: "src/lib/index.ts:170"
+        description: "Filters entries by title substring and/or tag overlap"
+    language: TypeScript
+    lines: 188
+
+  - file: log.ts
+    path: src/lib/log.ts
+    purpose: "Activity log management — append entries, parse log, get recent entries"
+    key_elements:
+      - element: LogEntry
+        type: interface
+        location: "src/lib/log.ts:4"
+        description: "{ date, verb, subject, details } — activity record"
+      - element: readLog
+        type: function
+        location: "src/lib/log.ts:38"
+        description: "Parses markdown log into LogEntry array using header regex"
+    language: TypeScript
+    lines: 103
+
+  - file: init.ts
+    path: src/commands/init.ts
+    purpose: "Initialize wiki structure — creates dirs, index, log, AGENTS.md"
+    key_elements:
+      - element: InitResult
+        type: interface
+        location: "src/commands/init.ts:9"
+        description: "{ status: 'created'|'already_initialized', created_dirs, created_files }"
+      - element: initWiki
+        type: function
+        location: "src/commands/init.ts:126"
+        description: "Pure async function — no commander dependency. Creates full wiki scaffold."
+    language: TypeScript
+    lines: 199
+
+  - file: ingest.ts
+    path: src/commands/ingest.ts
+    purpose: "Ingest raw source files — creates summary page, updates index and log"
+    key_elements:
+      - element: IngestResult
+        type: interface
+        location: "src/commands/ingest.ts:11"
+        description: "{ status, pages_created, pages_updated, dry_run, error? }"
+      - element: ingestSource
+        type: function
+        location: "src/commands/ingest.ts:50"
+        description: "Pure async function. Reads source, creates summary page, updates index/log."
+    language: TypeScript
+    lines: 183
+
+  - file: query.ts
+    path: src/commands/query.ts
+    purpose: "Search wiki pages by query terms — scores by title/summary/body occurrence"
+    key_elements:
+      - element: QueryOutput
+        type: interface
+        location: "src/commands/query.ts:15"
+        description: "{ query, matches, results: QueryResult[], saved? }"
+      - element: queryWiki
+        type: function
+        location: "src/commands/query.ts:74"
+        description: "Pure async function. Reads index, scores entries, reads pages for body matching."
+    language: TypeScript
+    lines: 222
+
+  - file: lint.ts
+    path: src/commands/lint.ts
+    purpose: "Wiki health checks — broken links, orphan pages, stale entries, index completeness"
+    key_elements:
+      - element: LintResult
+        type: interface
+        location: "src/commands/lint.ts:14"
+        description: "{ findings: LintFinding[], errorCount, warningCount, infoCount }"
+      - element: lintWiki
+        type: function
+        location: "src/commands/lint.ts:42"
+        description: "Pure async function. Runs 5 check categories, returns structured findings."
+    language: TypeScript
+    lines: 251
+
+  - file: status.ts
+    path: src/commands/status.ts
+    purpose: "Wiki statistics — source count, page count, last ingest/lint, orphans, coverage"
+    key_elements:
+      - element: StatusResult
+        type: interface
+        location: "src/commands/status.ts:11"
+        description: "{ source_count, wiki_page_count, last_ingest_date, orphan_page_count, index_coverage_pct }"
+      - element: getWikiStatus
+        type: function
+        location: "src/commands/status.ts:25"
+        description: "Pure async function. Aggregates stats from raw/, wiki/, index, and log."
+    language: TypeScript
+    lines: 131
+
+  - file: tsup.config.ts
+    path: tsup.config.ts
+    purpose: "Build configuration — single ESM entry point, node20 target, shebang banner"
+    key_elements:
+      - element: config
+        type: pattern
+        location: "tsup.config.ts:3"
+        description: "entry: src/cli.ts, format: esm, target: node20, clean: true, shims: true"
+    language: TypeScript
+    lines: 12
+
+  - file: ci.yml
+    path: .github/workflows/ci.yml
+    purpose: "CI workflow — lint, build, test on push/PR to main"
+    key_elements:
+      - element: build_job
+        type: pattern
+        location: ".github/workflows/ci.yml:10"
+        description: "Node 20 matrix, npm ci, tsc --noEmit, tsup build, vitest run"
+    language: YAML
+    lines: 36
+
+  - file: ingest.yml
+    path: .github/workflows/ingest.yml
+    purpose: "Auto-ingest workflow — triggers on raw/** push, ingests changed files, commits wiki updates"
+    key_elements:
+      - element: ingest_job
+        type: pattern
+        location: ".github/workflows/ingest.yml:13"
+        description: "Detects changed raw/ files, runs CLI ingest for each, auto-commits wiki/ changes"
+    language: YAML
+    lines: 69
+
+# =============================================================================
+# SECTION 6: PATTERNS FOUND
+# =============================================================================
+
+patterns_found:
+  - category: architecture
+    pattern: "Clean separation of business logic from CLI registration"
+    description: |
+      Every command exports both a pure async function (e.g., initWiki, lintWiki)
+      and a registerXCommand function that wires it to commander.
+      The pure functions have no dependency on commander, process, or console.
+    examples:
+      - file: src/commands/init.ts
+        location: "init.ts:126 vs init.ts:180"
+        snippet: "export async function initWiki(targetPath) vs export function registerInitCommand(wiki: Command)"
+    prevalence: common
+
+  - category: architecture
+    pattern: "Typed result interfaces for every command"
+    description: |
+      Each command defines a result interface (InitResult, IngestResult, QueryOutput, LintResult, StatusResult)
+      with a 'command' field and typed status/data fields.
+      Commands return these directly; JSON serialization happens only at the CLI boundary.
+    examples:
+      - file: src/commands/status.ts
+        location: "status.ts:11"
+        snippet: "export interface StatusResult { command: string; source_count: number; ... }"
+    prevalence: common
+
+  - category: structure
+    pattern: "Two-layer source organization: lib/ for reusable modules, commands/ for command handlers"
+    description: "lib/ contains pure data operations (wiki, index, log). commands/ orchestrates lib/ calls and adds CLI formatting."
+    examples:
+      - file: src/lib/wiki.ts
+        location: "wiki.ts:1"
+        snippet: "Pure functions: readPage, writePage, listPages, getPageLinks — no commander imports"
+    prevalence: common
+
+  - category: testing
+    pattern: "Three-tier test organization: unit, commands, e2e"
+    description: |
+      tests/unit/ — pure function tests (CLI structure, program creation)
+      tests/commands/ — command logic tests using tmp dirs (import functions directly)
+      tests/lib/ — library function tests
+      tests/e2e/ — subprocess tests (execFile to built CLI binary)
+    examples:
+      - file: tests/e2e/cli.test.ts
+        location: "cli.test.ts:26"
+        snippet: "function runCLI(args, cwd, json = false): Promise<RunResult>"
+    prevalence: common
+
+  - category: error_handling
+    pattern: "Graceful degradation with try-catch returning empty defaults"
+    description: "Functions return sensible defaults (empty arrays, 0 counts) when wiki is uninitialized or files are missing, rather than throwing."
+    examples:
+      - file: src/lib/wiki.ts
+        location: "wiki.ts:41"
+        snippet: "catch { return []; } // listPages returns empty array if dir missing"
+      - file: src/commands/status.ts
+        location: "status.ts:37"
+        snippet: "catch { /* raw/ doesn't exist — 0 sources */ }"
+    prevalence: common
+
+  - category: naming
+    pattern: "Verb-based function names with wiki/page domain terminology"
+    description: "readPage, writePage, listPages, readIndex, addEntry, appendEntry, findEntries — consistent verb+noun naming"
+    examples:
+      - file: src/lib/index.ts
+        location: "index.ts throughout"
+        snippet: "readIndex, writeIndex, addEntry, removeEntry, findEntries"
+    prevalence: common
+
+# =============================================================================
+# SECTION 7: RELATED ARCHITECTURE
+# =============================================================================
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: "lib/wiki.ts"
+      responsibility: "Read/write/list wiki pages, extract links"
+      location: "src/lib/wiki.ts"
+      relationship_to_domain: "Extension directly consumes these for tree views and navigation"
+
+    - component: "lib/index.ts"
+      responsibility: "Parse and manage the wiki index file"
+      location: "src/lib/index.ts"
+      relationship_to_domain: "Extension uses readIndex() as primary data source for WikiPagesTreeDataProvider"
+
+    - component: "lib/log.ts"
+      responsibility: "Parse and manage the activity log"
+      location: "src/lib/log.ts"
+      relationship_to_domain: "Extension uses readLog() for status bar and activity views"
+
+    - component: "commands/status.ts"
+      responsibility: "Aggregate wiki statistics"
+      location: "src/commands/status.ts"
+      relationship_to_domain: "Extension uses getWikiStatus() for status bar item"
+
+    - component: "commands/lint.ts"
+      responsibility: "Run wiki health checks"
+      location: "src/commands/lint.ts"
+      relationship_to_domain: "Extension uses lintWiki() for LintFindingsTreeDataProvider and diagnostics"
+
+  data_flow_involving_domain: |
+    Extension reads wiki/index.md via readIndex() → builds tree view nodes
+    Extension reads wiki/log.md via readLog() → shows recent activity
+    Extension calls getWikiStatus() → updates status bar
+    Extension calls lintWiki() → populates lint tree and VS Code diagnostics
+    Extension calls ingestSource() → processes files dropped into raw/
+    Extension calls queryWiki() → shows search results in quick pick or panel
+    All data flows are async, returning typed results, no streaming needed.
+
+  key_relationships_to_domain:
+    - from: "vscode extension"
+      to: "lib/wiki.ts"
+      relationship: "imports readPage, listPages, getPageLinks"
+    - from: "vscode extension"
+      to: "lib/index.ts"
+      relationship: "imports readIndex, findEntries, IndexEntry"
+    - from: "vscode extension"
+      to: "commands/status.ts"
+      relationship: "imports getWikiStatus"
+    - from: "vscode extension"
+      to: "commands/lint.ts"
+      relationship: "imports lintWiki"
+    - from: "vscode extension"
+      to: "commands/ingest.ts"
+      relationship: "imports ingestSource"
+    - from: "vscode extension"
+      to: "commands/query.ts"
+      relationship: "imports queryWiki"
+
+# =============================================================================
+# SECTION 8: RELATED TECHNOLOGY STACK
+# =============================================================================
+
+related_technology_stack:
+  languages_used_in_domain:
+    - "TypeScript (strict mode, ES2022 target, NodeNext module resolution)"
+
+  frameworks_used_in_domain:
+    - name: "VS Code Extension API"
+      usage_in_domain: "TreeDataProvider, commands, StatusBarItem, FileSystemWatcher, webview (future)"
+    - name: "commander"
+      usage_in_domain: "CLI argument parsing — NOT needed in extension"
+
+  libraries_used_in_domain:
+    - name: "gray-matter"
+      purpose_in_domain: "Frontmatter parsing for wiki pages — used by shared lib"
+    - name: "@vscode/vsce"
+      purpose_in_domain: "Extension packaging and publishing"
+    - name: "esbuild"
+      purpose_in_domain: "Extension bundling (via tsup for CLI, direct for extension)"
+    - name: "vitest"
+      purpose_in_domain: "Unit testing for shared and CLI packages"
+    - name: "@vscode/test-electron"
+      purpose_in_domain: "Integration testing for VS Code extension"
+
+# =============================================================================
+# SECTION 9: RELATED CONVENTIONS
+# =============================================================================
+
+related_conventions:
+  naming_patterns_in_domain: |
+    Functions: verb + noun (readPage, writeIndex, listPages, getBacklinks)
+    Interfaces: PascalCase result types (InitResult, LintResult, StatusResult)
+    Files: lowercase kebab in commands (init.ts, ingest.ts), lowercase in lib (wiki.ts, index.ts)
+    Extension commands: dot-separated IDs (llmwiki.init, llmwiki.query)
+  structure_of_domain: |
+    Current: src/lib/ (reusable), src/commands/ (CLI-specific)
+    Proposed: packages/shared/ (reusable), packages/cli/ (CLI), packages/vscode/ (extension)
+  error_handling_in_domain: |
+    All functions use try-catch with graceful defaults (empty arrays, null dates).
+    Error status returned in result objects (IngestResult.error), not thrown.
+    Extension should follow same pattern — show VS Code error notifications, don't crash.
+  testing_in_domain: |
+    vitest for all tests (192 passing). Three tiers: unit, command, e2e.
+    Commands tested by importing functions directly with tmp dirs.
+    E2E tests use child_process to test built binary.
+    Extension tests should add @vscode/test-electron for integration.
+  documentation_in_domain: |
+    JSDoc comments on all exported functions.
+    ARCHITECTURE.md covers system design, data flow, and design decisions.
+    STRATEGY.md covers priorities and anti-patterns.
+
+# =============================================================================
+# SECTION 10: RELATED DEPENDENCIES
+# =============================================================================
+
+related_dependencies:
+  internal:
+    - component: "lib/wiki.ts"
+      relationship_to_domain: "Core page operations used by all tree views and commands"
+      direction: outbound
+    - component: "lib/index.ts"
+      relationship_to_domain: "Index parsing used by WikiPagesTreeDataProvider"
+      direction: outbound
+    - component: "lib/log.ts"
+      relationship_to_domain: "Log parsing used by status bar and activity view"
+      direction: outbound
+    - component: "commands/*"
+      relationship_to_domain: "Business logic functions used by command palette handlers"
+      direction: outbound
+
+  external:
+    - name: "gray-matter"
+      purpose_for_domain: "Frontmatter parsing — required by shared lib, bundled into extension"
+    - name: "@vscode/vsce"
+      purpose_for_domain: "Extension packaging — dev dependency only"
+    - name: "@vscode/test-electron"
+      purpose_for_domain: "Extension integration testing — dev dependency only"
+    - name: "esbuild"
+      purpose_for_domain: "Extension bundling — dev dependency only"
+
+# =============================================================================
+# SECTION 11: TESTING PATTERNS
+# =============================================================================
+
+testing_patterns:
+  framework: "vitest (existing) + @vscode/test-electron (new for extension)"
+  coverage_areas:
+    - "Shared library functions (wiki.ts, index.ts, log.ts) — vitest"
+    - "Command logic functions (init, ingest, query, lint, status) — vitest with tmp dirs"
+    - "CLI binary execution — vitest with child_process (e2e)"
+    - "Extension activation and tree views — @vscode/test-electron"
+    - "Extension command execution — @vscode/test-electron"
+  test_organization: |
+    Current: tests/unit/, tests/commands/, tests/lib/, tests/e2e/
+    Proposed: tests/shared/, tests/cli/, tests/vscode/
+  mock_patterns:
+    - "Temp directory creation/cleanup per test (mkdtemp + rm)"
+    - "Direct function import (no mocking of fs) — tests against real filesystem"
+    - "For extension tests: mock vscode.workspace.workspaceFolders, vscode.window.showInformationMessage"
+
+# =============================================================================
+# SECTION 12: OPEN QUESTIONS & GAPS
+# =============================================================================
+
+open_questions:
+  - question: "Should the monorepo migration happen before or after the extension MVP?"
+    context: |
+      The extension can be built as a separate package that imports from the CLI's
+      dist/ output using child_process. Monorepo migration enables cleaner code sharing
+      but adds upfront migration work. The e2e tests already prove the child_process
+      pattern works.
+    type: decision_blocker
+    affects: ["monorepo-migration", "vscode-extension-scaffold"]
+
+  - question: "Should the extension use VS Code's built-in markdown preview or a custom webview?"
+    context: |
+      Built-in preview handles standard markdown well but won't render custom
+      frontmatter nicely or support wiki-specific navigation. Foam and Memo both
+      use built-in preview as default. Custom webview adds complexity but enables
+      richer rendering.
+    type: decision_blocker
+    affects: ["webview-design", "vscode-extension-mvp"]
+
+  - question: "What is the publisher name for VS Code Marketplace?"
+    context: "Publishing requires an Azure DevOps account and registered publisher ID. This needs to be created before first publish."
+    type: nice_to_know
+    affects: ["extension-publishing"]
+
+  - question: "Should backlinks be computed on-demand or cached in memory?"
+    context: |
+      On-demand: scan all pages every time user opens a file (~100ms for 100 pages).
+      Cached: build a link graph on activation, update incrementally on file changes.
+      At ~100 pages on-demand is fine; at ~1000+ pages caching becomes necessary.
+    type: research
+    affects: ["backlinks-feature", "performance"]
+
+gaps:
+  - area: "Backlinks API"
+    description: "No function to query 'what pages link to X'. getPageLinks() extracts outbound links only."
+    impact: research_blocker
+    affects: ["backlinks-tree-view", "cross-reference-panel"]
+
+  - area: "Source listing API"
+    description: "No function to list files in raw/ with metadata. getWikiStatus() only counts them."
+    impact: research_blocker
+    affects: ["raw-sources-tree-view"]
+
+  - area: "LLM integration design"
+    description: "No LLM is invoked in the current codebase. Strategy describes LLM as central but implementation is plain text processing."
+    impact: nice_to_know
+    affects: ["llm-ingest", "llm-query-synthesis"]
+
+  - area: "Extension test infrastructure"
+    description: "@vscode/test-electron not yet configured. Need test runner setup for extension integration tests."
+    impact: nice_to_know
+    affects: ["extension-testing"]
+
+  - area: "1 failing e2e test"
+    description: "tests/e2e/cli.test.ts:534 — query e2e test expects exit code 0 but gets 1. Likely a query command issue or test environment issue."
+    impact: nice_to_know
+    affects: ["cli-stability"]
