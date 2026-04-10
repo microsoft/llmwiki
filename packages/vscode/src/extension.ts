@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { WikiPagesTreeDataProvider } from './wikiPagesTree';
 import { RawSourcesTreeDataProvider } from './rawSourcesTree';
+import { BacklinksTreeDataProvider } from './backlinksTree';
 import { registerCommands } from './commands';
 import { createStatusBar } from './statusBar';
 
@@ -23,10 +24,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const wikiPagesProvider = new WikiPagesTreeDataProvider(workspaceFolder);
   const treeRegistration = vscode.window.registerTreeDataProvider('wikiPages', wikiPagesProvider);
 
+  const backlinksProvider = new BacklinksTreeDataProvider(workspaceFolder);
+  const backlinksRegistration = vscode.window.registerTreeDataProvider('backlinks', backlinksProvider);
+
   const watcher = vscode.workspace.createFileSystemWatcher('**/wiki/**/*.md');
-  watcher.onDidChange(() => wikiPagesProvider.refresh());
-  watcher.onDidCreate(() => wikiPagesProvider.refresh());
-  watcher.onDidDelete(() => wikiPagesProvider.refresh());
+  watcher.onDidChange(() => { wikiPagesProvider.refresh(); backlinksProvider.refresh(); });
+  watcher.onDidCreate(() => { wikiPagesProvider.refresh(); backlinksProvider.refresh(); });
+  watcher.onDidDelete(() => { wikiPagesProvider.refresh(); backlinksProvider.refresh(); });
 
   const rawSourcesProvider = new RawSourcesTreeDataProvider(workspaceFolder);
   const rawSourcesRegistration = vscode.window.registerTreeDataProvider('rawSources', rawSourcesProvider);
@@ -40,7 +44,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const statusBar = createStatusBar(context, workspaceFolder);
 
-  context.subscriptions.push(treeRegistration, watcher, wikiPagesProvider, rawSourcesRegistration, rawWatcher, rawSourcesProvider, statusBar);
+  context.subscriptions.push(treeRegistration, watcher, wikiPagesProvider, rawSourcesRegistration, rawWatcher, rawSourcesProvider, backlinksRegistration, backlinksProvider, statusBar);
 }
 
 export function deactivate(): void {
