@@ -7,7 +7,7 @@
   "tasks": {
     "c4-01": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T11:44:40Z", "completed_at": "2026-04-10T12:25:00Z", "branch": "task/cycle-4/c4-01", "pr": 47 },
     "c4-02": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T12:35:00Z", "completed_at": "2026-04-10T13:12:00Z", "branch": "task/cycle-4/c4-02", "pr": 48, "note": "errors.ts + 17 bare catch replacements + appendFile race fix. Merged PR #48." },
-    "c4-03": { "status": "running", "attempts": 2, "started_at": "2026-04-10T13:19:00Z", "branch": "task/cycle-4/c4-03", "note": "Remaining: duplicated regex in backlinks.ts, passWithNoTests removal, initWiki extraction to shared." },
+    "c4-03": { "status": "running", "attempts": 2, "started_at": "2026-04-10T13:19:00Z", "branch": "task/cycle-4/c4-03", "pr": 49, "note": "Deduplicated regex, extracted initWiki to shared, removed passWithNoTests. PR #49 open." },
     "c4-04": { "status": "pending", "attempts": 0 },
     "c4-05": { "status": "pending", "attempts": 0 },
     "c4-06": { "status": "pending", "attempts": 0 },
