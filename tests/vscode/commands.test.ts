@@ -36,6 +36,9 @@ vi.mock('@llmwiki/shared', () => ({
   appendEntry: vi.fn(),
   directoryExists: vi.fn(),
   lintWiki: vi.fn(),
+  ingestSource: vi.fn(),
+  queryWiki: vi.fn(),
+  getWikiStatus: vi.fn(),
 }));
 
 vi.mock('node:fs/promises', () => ({
@@ -53,6 +56,9 @@ import {
   lintWiki,
   listPages,
   readLog,
+  ingestSource,
+  queryWiki,
+  getWikiStatus,
 } from '@llmwiki/shared';
 import { readdir } from 'node:fs/promises';
 import * as vscode from 'vscode';
@@ -63,6 +69,9 @@ const mockLintWiki = lintWiki as Mock;
 const mockListPages = listPages as Mock;
 const mockReadLog = readLog as Mock;
 const mockReaddir = readdir as Mock;
+const mockIngestSource = ingestSource as Mock;
+const mockQueryWiki = queryWiki as Mock;
+const mockGetWikiStatus = getWikiStatus as Mock;
 const mockShowWarningMessage = vscode.window.showWarningMessage as Mock;
 const mockShowInformationMessage = vscode.window.showInformationMessage as Mock;
 const mockShowInputBox = vscode.window.showInputBox as Mock;
@@ -167,12 +176,12 @@ describe('Command handlers', () => {
     it('should show "No results" when query matches nothing', async () => {
       mockDirectoryExists.mockResolvedValue(true);
       mockShowInputBox.mockResolvedValue('xyznonexistent');
-      mockReadIndex.mockResolvedValue([
-        { path: 'entities/a.md', title: 'Alan', summary: 'Test', category: 'E', tags: [] },
-      ]);
-      // readPage mock — returns a page with no matching content
-      const { readPage } = await import('@llmwiki/shared');
-      (readPage as Mock).mockResolvedValue({ frontmatter: {}, body: 'Nothing here' });
+      mockQueryWiki.mockResolvedValue({
+        command: 'query',
+        query: 'xyznonexistent',
+        matches: 0,
+        results: [],
+      });
 
       await commandHandlers['llmwiki.query']();
 
@@ -265,10 +274,15 @@ describe('Command handlers', () => {
 
   describe('llmwiki.status', () => {
     it('should show status information', async () => {
-      mockReaddir.mockRejectedValue(new Error('ENOENT'));
-      mockListPages.mockResolvedValue([]);
-      mockReadLog.mockResolvedValue([]);
-      mockReadIndex.mockResolvedValue([]);
+      mockGetWikiStatus.mockResolvedValue({
+        command: 'status',
+        source_count: 0,
+        wiki_page_count: 0,
+        last_ingest_date: null,
+        last_lint_date: null,
+        orphan_page_count: 0,
+        index_coverage_pct: 100,
+      });
 
       await commandHandlers['llmwiki.status']();
 
