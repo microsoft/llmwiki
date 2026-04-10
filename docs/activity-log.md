@@ -161,3 +161,4 @@
 - [2026-04-10T07:00:36.448Z] [commander] cycle=49 action=merge-pr summary=Resolved merge conflict in activity-log.md and merged PR #36 (refactor(c3-01): extract duplicated logic into @llmwiki/shared) via squash merge. Wave 1 complete, wave 2 tasks (c3-02, c3-03, c3-04, c3-05) now unblocked.
 - [2026-04-10T07:08:15.437Z] [commander] cycle=50 action=execute-task summary=Completed task c3-02 (duplicate detection): skipped status, --force flag, index dedup, 6 new tests — PR #37 opened.
 - [2026-04-10T00:12:46Z] [commander] cycle=cycle-3 action=review-pr pr=37 summary=Reviewed PR #37 (c3-02 duplicate detection): LGTM, CI passing, ready to merge.
+- [2026-04-10T00:14:40Z] [commander] cycle=cycle-3 action=merge-pr pr=37 summary=Merged PR #37 (feat(c3-02): add duplicate detection to ingest) via squash merge. Task c3-02 complete. Wave 2 tasks c3-03, c3-04, c3-05 now ready.
