@@ -137,3 +137,4 @@
 - [2026-04-10T04:23:30.064Z] [commander] cycle=34 action=execute-task summary=Merged PR #31 (c2-10), implemented c2-11 (LintFindings TreeDataProvider) with 21 tests, opened PR #32.
 - [2026-04-10T04:27:48.605Z] [commander] cycle=35 action=review-pr summary=Reviewed PR #32 (LintFindings TreeDataProvider): LGTM — clean refactor of lint to shared, 21 tests, CI passing, ready to merge.
 - [2026-04-10T04:45:18.081Z] [commander] cycle=36 action=execute-task summary=Merged PR #32 (c2-11), then implemented c2-12 (extension testing infrastructure): 16 command handler unit tests, @vscode/test-electron integration scaffold, all 307 tests pass. Opened PR #33.
+- [2026-04-10T05:17:35Z] [commander] cycle=cycle-2 action=address-feedback pr=34 summary=Fixed CI failure on PR #34: regenerated package-lock.json after llmwiki-vscode package rename (was @llmwiki/vscode). Build passes, 307 tests pass. Pushed fix to branch.
