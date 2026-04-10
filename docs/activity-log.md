@@ -103,3 +103,5 @@
 - [2026-04-09T18:32:39Z] [commander] cycle=cycle-2 action=execute-task task=c2-05 summary=Completed task c2-05 (Update CI workflow for monorepo builds): explicit per-package build/lint steps in ci.yml (shared->cli->vscode). All 210 tests pass. Opened PR #26.
 - [2026-04-10T01:33:29.796Z] [commander] cycle=15 action=execute-task summary=Merged PR #24 (c2-04), then executed c2-05: updated CI workflow with per-package build/lint steps, opened PR #26. All 210 tests pass.
 - [2026-04-10T01:38:38.262Z] [commander] cycle=16 action=review-pr summary=Reviewed PR #26 (CI workflow monorepo update): LGTM — per-package build/lint in correct order, CI passing, 1 nit (ingest.yml inefficiency), ready to merge.
+- [2026-04-10T01:43:37.043Z] [commander] cycle=17 action=review-pr summary=Reviewed PR #25 (dependabot esbuild 0.20→0.25): LGTM — dev dependency bump with security fix, CI passing, ready to merge.
+- [2026-04-10T01:44:27Z] [commander] cycle=cycle-2 action=merge-pr pr=26 summary=Merged PR #26 (feat(c2-05): update CI workflow for monorepo builds) via squash merge. Task c2-05 complete. Wave 2 finished. Wave 3 tasks (c2-06, c2-07, c2-08) now unblocked.
