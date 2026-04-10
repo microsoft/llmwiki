@@ -7,6 +7,7 @@ import {
   lintWiki,
   appendEntry,
   ingestSource,
+  bulkIngest,
   queryWiki,
   getWikiStatus,
   type IndexEntry,
@@ -97,6 +98,47 @@ export function registerCommands(
       return;
     }
 
+    const mode = await vscode.window.showQuickPick(
+      [
+        { label: '$(file-add) Ingest a single file', value: 'single' },
+        { label: '$(files) Ingest all new sources', value: 'all' },
+      ],
+      { placeHolder: 'How would you like to ingest?' },
+    );
+    if (!mode) return;
+
+    if (mode.value === 'all') {
+      const result = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'Ingesting sources…',
+          cancellable: false,
+        },
+        async (progress) => {
+          return bulkIngest(rawDir, workspaceFolder, {
+            onProgress: (current, total, file) => {
+              progress.report({
+                message: `${current}/${total}: ${file}`,
+                increment: (1 / total) * 100,
+              });
+            },
+          });
+        },
+      );
+
+      if (result.total === 0) {
+        vscode.window.showInformationMessage('No source files found in raw/.');
+      } else {
+        vscode.window.showInformationMessage(
+          `Bulk ingest complete — Ingested: ${result.ingested}, Skipped: ${result.skipped}, Failed: ${result.failed}`,
+        );
+      }
+      providers.wikiPages.refresh();
+      providers.rawSources.refresh();
+      return;
+    }
+
+    // Single file ingest
     const rawUri = vscode.Uri.file(rawDir);
     const selected = await vscode.window.showOpenDialog({
       canSelectFiles: true,

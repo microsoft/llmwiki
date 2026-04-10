@@ -299,7 +299,7 @@ describe('ingest CLI integration', () => {
 
     const ingest = wiki!.commands.find((cmd) => cmd.name() === 'ingest');
     expect(ingest).toBeDefined();
-    expect(ingest!.description()).toBe('Ingest a source file into the wiki knowledge base');
+    expect(ingest!.description()).toBe('Ingest source file(s) into the wiki knowledge base');
 
     const pathOption = ingest!.options.find((opt) => opt.long === '--path');
     expect(pathOption).toBeDefined();
