@@ -127,3 +127,5 @@
 - [2026-04-10T03:59:18.672Z] [commander] cycle=33 action=review-pr summary=Reviewed PR #31 (Backlinks TreeDataProvider): LGTM — follows established pattern, 15 tests, CI passing, ready to merge.
 
 - [2026-04-10T04:00:05Z] [commander] cycle=cycle-2 action=merge-pr pr=31 summary=Merged PR #31 (feat(c2-10): implement Backlinks TreeDataProvider) via squash merge. Task c2-10 complete. 10/13 tasks done. Remaining: c2-11 (LintFindings tree), c2-12 (extension testing), c2-13 (packaging).
+
+- [2026-04-10T04:02:00Z] [commander] cycle=cycle-2 action=execute-task task=c2-11 summary=Merged PR #31 (c2-10), then implemented c2-11 (LintFindings TreeDataProvider) with severity grouping, click-to-open, lint command integration, 21 tests — 291 total pass. Opened PR #32.
