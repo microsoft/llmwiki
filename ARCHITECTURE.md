@@ -91,6 +91,7 @@ Commands:
   query     Search the wiki for pages matching a query
   lint      Run health checks on the wiki
   status    Show wiki knowledge base status and statistics
+  list      List wiki pages, source files, or index entries
 
 Wiki-level flag:
   --json    Output results as JSON (inherited by all subcommands)
@@ -100,7 +101,7 @@ Global flags:
   --version Show version
 ```
 
-The CLI uses a two-level command hierarchy: `plaid` is the top-level program, and `wiki` is a command group that registers the five subcommands. The `--json` flag is defined on the `wiki` group and accessed by subcommands via `cmd.parent?.opts().json`.
+The CLI uses a two-level command hierarchy: `plaid` is the top-level program, and `wiki` is a command group that registers the six subcommands. The `--json` flag is defined on the `wiki` group and accessed by subcommands via `cmd.parent?.opts().json`.
 
 ### Command Details
 
@@ -129,18 +130,24 @@ Returns `already_initialized` if the `wiki/` directory already exists.
 Reads a source file and creates a summary page in the wiki.
 
 ```
-plaid wiki ingest <source> [--path <dir>] [--dry-run]
+plaid wiki ingest [source] [--path <dir>] [--dry-run] [--force] [--all]
 
 Steps:
   1. Validate wiki is initialized (wiki/ exists)
-  2. Read the source file from disk
-  3. Slugify the filename (lowercase, strip extension, hyphens for non-alphanumeric)
-  4. Create wiki/sources/{slug}-summary.md with frontmatter and content preview
-  5. Add entry to wiki/index.md under the Sources category
-  6. Append entry to wiki/log.md
+  2. If --all: run bulk ingest on all files in raw/ (skip already-ingested unless --force)
+  3. Read the source file from disk
+  4. Slugify the filename (lowercase, strip extension, hyphens for non-alphanumeric)
+  5. Check for existing summary page (skip if duplicate; override with --force)
+  6. Create wiki/sources/{slug}-summary.md with frontmatter and content preview
+  7. Add entry to wiki/index.md under the Sources category
+  8. Append entry to wiki/log.md
 ```
 
 The summary page includes YAML frontmatter (`type: source`, `title`, `source_path`, `ingested` date, `tags`) and a body with file metadata and a 500-character content excerpt.
+
+Duplicate detection: if a summary page already exists for the source, the command returns `status: 'skipped'` unless `--force` is specified. When `--force` is used, the existing entry is removed from the index before re-adding to prevent duplicates.
+
+Bulk ingest (`--all`): processes all files in `raw/`, skipping already-ingested sources. Combined with `--force`, re-ingests everything. Progress is reported per-file.
 
 #### `plaid wiki query <query>`
 
@@ -166,12 +173,16 @@ Runs health checks on the wiki knowledge base.
 ```
 plaid wiki lint [--path <dir>] [--category <categories>]
 
-Checks (5 categories):
+Checks (6 categories):
   - broken-links (error)       — Internal .md links pointing to non-existent files
   - orphan-pages (warning)     — Pages with no inbound links and not in index
   - index-completeness (warning) — Wiki pages not listed in wiki/index.md
   - stale-entries (error)      — Index entries pointing to deleted files
   - missing-pages (info)       — Referenced pages that do not exist
+  - frontmatter-validation     — Validates page frontmatter fields:
+      • missing type (error), missing title (error)
+      • invalid type value (warning)
+      • missing tags (info), missing created (info)
 
 The --category flag accepts a comma-separated list to run only specific checks.
 Exit code 1 if any errors are found.
@@ -196,6 +207,21 @@ Output:
 ```
 
 Returns zeros and nulls gracefully when the wiki is uninitialized.
+
+#### `plaid wiki list <type>`
+
+Lists wiki pages, source files, or index entries.
+
+```
+plaid wiki list <type> [--path <dir>]
+
+Types:
+  pages    — List all wiki pages with title, type, tags, and path
+  sources  — List all source files in raw/ with name, size, modified date, extension
+  entries  — List all index entries with category, title, path, summary, tags
+```
+
+Human-readable output uses a formatted table. With `--json`, returns a JSON array of the corresponding objects.
 
 ### Output Formats
 
@@ -250,7 +276,13 @@ llmwiki/
 │   │   │   ├── log.ts              # appendEntry, readLog, getRecentEntries
 │   │   │   ├── sources.ts          # listSources (raw/ directory metadata)
 │   │   │   ├── backlinks.ts        # getBacklinks (reverse link resolution)
-│   │   │   └── lint.ts             # lintWiki (5 check categories)
+│   │   │   ├── lint.ts             # lintWiki (6 check categories)
+│   │   │   ├── utils.ts            # slugify, excerpt (shared utility functions)
+│   │   │   ├── search.ts           # countOccurrences (case-insensitive term matching)
+│   │   │   ├── ingest.ts           # ingestSource (single-file ingest with duplicate detection)
+│   │   │   ├── bulk-ingest.ts      # bulkIngest (batch ingest for raw/ directory)
+│   │   │   ├── query.ts            # queryWiki, slugifyQuery (weighted keyword search)
+│   │   │   └── status.ts           # getWikiStatus (aggregate wiki statistics)
 │   │   ├── package.json            # @llmwiki/shared, exports: ./dist/index.js
 │   │   └── tsconfig.json           # Extends tsconfig.base.json, composite: true
 │   │
@@ -259,10 +291,11 @@ llmwiki/
 │   │   │   ├── cli.ts              # Entry point — creates Commander program, registers commands
 │   │   │   └── commands/
 │   │   │       ├── init.ts         # plaid wiki init — directory scaffolding, AGENTS.md template
-│   │   │       ├── ingest.ts       # plaid wiki ingest — source → summary page pipeline
+│   │   │       ├── ingest.ts       # plaid wiki ingest — source → summary page pipeline (single + bulk)
 │   │   │       ├── query.ts        # plaid wiki query — keyword search with weighted scoring
 │   │   │       ├── lint.ts         # plaid wiki lint — delegates to @llmwiki/shared lintWiki
-│   │   │       └── status.ts       # plaid wiki status — aggregate stats from filesystem + log
+│   │   │       ├── status.ts       # plaid wiki status — delegates to @llmwiki/shared getWikiStatus
+│   │   │       └── list.ts         # plaid wiki list — list pages, sources, or index entries
 │   │   ├── package.json            # bin: { plaid: ./dist/cli.js }, depends on @llmwiki/shared
 │   │   └── tsup.config.ts          # ESM bundle, node20 target, shebang banner
 │   │
@@ -444,7 +477,8 @@ Human provides search terms
          ├──▶ orphan-pages (warning)     — No inbound links, not indexed
          ├──▶ index-completeness (warning) — Pages missing from index
          ├──▶ stale-entries (error)      — Index entries → deleted files
-         └──▶ missing-pages (info)       — Referenced but non-existent pages
+         ├──▶ missing-pages (info)       — Referenced but non-existent pages
+         └──▶ frontmatter-validation     — Type/title/tags/created checks
                     │
                     ▼
               ┌──────────┐
@@ -465,9 +499,8 @@ Triggers on pushes that modify `raw/**` or via manual `workflow_dispatch`. The w
 
 1. Checks out the repo with full history (`fetch-depth: 0`)
 2. Installs dependencies and builds all packages
-3. Detects changed files in `raw/` using `git diff` (or `find` for manual dispatch)
-4. Runs `node packages/cli/dist/cli.js wiki ingest "$file"` for each changed file
-5. Auto-commits wiki updates via [stefanzweifel/git-auto-commit-action@v5](https://github.com/stefanzweifel/git-auto-commit-action)
+3. Runs `plaid wiki ingest --all --json` to ingest all un-ingested sources in one step
+4. Auto-commits wiki updates via [stefanzweifel/git-auto-commit-action@v5](https://github.com/stefanzweifel/git-auto-commit-action)
 
 ## VS Code Extension Architecture
 
@@ -557,18 +590,19 @@ The extension uses esbuild (CJS format) with `vscode` as an external. Packaging 
 ```
 cli.ts
   └─► commands/init.ts ──► @llmwiki/shared (log)
-  └─► commands/ingest.ts ──► @llmwiki/shared (wiki, index-ops, log)
-  └─► commands/query.ts ──► @llmwiki/shared (wiki, index-ops, log)
+  └─► commands/ingest.ts ──► @llmwiki/shared (ingest, bulk-ingest)
+  └─► commands/query.ts ──► @llmwiki/shared (query)
   └─► commands/lint.ts ──► @llmwiki/shared (lint)
-  └─► commands/status.ts ──► @llmwiki/shared (wiki, index-ops, log)
+  └─► commands/status.ts ──► @llmwiki/shared (status)
+  └─► commands/list.ts ──► @llmwiki/shared (wiki, index-ops, sources)
 ```
 
 ### VS Code Extension Internal Dependencies
 
 ```
 extension.ts
-  └─► commands.ts ──► @llmwiki/shared (readIndex, readPage, writePage, listPages,
-  │                    readLog, addEntry, appendEntry, directoryExists, lintWiki)
+  └─► commands.ts ──► @llmwiki/shared (readIndex, directoryExists, lintWiki, appendEntry,
+  │                    ingestSource, bulkIngest, queryWiki, getWikiStatus)
   └─► wikiPagesTree.ts ──► @llmwiki/shared (readIndex)
   └─► rawSourcesTree.ts ──► @llmwiki/shared (listSources)
   └─► backlinksTree.ts ──► @llmwiki/shared (getBacklinks)
@@ -585,7 +619,13 @@ extension.ts
 | `log.ts` | `appendEntry`, `readLog`, `getRecentEntries` | Append timestamped entries to `log.md`. Parse log entries. Retrieve recent entries. |
 | `sources.ts` | `listSources` | List all files in `raw/` with metadata (name, path, size, modified, extension). |
 | `backlinks.ts` | `getBacklinks` | Find all pages containing links to a target page via link resolution. |
-| `lint.ts` | `lintWiki` | Run 5 health-check categories and return structured `LintResult`. |
+| `lint.ts` | `lintWiki` | Run 6 health-check categories (including frontmatter-validation) and return structured `LintResult`. |
+| `utils.ts` | `slugify`, `excerpt` | Slugify filenames for wiki paths. Extract text excerpts with configurable max length. |
+| `search.ts` | `countOccurrences` | Case-insensitive substring occurrence counting for query scoring. |
+| `ingest.ts` | `ingestSource` | Ingest a single source file into the wiki with duplicate detection and `--force` override. |
+| `bulk-ingest.ts` | `bulkIngest` | Batch ingest all files from `raw/`, with progress callbacks and per-file status tracking. |
+| `query.ts` | `queryWiki`, `slugifyQuery` | Weighted keyword search across index titles (3×), summaries (2×), and page bodies (1×). Optional save to `wiki/queries/`. |
+| `status.ts` | `getWikiStatus` | Aggregate wiki statistics: source count, page count, last ingest/lint dates, orphan count, index coverage. |
 
 ## Design Decisions
 
