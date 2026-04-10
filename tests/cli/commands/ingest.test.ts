@@ -221,6 +221,63 @@ describe('ingestSource', () => {
     expect(result.status).toBe('success');
     expect(result.pages_created).toContain('sources/valid-source-summary.md');
   });
+
+  it('should return skipped when ingesting same source twice without --force', async () => {
+    const sourceFile = join(tmpDir, 'raw', 'duplicate.md');
+    await writeFile(sourceFile, 'Duplicate detection test.', 'utf-8');
+
+    const first = await ingestSource(sourceFile, tmpDir, false);
+    expect(first.status).toBe('success');
+
+    const second = await ingestSource(sourceFile, tmpDir, false);
+    expect(second.status).toBe('skipped');
+    expect(second.message).toBe('Source already ingested. Use --force to re-ingest.');
+    expect(second.pages_created).toEqual([]);
+    expect(second.pages_updated).toEqual([]);
+  });
+
+  it('should overwrite and return success when force=true on duplicate', async () => {
+    const sourceFile = join(tmpDir, 'raw', 'force-test.md');
+    await writeFile(sourceFile, 'Original content.', 'utf-8');
+
+    const first = await ingestSource(sourceFile, tmpDir, false);
+    expect(first.status).toBe('success');
+
+    // Update source content then force re-ingest
+    await writeFile(sourceFile, 'Updated content for force.', 'utf-8');
+    const second = await ingestSource(sourceFile, tmpDir, false, true);
+    expect(second.status).toBe('success');
+    expect(second.pages_created).toContain('sources/force-test-summary.md');
+
+    // Verify updated content is in the summary
+    const summaryPath = join(tmpDir, 'wiki', 'sources', 'force-test-summary.md');
+    const raw = await readFile(summaryPath, 'utf-8');
+    expect(raw).toContain('Updated content for force.');
+  });
+
+  it('should not create duplicate index entries on force re-ingest', async () => {
+    const sourceFile = join(tmpDir, 'raw', 'no-dup-index.md');
+    await writeFile(sourceFile, 'Index dup test.', 'utf-8');
+
+    await ingestSource(sourceFile, tmpDir, false);
+    await ingestSource(sourceFile, tmpDir, false, true);
+
+    const entries = await readIndex(join(tmpDir, 'wiki', 'index.md'));
+    const matches = entries.filter((e) => e.path === 'sources/no-dup-index-summary.md');
+    expect(matches).toHaveLength(1);
+  });
+
+  it('should still work for clean first-time ingest (regression)', async () => {
+    const sourceFile = join(tmpDir, 'raw', 'fresh.md');
+    await writeFile(sourceFile, 'Brand new content.', 'utf-8');
+
+    const result = await ingestSource(sourceFile, tmpDir, false, false);
+
+    expect(result.status).toBe('success');
+    expect(result.pages_created).toContain('sources/fresh-summary.md');
+    expect(result.pages_updated).toContain('index.md');
+    expect(result.pages_updated).toContain('log.md');
+  });
 });
 
 describe('ingest CLI integration', () => {
@@ -423,5 +480,56 @@ describe('ingest CLI integration', () => {
     } finally {
       console.error = origErr;
     }
+  });
+
+  it('should output skipped status in JSON when source already ingested', async () => {
+    const sourceFile = join(tmpDir, 'raw', 'skip-json.md');
+    await writeFile(sourceFile, 'Skip JSON test.', 'utf-8');
+
+    // First ingest
+    const program1 = createProgram();
+    await program1.parseAsync([
+      'node',
+      'plaid',
+      'wiki',
+      'ingest',
+      sourceFile,
+      '--path',
+      tmpDir,
+    ]);
+
+    // Second ingest with JSON
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.join(' '));
+
+    try {
+      const program2 = createProgram();
+      await program2.parseAsync([
+        'node',
+        'plaid',
+        'wiki',
+        '--json',
+        'ingest',
+        sourceFile,
+        '--path',
+        tmpDir,
+      ]);
+
+      expect(logs).toHaveLength(1);
+      const result = JSON.parse(logs[0]);
+      expect(result.status).toBe('skipped');
+      expect(result.message).toBe('Source already ingested. Use --force to re-ingest.');
+    } finally {
+      console.log = origLog;
+    }
+  });
+
+  it('should register --force option on ingest command', () => {
+    const program = createProgram();
+    const wiki = program.commands.find((cmd) => cmd.name() === 'wiki');
+    const ingest = wiki!.commands.find((cmd) => cmd.name() === 'ingest');
+    const forceOption = ingest!.options.find((opt) => opt.long === '--force');
+    expect(forceOption).toBeDefined();
   });
 });
