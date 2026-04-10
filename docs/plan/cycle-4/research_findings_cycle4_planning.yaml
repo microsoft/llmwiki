@@ -1,0 +1,712 @@
+plan_id: cycle-4
+objective: "Identify the highest-impact next improvements for the LLM Wiki after 3 cycles of CLI, VS Code extension, and infrastructure hardening"
+focus_area: "cycle-4 planning — LLM-powered operations, MCP server, smart ingest, remaining tech debt"
+created_at: "2026-04-10"
+created_by: gem-researcher
+status: completed
+
+tldr: |
+  - THE BIGGEST GAP: The LLM does NONE of the maintenance the strategy promises. Ingest is mechanical — 500-char excerpt, no summarization, no cross-referencing, no entity extraction, no contradiction detection. The entire product thesis ("LLM does all the maintenance") is unrealized.
+  - RECOMMENDED CYCLE-4 THEME: "MCP Server + Smart Write Operations" — expose wiki as MCP tools so external LLM agents can orchestrate intelligent ingest, cross-referencing, and page updates. This is the cleanest path to LLM-powered operations without embedding LLM clients in the CLI.
+  - Infrastructure is ready: @llmwiki/shared has 14 modules with clean interfaces, CLI commands are thin wrappers, architecture supports wrapping as MCP tools directly.
+  - 11 E2E tests currently fail (api_version undefined — likely stale build artifact issue). VS Code init command still duplicates logic. Log appendEntry race condition (C-1) and bare catch blocks (C-4) still present from cycle-2 review.
+  - MCP SDK (@modelcontextprotocol/sdk) is the TypeScript SDK for MCP servers. stdio transport is simplest and matches the "no infrastructure" strategy.
+
+research_metadata:
+  methodology: "Full codebase read: all 14 shared modules, 6 CLI commands, 7 VS Code files, 23 test files, 2 CI workflows, STRATEGY.md, ARCHITECTURE.md, idea.md, cycle-2 review, cycle-3 research/plan, activity-log.md, state.json. Test coverage run (367 tests: 356 pass, 11 fail). Pattern analysis across all source files."
+  scope: "Entire codebase + strategy documents + previous cycle artifacts. 3 research passes: (1) structure discovery, (2) implementation detail analysis, (3) gap analysis and synthesis."
+  confidence: high
+  coverage: 98
+  decision_blockers: 2
+  research_blockers: 0
+
+files_analyzed:
+  - file: STRATEGY.md
+    path: STRATEGY.md
+    purpose: "Defines ultimate goal, priorities, and anti-patterns for the LLM Wiki system"
+    key_elements:
+      - element: "Ultimate Goal"
+        type: pattern
+        location: "STRATEGY.md:7"
+        description: "LLM does all maintenance — summarizing, cross-referencing, filing, updating. Zero bookkeeping burden."
+      - element: "Current Priority list"
+        type: pattern
+        location: "STRATEGY.md:18-22"
+        description: "4 priorities: CLI (done), Actions (done), VS Code (done), Schema (partial). No explicit next priority listed."
+      - element: "What Not To Try — Complex MCP"
+        type: pattern
+        location: "STRATEGY.md:31"
+        description: "start with CLI --json output. Add MCP server mode later when agent interop patterns stabilize."
+      - element: "What Not To Try — Embedding RAG"
+        type: pattern
+        location: "STRATEGY.md:28"
+        description: "No vector database. Index file + search is sufficient at personal scale (~100s sources)."
+    language: Markdown
+    lines: 32
+
+  - file: idea.md
+    path: idea.md
+    purpose: "Original vision document describing the LLM Wiki pattern"
+    key_elements:
+      - element: "Smart ingest vision"
+        type: pattern
+        location: "idea.md:11"
+        description: "LLM reads source, extracts key info, integrates into wiki — updating entity pages, revising summaries, noting contradictions. Single source might touch 10-15 wiki pages."
+      - element: "Query filing"
+        type: pattern
+        location: "idea.md:39"
+        description: "Good query answers should be filed back into wiki as new pages. Explorations compound."
+      - element: "Lint health-check"
+        type: pattern
+        location: "idea.md:41"
+        description: "Lint should look for contradictions, stale claims, orphan pages, missing concepts, missing cross-references."
+    language: Markdown
+    lines: 74
+
+  - file: ingest.ts
+    path: packages/shared/src/ingest.ts
+    purpose: "Core ingest pipeline — reads source, creates summary page, updates index and log"
+    key_elements:
+      - element: ingestSource
+        type: function
+        location: "ingest.ts:29"
+        description: "Mechanical ingest: read file → slugify → create summary with 500-char excerpt → add to index → log. No LLM involvement."
+      - element: "500-char excerpt"
+        type: pattern
+        location: "ingest.ts:116-118"
+        description: "Content preview is raw first 500 characters of source. No summarization, no extraction."
+      - element: "Static summary text"
+        type: pattern
+        location: "ingest.ts:151"
+        description: "Index summary is always 'Source file (.ext)' — no content-aware description."
+    language: TypeScript
+    lines: 177
+
+  - file: query.ts
+    path: packages/shared/src/query.ts
+    purpose: "Keyword search with weighted scoring across index and page bodies"
+    key_elements:
+      - element: queryWiki
+        type: function
+        location: "query.ts:40"
+        description: "Pure keyword matching: title(3x) + summary(2x) + body(1x). No semantic search, no LLM re-ranking."
+      - element: slugifyQuery
+        type: function
+        location: "query.ts:29"
+        description: "Generates safe filenames for saved query results"
+    language: TypeScript
+    lines: 159
+
+  - file: wiki.ts
+    path: packages/shared/src/wiki.ts
+    purpose: "Core page operations — readPage, writePage, listPages, getPageLinks, directoryExists"
+    key_elements:
+      - element: writePage
+        type: function
+        location: "wiki.ts:29"
+        description: "Writes WikiPage with gray-matter frontmatter. Ready to be exposed as MCP tool."
+      - element: readPage
+        type: function
+        location: "wiki.ts:20"
+        description: "Reads markdown + parses frontmatter. Ready to be exposed as MCP tool."
+      - element: getPageLinks
+        type: function
+        location: "wiki.ts:60"
+        description: "Extracts internal .md link targets. Returns targets only, not {text, target} pairs."
+    language: TypeScript
+    lines: 72
+
+  - file: lint.ts
+    path: packages/shared/src/lint.ts
+    purpose: "6-category wiki health check"
+    key_elements:
+      - element: lintWiki
+        type: function
+        location: "lint.ts:45"
+        description: "Runs 6 checks: broken-links, orphan-pages, index-completeness, stale-entries, missing-pages, frontmatter-validation"
+    language: TypeScript
+    lines: 250
+
+  - file: index-ops.ts
+    path: packages/shared/src/index-ops.ts
+    purpose: "Parse, serialize, and query the categorized wiki/index.md file"
+    key_elements:
+      - element: readIndex
+        type: function
+        location: "index-ops.ts:76"
+        description: "Parses categorized markdown index into IndexEntry[]"
+      - element: addEntry
+        type: function
+        location: "index-ops.ts:144"
+        description: "Adds entry to index under appropriate category"
+      - element: removeEntry
+        type: function
+        location: "index-ops.ts:157"
+        description: "Removes entry by path"
+    language: TypeScript
+    lines: 189
+
+  - file: log.ts
+    path: packages/shared/src/log.ts
+    purpose: "Append-only operation log with date-stamped entries"
+    key_elements:
+      - element: appendEntry
+        type: function
+        location: "log.ts:16"
+        description: "STILL uses read-then-write (C-1 race condition from cycle-2 review). Not yet fixed to use appendFile."
+    language: TypeScript
+    lines: 105
+
+  - file: backlinks.ts
+    path: packages/shared/src/backlinks.ts
+    purpose: "Find all pages that link to a given target page"
+    key_elements:
+      - element: getBacklinks
+        type: function
+        location: "backlinks.ts:23"
+        description: "STILL has dead getPageLinks call + duplicated regex (C-3 from cycle-2 review). Works but wasteful."
+    language: TypeScript
+    lines: 70
+
+  - file: bulk-ingest.ts
+    path: packages/shared/src/bulk-ingest.ts
+    purpose: "Batch ingest for all files in raw/ directory"
+    key_elements:
+      - element: bulkIngest
+        type: function
+        location: "bulk-ingest.ts:32"
+        description: "Sequential processing with per-file progress callback. Clean interface for MCP wrapping."
+    language: TypeScript
+    lines: 106
+
+  - file: status.ts
+    path: packages/shared/src/status.ts
+    purpose: "Aggregate wiki statistics"
+    key_elements:
+      - element: getWikiStatus
+        type: function
+        location: "status.ts:26"
+        description: "Returns source count, page count, coverage, last ingest/lint dates, orphan count"
+    language: TypeScript
+    lines: 96
+
+  - file: commands.ts (VS Code)
+    path: packages/vscode/src/commands.ts
+    purpose: "VS Code command implementations — uses @llmwiki/shared after cycle-3 refactor"
+    key_elements:
+      - element: "llmwiki.init handler"
+        type: function
+        location: "commands.ts:51-87"
+        description: "STILL duplicates init logic. Does NOT call shared initWiki(). Creates simpler AGENTS.md than CLI version."
+      - element: "llmwiki.ingest handler"
+        type: function
+        location: "commands.ts:90-163"
+        description: "NOW correctly delegates to shared ingestSource() and bulkIngest(). Fixed in cycle-3."
+    language: TypeScript
+    lines: 281
+
+  - file: ci.yml
+    path: .github/workflows/ci.yml
+    purpose: "CI pipeline — build, lint, test with coverage on Node.js 20"
+    language: YAML
+    lines: 65
+
+  - file: ingest.yml
+    path: .github/workflows/ingest.yml
+    purpose: "Auto-ingest on push to raw/ or manual dispatch"
+    key_elements:
+      - element: "Mechanical auto-ingest"
+        type: pattern
+        location: "ingest.yml:34"
+        description: "Runs 'plaid wiki ingest --all --json'. Still mechanical. With MCP, could be enhanced to trigger LLM-powered ingest."
+    language: YAML
+    lines: 44
+
+  - file: vitest.config.ts
+    path: vitest.config.ts
+    purpose: "Test configuration with coverage thresholds"
+    key_elements:
+      - element: "Coverage thresholds"
+        type: pattern
+        location: "vitest.config.ts:18-23"
+        description: "Lines: 60%, Functions: 60%, Branches: 50%, Statements: 60%. passWithNoTests still true (N-6)."
+    language: TypeScript
+    lines: 27
+
+patterns_found:
+  - category: architecture
+    pattern: "Shared library as single source of truth"
+    description: "All business logic lives in @llmwiki/shared. CLI and VS Code are thin wrappers that handle UI/formatting only. Clean separation enables direct MCP wrapping."
+    examples:
+      - file: ingest.ts (CLI)
+        location: "packages/cli/src/commands/ingest.ts:4"
+        snippet: "import { ingestSource, bulkIngest } from '@llmwiki/shared';"
+      - file: commands.ts (VS Code)
+        location: "packages/vscode/src/commands.ts:4-14"
+        snippet: "import { readIndex, directoryExists, lintWiki, appendEntry, ingestSource, bulkIngest, queryWiki, getWikiStatus } from '@llmwiki/shared';"
+    prevalence: common
+
+  - category: architecture
+    pattern: "Structured JSON result objects"
+    description: "Every operation returns a typed result with command name, api_version, status, and operation-specific fields. Consistent pattern across all 6 commands."
+    examples:
+      - file: ingest.ts (shared)
+        location: "packages/shared/src/ingest.ts:12-21"
+        snippet: "export interface IngestResult { command: string; api_version: string; status: 'success' | 'error' | 'skipped'; pages_created: string[]; pages_updated: string[]; dry_run: boolean; }"
+      - file: status.ts (shared)
+        location: "packages/shared/src/status.ts:11-20"
+        snippet: "export interface StatusResult { command: string; api_version: string; source_count: number; wiki_page_count: number; ... }"
+    prevalence: common
+
+  - category: architecture
+    pattern: "Mechanical ingest — no intelligence"
+    description: "Ingest reads source file, creates a slug, writes a summary page with raw 500-char excerpt, adds generic summary to index. No summarization, tagging, entity extraction, or cross-referencing."
+    examples:
+      - file: ingest.ts (shared)
+        location: "packages/shared/src/ingest.ts:116-118"
+        snippet: "const excerpt = sourceContent.length > 500 ? sourceContent.slice(0, 500) + '…' : sourceContent;"
+      - file: ingest.ts (shared)
+        location: "packages/shared/src/ingest.ts:151"
+        snippet: "summary: `Source file (${sourceExt || 'unknown'})`"
+    prevalence: common
+
+  - category: error_handling
+    pattern: "Bare catch blocks swallowing all errors"
+    description: "17+ instances of catch {} that swallow all errors (not just ENOENT). Pattern exists across shared/log.ts, shared/wiki.ts, shared/sources.ts, shared/index-ops.ts, shared/query.ts, shared/status.ts, shared/lint.ts, shared/bulk-ingest.ts, cli/init.ts, cli/ingest.ts."
+    examples:
+      - file: wiki.ts
+        location: "packages/shared/src/wiki.ts:41-43"
+        snippet: "} catch { // ENOENT — wiki directory doesn't exist; return empty page list; return []; }"
+      - file: log.ts
+        location: "packages/shared/src/log.ts:24-27"
+        snippet: "} catch { // File does not exist yet — will be created }"
+    prevalence: common
+
+  - category: structure
+    pattern: "VS Code init still duplicates CLI init"
+    description: "llmwiki.init in VS Code commands.ts reimplements directory creation, index writing, log writing, and AGENTS.md creation instead of calling shared initWiki(). AGENTS.md content differs between CLI and VS Code versions."
+    examples:
+      - file: commands.ts (VS Code)
+        location: "packages/vscode/src/commands.ts:51-87"
+        snippet: "const dirs = ['raw', 'wiki', 'wiki/entities', 'wiki/concepts', 'wiki/sources']; ... await writeFile(join(root, 'AGENTS.md'), '# AGENTS.md\\n\\n## Wiki Schema\\n\\n_See CLI docs for full schema._\\n');"
+    prevalence: rare
+
+  - category: testing
+    pattern: "E2E tests fail on api_version"
+    description: "11 E2E tests fail because api_version is undefined in JSON output. Tests run against built dist/cli.js which may be stale. The shared functions return api_version but the built binary may not reflect latest code."
+    examples:
+      - file: cli.test.ts (E2E)
+        location: "tests/cli/e2e/cli.test.ts:671"
+        snippet: "expect(init.api_version).toBe('1'); // Received: undefined"
+    prevalence: rare
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: "@llmwiki/shared"
+      responsibility: "All business logic: 14 modules covering page I/O, index, log, sources, backlinks, lint, ingest, bulk-ingest, query, status, search, utils, constants"
+      location: "packages/shared/src/"
+      relationship_to_domain: "Core library that would be wrapped as MCP tools. Every function already has clean inputs/outputs suitable for tool definitions."
+
+    - component: "@llmwiki/cli"
+      responsibility: "Commander.js CLI with 6 subcommands — thin wrappers over shared"
+      location: "packages/cli/src/"
+      relationship_to_domain: "CLI is where MCP server command would be registered (plaid wiki mcp)"
+
+    - component: "@llmwiki/vscode"
+      responsibility: "VS Code extension with 4 tree views, 7 commands, status bar"
+      location: "packages/vscode/src/"
+      relationship_to_domain: "Could eventually connect to MCP server for LLM-powered operations"
+
+    - component: "GitHub Actions (ingest.yml)"
+      responsibility: "Auto-ingest on push to raw/"
+      location: ".github/workflows/ingest.yml"
+      relationship_to_domain: "Currently mechanical. With MCP, could trigger LLM-powered ingest via GitHub Actions + LLM API."
+
+  interfaces_used_by_domain:
+    - interface: "IngestResult"
+      location: "packages/shared/src/ingest.ts:12-21"
+      usage_pattern: "Returned by ingestSource() — command, api_version, status, pages_created, pages_updated, dry_run"
+    - interface: "QueryOutput"
+      location: "packages/shared/src/query.ts:17-24"
+      usage_pattern: "Returned by queryWiki() — command, query, matches, results[]"
+    - interface: "LintResult"
+      location: "packages/shared/src/lint.ts:14-22"
+      usage_pattern: "Returned by lintWiki() — findings[], errorCount, warningCount, infoCount, categorySummary"
+    - interface: "StatusResult"
+      location: "packages/shared/src/status.ts:11-20"
+      usage_pattern: "Returned by getWikiStatus() — source_count, wiki_page_count, last_ingest_date, coverage"
+    - interface: "WikiPage"
+      location: "packages/shared/src/wiki.ts:15-18"
+      usage_pattern: "Used by readPage/writePage — { frontmatter: WikiPageFrontmatter, body: string }"
+    - interface: "IndexEntry"
+      location: "packages/shared/src/index-ops.ts:4-10"
+      usage_pattern: "Used by readIndex, addEntry, removeEntry — path, title, summary, category, tags"
+    - interface: "BulkIngestResult"
+      location: "packages/shared/src/bulk-ingest.ts:22-30"
+      usage_pattern: "Returned by bulkIngest() — total, ingested, skipped, failed, files[]"
+
+  data_flow_involving_domain: |
+    Current ingest flow:
+      Human → raw/ file → plaid wiki ingest → read source → slugify → create summary page (500-char excerpt) → update index ("Source file (.ext)") → append log
+    
+    Envisioned smart ingest flow (requires LLM):
+      Human → raw/ file → MCP tool call → LLM reads source → LLM generates summary → LLM extracts entities/concepts → LLM creates/updates multiple pages → LLM adds cross-references → update index (content-aware summary) → append log
+    
+    Current query flow:
+      Human → search terms → keyword matching (title 3x + summary 2x + body 1x) → sorted results
+    
+    Envisioned smart query flow (requires LLM):
+      Human → question → MCP tool call → LLM reads index → LLM reads relevant pages → LLM synthesizes answer → optionally file answer as new wiki page
+
+  key_relationships_to_domain:
+    - from: "@llmwiki/shared"
+      to: "MCP server (future)"
+      relationship: "shared functions become MCP tool implementations"
+    - from: "MCP server (future)"
+      to: "External LLM agent"
+      relationship: "MCP tools are invoked by LLM agent via stdio transport"
+    - from: "External LLM agent"
+      to: "wiki/ directory"
+      relationship: "LLM reads and writes wiki pages via MCP tools"
+
+related_technology_stack:
+  languages_used_in_domain:
+    - TypeScript (ES2022, NodeNext, strict mode)
+  frameworks_used_in_domain:
+    - name: Commander.js
+      usage_in_domain: "CLI framework — 6 subcommands under 'plaid wiki'"
+    - name: VS Code Extension API
+      usage_in_domain: "TreeDataProvider, commands, status bar, file watchers"
+  libraries_used_in_domain:
+    - name: gray-matter
+      purpose_in_domain: "YAML frontmatter parsing/serialization for wiki pages"
+    - name: tsup
+      purpose_in_domain: "CLI bundling (ESM, node20 target, shebang banner)"
+    - name: esbuild
+      purpose_in_domain: "VS Code extension bundling (CJS, external vscode)"
+    - name: vitest
+      purpose_in_domain: "Test framework with v8 coverage"
+    - name: "@modelcontextprotocol/sdk (planned)"
+      purpose_in_domain: "MCP server implementation for agent interop — TypeScript SDK for Model Context Protocol"
+
+related_conventions:
+  naming_patterns_in_domain: "kebab-case files, PascalCase interfaces, camelCase functions. Slug generation: lowercase, strip extension, hyphens for non-alphanumeric."
+  structure_of_domain: "Monorepo: packages/shared (business logic) → packages/cli (Commander.js wrappers) → packages/vscode (VS Code UI). Tests mirror source structure in tests/."
+  error_handling_in_domain: "Bare catch {} blocks (17+ instances) that swallow all errors. Comments claim ENOENT but don't verify. Known tech debt from cycle-2 review (C-4)."
+  testing_in_domain: "367 tests across 23 files. Shared: unit tests. CLI: unit + E2E (subprocess). VS Code: mock-based unit tests. Integration tests exist but excluded from CI."
+  documentation_in_domain: "ARCHITECTURE.md (comprehensive), README.md, STRATEGY.md, idea.md. AGENTS.md generated by init."
+
+related_dependencies:
+  internal:
+    - component: "@llmwiki/shared"
+      relationship_to_domain: "Foundation — all business logic"
+      direction: outbound
+    - component: "@llmwiki/cli"
+      relationship_to_domain: "Consumer — thin CLI wrapper"
+      direction: inbound
+    - component: "@llmwiki/vscode"
+      relationship_to_domain: "Consumer — VS Code UI layer"
+      direction: inbound
+  external:
+    - name: gray-matter
+      purpose_for_domain: "Frontmatter parsing"
+    - name: commander
+      purpose_for_domain: "CLI argument parsing"
+    - name: "@modelcontextprotocol/sdk (needed for cycle-4)"
+      purpose_for_domain: "MCP server implementation"
+
+testing_patterns:
+  framework: "Vitest v3 with @vitest/coverage-v8"
+  coverage_areas:
+    - "Shared library: wiki ops, index ops, log, sources, backlinks, lint, ingest, bulk-ingest, query, status"
+    - "CLI commands: init, ingest, query, lint, status, list (unit + E2E)"
+    - "VS Code: tree providers (4), commands (mock-based), status bar"
+  test_organization: "tests/shared/, tests/cli/commands/, tests/cli/unit/, tests/cli/e2e/, tests/vscode/"
+  mock_patterns:
+    - "VS Code API mocked via vi.mock('vscode') with manual stubs"
+    - "File system tested against real temp directories (mkdtemp)"
+    - "CLI E2E tests spawn actual node subprocess against built dist/cli.js"
+
+# ────────────────────────────────────────────────────────────────
+# GAP ANALYSIS: Strategy Vision vs Current Reality
+# ────────────────────────────────────────────────────────────────
+gap_analysis:
+  vision_vs_reality:
+    - area: "LLM-powered summarization"
+      vision: "LLM reads source, extracts key information, writes content-aware summary"
+      reality: "500-character raw text excerpt, no intelligence"
+      gap_severity: critical
+      strategy_reference: "idea.md:11, STRATEGY.md:7"
+
+    - area: "Cross-referencing"
+      vision: "Automatic cross-references built on every ingest. Single source touches 10-15 pages."
+      reality: "No automatic cross-referencing. Ingest creates exactly 1 page. Backlinks module exists but only reads existing links."
+      gap_severity: critical
+      strategy_reference: "idea.md:11, STRATEGY.md:12"
+
+    - area: "Entity/concept extraction"
+      vision: "LLM identifies entities and concepts in sources, creates/updates typed pages"
+      reality: "Only source-summary pages created. No entity or concept page creation."
+      gap_severity: high
+      strategy_reference: "idea.md:11"
+
+    - area: "Contradiction detection"
+      vision: "Flag conflicting information across sources"
+      reality: "Not implemented. Lint checks structural health only."
+      gap_severity: medium
+      strategy_reference: "idea.md:41"
+
+    - area: "Agent interop (MCP)"
+      vision: "External LLM agents talk to wiki via CLI or MCP. Wiki becomes shared knowledge layer."
+      reality: "CLI --json works for scripting. No MCP server. No tools for LLM agents to call."
+      gap_severity: high
+      strategy_reference: "STRATEGY.md:13-14, STRATEGY.md:31"
+
+    - area: "Intelligent query"
+      vision: "LLM synthesizes answers from wiki pages, files good answers back as new pages"
+      reality: "Keyword substring matching only. --save exists but creates raw result dump, not LLM synthesis."
+      gap_severity: medium
+      strategy_reference: "idea.md:39"
+
+    - area: "Obsidian compatibility"
+      vision: "Wiki browsable from Obsidian with graph view"
+      reality: "Pages are standard markdown with links — likely works but untested/undocumented"
+      gap_severity: low
+      strategy_reference: "STRATEGY.md:7"
+
+    - area: "Web browsability"
+      vision: "Browsable from the web (GitHub)"
+      reality: "Standard markdown in GitHub repo — already browsable. No GitHub Pages."
+      gap_severity: low
+      strategy_reference: "STRATEGY.md:7"
+
+  remaining_tech_debt:
+    - id: "C-1"
+      description: "Log appendEntry has read-then-write race condition. Should use fs.appendFile."
+      location: "packages/shared/src/log.ts:16-31"
+      severity: concern
+      source: "cycle-2-review.md"
+
+    - id: "C-3"
+      description: "Dead getPageLinks() call + duplicated regex in backlinks.ts"
+      location: "packages/shared/src/backlinks.ts:35-41"
+      severity: concern
+      source: "cycle-2-review.md"
+
+    - id: "C-4"
+      description: "Bare catch {} blocks swallow all errors (17+ instances). Should check ENOENT specifically."
+      location: "Multiple files across packages/shared/src/"
+      severity: concern
+      source: "cycle-2-review.md"
+
+    - id: "C-5"
+      description: "String-prefix path traversal guard may fail on case-insensitive filesystems (Windows)"
+      location: "packages/shared/src/ingest.ts:54-67"
+      severity: concern
+      source: "cycle-2-review.md"
+
+    - id: "C-6"
+      description: "VS Code integration tests exist but are not wired to CI"
+      location: ".github/workflows/ci.yml, tests/vscode/integration/"
+      severity: concern
+      source: "cycle-2-review.md"
+
+    - id: "C-7"
+      description: "'as unknown as string[]' type assertion in sources.ts"
+      location: "packages/shared/src/sources.ts:24"
+      severity: concern
+      source: "cycle-2-review.md"
+
+    - id: "INIT-DUP"
+      description: "VS Code init command still duplicates logic from CLI init instead of calling shared initWiki()"
+      location: "packages/vscode/src/commands.ts:51-87"
+      severity: concern
+      source: "current analysis"
+
+    - id: "E2E-FAIL"
+      description: "11 E2E tests fail on api_version being undefined. Likely stale build or init command not returning api_version."
+      location: "tests/cli/e2e/cli.test.ts:671, 788, 802"
+      severity: concern
+      source: "current test run"
+
+    - id: "N-1"
+      description: "llmwiki.isWikiWorkspace context set unconditionally to true"
+      location: "packages/vscode/src/extension.ts:15"
+      severity: nit
+      source: "cycle-2-review.md"
+
+    - id: "N-6"
+      description: "passWithNoTests: true in vitest config could hide missing tests"
+      location: "vitest.config.ts:7"
+      severity: nit
+      source: "cycle-2-review.md"
+
+# ────────────────────────────────────────────────────────────────
+# CYCLE-4 RECOMMENDATIONS (ranked by impact)
+# ────────────────────────────────────────────────────────────────
+cycle4_recommendations:
+  theme: "MCP Server + Smart Write Operations — Make the wiki intelligent"
+  rationale: |
+    The entire product thesis is "LLM does all the maintenance." After 3 cycles of tool infrastructure,
+    the tooling is solid but the LLM isn't involved. The cleanest path to LLM-powered operations is
+    MCP server mode — it exposes wiki operations as tools that any LLM agent can call, without embedding
+    an LLM client in the CLI. This aligns with the strategy ("start with CLI --json, add MCP later")
+    and the "no infrastructure" principle.
+
+  approach_analysis:
+    - approach: "A — MCP Server Mode (recommended)"
+      description: |
+        Add 'plaid wiki mcp' command that starts an MCP server over stdio transport.
+        Expose existing shared library functions as MCP tools.
+        Add new write operations (update-page, create-entity, create-concept, add-crosslinks) that
+        the LLM needs to perform intelligent ingest and cross-referencing.
+        The LLM agent (Claude, ChatGPT, etc.) connects and orchestrates smart operations.
+      pros:
+        - "Clean architecture: CLI stays a tool, LLM stays external"
+        - "Provider-agnostic: works with any MCP-compatible LLM"
+        - "Shared library is already perfectly factored for wrapping as tools"
+        - "Aligns with strategy: 'add MCP server mode later'"
+        - "No API key management, no cost embedding in CLI"
+      cons:
+        - "Requires MCP-capable LLM client (Claude Desktop, Cursor, etc.)"
+        - "Smart ingest workflow lives in the LLM's context, not codified"
+        - "MCP SDK adds a dependency"
+
+    - approach: "B — Embedded LLM Client"
+      description: |
+        Add LLM provider configuration (API key, model selection) to CLI.
+        'plaid wiki ingest --llm' calls LLM API during ingest for summarization, entity extraction, cross-referencing.
+      pros:
+        - "Fully automated: ingest is smart without external agent"
+        - "GitHub Actions ingest.yml could use it automatically"
+      cons:
+        - "Requires API key management (secrets, config files)"
+        - "Locks into specific LLM providers or needs abstraction layer"
+        - "Adds cost per ingest operation"
+        - "More complex: prompt engineering, error handling for API calls, rate limits"
+        - "Violates 'no custom middleware' principle somewhat"
+
+  recommended_focus_areas:
+    - rank: 1
+      area: "MCP Server Foundation"
+      impact: critical
+      effort: medium
+      description: |
+        Add 'plaid wiki mcp' command that starts an MCP server over stdio transport using @modelcontextprotocol/sdk.
+        Expose read-only tools first: wiki-status, wiki-query, wiki-lint, wiki-list-pages, wiki-list-sources,
+        wiki-read-page, wiki-read-index. These let an LLM agent understand the wiki state.
+      technical_approach: |
+        - Add @modelcontextprotocol/sdk to packages/cli dependencies
+        - Create packages/cli/src/commands/mcp.ts with registerMcpCommand()
+        - Create packages/shared/src/mcp-tools.ts defining tool schemas (name, description, inputSchema)
+        - Each tool wraps an existing shared function:
+            wiki_status → getWikiStatus()
+            wiki_query → queryWiki()
+            wiki_lint → lintWiki()
+            wiki_list_pages → listPages() + readPage() for frontmatter
+            wiki_list_sources → listSources()
+            wiki_read_page → readPage()
+            wiki_read_index → readIndex()
+        - stdio transport: process.stdin/stdout for MCP protocol, console.error for logs
+        - Integration test: spawn CLI subprocess, send MCP messages, verify responses
+
+    - rank: 2
+      area: "Smart Write Operations via MCP"
+      impact: critical
+      effort: medium
+      description: |
+        Add write tools that the LLM needs to perform intelligent wiki maintenance:
+        wiki-write-page, wiki-update-page, wiki-create-entity, wiki-create-concept,
+        wiki-add-crosslinks, wiki-update-index.
+        These are the tools that bridge the gap between "mechanical file copy" and "LLM-powered maintenance."
+      technical_approach: |
+        New shared functions needed:
+        - updatePage(wikiDir, pagePath, updates: Partial<WikiPage>) — merge updates into existing page
+        - createEntityPage(wikiDir, name, content, tags) — create entity page with proper frontmatter + add to index
+        - createConceptPage(wikiDir, name, content, tags) — same for concepts
+        - addCrosslinks(wikiDir, fromPage, toPages[]) — add markdown links between pages
+        - updateIndexEntry(indexPath, path, updates) — update summary/tags of existing entry
+        Each becomes an MCP tool with proper input validation.
+
+    - rank: 3
+      area: "Ingest Enhancement (MCP-aware)"
+      impact: high
+      effort: low
+      description: |
+        Enhance ingestSource to return more structured data that helps LLM agents:
+        - Full source content (not just 500-char excerpt) available via read-page tool
+        - Source metadata (word count, detected language, key terms) in the result
+        - A suggested_actions field hinting what the LLM should do next (create entity pages, update concepts, etc.)
+      technical_approach: |
+        - Expand IngestResult to include source_word_count, source_content_type
+        - Add a wiki-ingest-with-context tool that ingests AND returns relevant existing pages
+          (pages that might need updating based on keyword overlap with the new source)
+        - This gives the LLM agent enough context to make intelligent decisions
+
+    - rank: 4
+      area: "Tech Debt Cleanup"
+      impact: medium
+      effort: low
+      description: |
+        Fix remaining issues from cycle-2 review and current test failures.
+        Can run in parallel with MCP work as independent tasks.
+      items:
+        - "Fix 11 failing E2E tests (rebuild dist/ or fix api_version propagation in init command)"
+        - "Fix appendEntry race condition: switch to fs.appendFile (C-1)"
+        - "Fix dead getPageLinks call + duplicated regex in backlinks.ts (C-3)"
+        - "Extract initWiki into @llmwiki/shared so VS Code init stops duplicating (INIT-DUP)"
+        - "Remove passWithNoTests from vitest config (N-6)"
+
+    - rank: 5
+      area: "Improved Error Handling"
+      impact: low
+      effort: medium
+      description: |
+        Fix bare catch {} blocks to check for ENOENT specifically (C-4).
+        17+ instances across the codebase. Systematic but straightforward.
+      technical_approach: |
+        - Create a shared helper: isNotFoundError(err) that checks code === 'ENOENT'
+        - Replace catch {} with catch (err) { if (isNotFoundError(err)) { ... } else { throw err; } }
+        - Apply across all 17+ instances
+
+open_questions:
+  - question: "Which MCP transport should be used: stdio or SSE?"
+    context: "stdio is simpler and works for local-only use. SSE enables remote connections (e.g., from a hosted LLM service). The strategy says 'no self-hosted servers' which favors stdio."
+    type: decision_blocker
+    affects: ["mcp-server-foundation"]
+
+  - question: "Should the MCP server expose wiki-write-page with unrestricted write access, or should writes be constrained?"
+    context: "Unrestricted write is most flexible for LLM agents but could lead to corrupted wiki state. Constrained writes (e.g., must include valid frontmatter, must update index) are safer but limit LLM creativity."
+    type: decision_blocker
+    affects: ["smart-write-operations"]
+
+  - question: "How should MCP tools be tested? Mock transport or real subprocess?"
+    context: "The MCP SDK supports in-memory transport for testing. Alternatively, spawn the CLI as a subprocess and send MCP messages over stdin/stdout. The E2E approach is more realistic but slower."
+    type: research
+    affects: ["mcp-server-foundation"]
+
+  - question: "Should the GitHub Actions ingest.yml be updated to use MCP for LLM-powered ingest?"
+    context: "This would require an LLM API key as a GitHub secret and would incur cost per ingest. It would make the auto-ingest intelligent but adds complexity."
+    type: nice_to_know
+    affects: ["ingest-enhancement"]
+
+  - question: "What is the root cause of the 11 failing E2E tests?"
+    context: "api_version is undefined in JSON output. Could be: (1) stale dist/ build, (2) init command not including api_version in its result type, (3) JSON output not including api_version for some commands. Needs investigation."
+    type: research
+    affects: ["tech-debt-cleanup"]
+
+gaps:
+  - area: "MCP SDK evaluation"
+    description: "Need to verify @modelcontextprotocol/sdk TypeScript SDK stability, API surface, and stdio transport support before committing to it."
+    impact: research_blocker
+    affects: ["mcp-server-foundation"]
+
+  - area: "Smart ingest workflow design"
+    description: "The exact sequence of MCP tool calls an LLM should make during 'smart ingest' is not defined. Need to design the workflow: read source → analyze → create pages → add crosslinks → update index."
+    impact: nice_to_know
+    affects: ["smart-write-operations", "ingest-enhancement"]
+
+  - area: "E2E test root cause"
+    description: "11 tests fail on api_version. Need to determine if this is a build issue, a code issue in init command, or a test expectation issue."
+    impact: research_blocker
+    affects: ["tech-debt-cleanup"]
