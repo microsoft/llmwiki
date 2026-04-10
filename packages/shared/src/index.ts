@@ -11,3 +11,4 @@ export * from './ingest.js';
 export * from './bulk-ingest.js';
 export * from './query.js';
 export * from './status.js';
+export * from './mcp/index.js';

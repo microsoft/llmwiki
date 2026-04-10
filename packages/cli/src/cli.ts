@@ -8,6 +8,7 @@ import { registerLintCommand } from './commands/lint.js';
 import { registerStatusCommand } from './commands/status.js';
 import { registerQueryCommand } from './commands/query.js';
 import { registerListCommand } from './commands/list.js';
+import { registerMcpCommand } from './commands/mcp.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -35,6 +36,7 @@ export function createProgram(): Command {
   registerStatusCommand(wiki);
   registerQueryCommand(wiki);
   registerListCommand(wiki);
+  registerMcpCommand(wiki);
 
   return program;
 }
