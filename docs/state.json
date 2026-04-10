@@ -5,8 +5,8 @@
   "status": "active",
   "started_at": "2026-04-10T11:37:00Z",
   "tasks": {
-    "c4-01": { "status": "pr_open", "attempts": 1, "started_at": "2026-04-10T11:44:40Z", "branch": "task/cycle-4/c4-01", "pr": 47 },
-    "c4-02": { "status": "pending", "attempts": 0 },
+    "c4-01": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T11:44:40Z", "completed_at": "2026-04-10T12:25:00Z", "branch": "task/cycle-4/c4-01", "pr": 47 },
+    "c4-02": { "status": "running", "attempts": 1, "started_at": "2026-04-10T12:02:00Z", "branch": "task/cycle-4/c4-02" },
     "c4-03": { "status": "pending", "attempts": 0 },
     "c4-04": { "status": "pending", "attempts": 0 },
     "c4-05": { "status": "pending", "attempts": 0 },
