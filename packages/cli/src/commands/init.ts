@@ -44,6 +44,7 @@ const AGENTS_CONTENT = `# AGENTS.md
 - **concept** — An idea, theory, or abstract topic
 - **source** — A reference to raw material
 - **summary** — An auto-generated summary of an ingested source
+- **query** — A saved query result page, created by \`plaid wiki query --save\`
 
 ### Directory Structure
 
@@ -58,7 +59,7 @@ const AGENTS_CONTENT = `# AGENTS.md
 ### Frontmatter Schema
 
 **Required fields:**
-- \`type\` — Page type (entity, concept, source, summary)
+- \`type\` — Page type (entity, concept, source, summary, query)
 - \`title\` — Page title
 
 **Optional fields:**
@@ -70,14 +71,30 @@ const AGENTS_CONTENT = `# AGENTS.md
 - \`ingested\` — Date the source was ingested
 
 \`\`\`yaml
-type: entity | concept | source | summary
+type: entity | concept | source | summary | query
 title: string
 tags: string[]
 sources: string[]
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-source_path: string   # source/summary pages only
-ingested: YYYY-MM-DD  # source/summary pages only
+source_path: string       # source/summary pages only
+ingested: YYYY-MM-DD      # source/summary pages only
+query: string             # query pages only — the original query string
+results_count: number     # query pages only — number of results
+\`\`\`
+
+### Query Page Frontmatter
+
+Query pages are created by \`plaid wiki query --save\` and use the following frontmatter:
+
+\`\`\`yaml
+type: query
+title: "<the query string>"
+tags:
+  - <derived from query terms>
+created: YYYY-MM-DD
+query: "<the original query string>"
+results_count: <number of results>
 \`\`\`
 
 ### Naming Conventions
