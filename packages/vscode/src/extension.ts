@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { WikiPagesTreeDataProvider } from './wikiPagesTree';
+import { registerCommands } from './commands';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -24,6 +25,8 @@ export function activate(context: vscode.ExtensionContext): void {
   watcher.onDidChange(() => wikiPagesProvider.refresh());
   watcher.onDidCreate(() => wikiPagesProvider.refresh());
   watcher.onDidDelete(() => wikiPagesProvider.refresh());
+
+  registerCommands(context, workspaceFolder, { wikiPages: wikiPagesProvider }, outputChannel);
 
   context.subscriptions.push(treeRegistration, watcher, wikiPagesProvider);
 }
