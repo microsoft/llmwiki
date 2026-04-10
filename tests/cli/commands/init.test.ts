@@ -82,6 +82,10 @@ describe('initWiki', () => {
     expect(agentsContent).toContain('source');
     expect(agentsContent).toContain('Frontmatter Schema');
     expect(agentsContent).toContain('summary');
+    expect(agentsContent).toContain('query');
+    expect(agentsContent).toContain('Query Page Frontmatter');
+    expect(agentsContent).toContain('plaid wiki query --save');
+    expect(agentsContent).toContain('results_count');
     expect(agentsContent).toContain('Naming Conventions');
     expect(agentsContent).toContain('Ingest Workflow');
     expect(agentsContent).toContain('Lint Rules');
