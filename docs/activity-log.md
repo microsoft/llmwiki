@@ -256,3 +256,5 @@
 - [2026-04-10T16:22:16.672Z] [commander] cycle=103 action=merge-pr summary=Merged PR #54 (test(c4-08): MCP server integration tests) via squash merge — 8/11 tasks done, wave 3 tasks c4-09/c4-10 now unblocked.
 
 - [2026-04-10T17:25:00Z] [commander] cycle=cycle-4 action=merge-pr pr=56 summary=Resolved merge conflicts and merged PR #56 (docs c4-10) via squash merge. Task c4-10 complete. 10/11 tasks done.
+
+- [2026-04-10T17:40:00Z] [commander] cycle=cycle-4 action=execute-task task=c4-11 summary=Completed task c4-11 (smart ingest workflow walkthrough): docs/workflows/smart-ingest.md (7-step guide with JSON examples) + 5 MCP integration tests. 560 tests pass. Opened PR #57.
