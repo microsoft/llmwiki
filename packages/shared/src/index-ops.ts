@@ -15,18 +15,30 @@ export interface FindOptions {
   tags?: string[];
 }
 
+/** Escape characters that have special meaning inside markdown link text. */
+export function escapeMarkdownLinkText(text: string): string {
+  return text.replace(/([[\]()])/g, '\\$1');
+}
+
+/** Unescape markdown link text that was escaped by escapeMarkdownLinkText. */
+function unescapeMarkdownLinkText(text: string): string {
+  return text.replace(/\\([[\]()])/g, '$1');
+}
+
 /**
  * Parse a markdown index entry line into its components.
  * Format: `- [Title](path) — Summary text #tag1 #tag2`
+ * Handles escaped brackets/parens in titles produced by escapeMarkdownLinkText.
  */
 function parseEntryLine(line: string, category: string): IndexEntry | null {
   const trimmed = line.trim();
-  const entryMatch = trimmed.match(/^-\s+\[([^\]]+)\]\(([^)]+)\)(.*)$/);
+  // Support both escaped and unescaped brackets in titles
+  const entryMatch = trimmed.match(/^-\s+\[((?:[^\]\\]|\\.)+)\]\(((?:[^)\\]|\\.)+)\)(.*)$/);
   if (!entryMatch) {
     return null;
   }
 
-  const title = entryMatch[1];
+  const title = unescapeMarkdownLinkText(entryMatch[1]);
   const path = entryMatch[2];
   const rest = entryMatch[3].trim();
 
@@ -56,7 +68,7 @@ function parseEntryLine(line: string, category: string): IndexEntry | null {
  * Format a single index entry as a markdown list item.
  */
 function formatEntryLine(entry: IndexEntry): string {
-  let line = `- [${entry.title}](${entry.path})`;
+  let line = `- [${escapeMarkdownLinkText(entry.title)}](${entry.path})`;
   const parts: string[] = [];
   if (entry.summary) {
     parts.push(entry.summary);
