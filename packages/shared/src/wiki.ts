@@ -1,10 +1,12 @@
 import matter from 'gray-matter';
-import { readFile, writeFile, readdir, stat, mkdir } from 'node:fs/promises';
-import { join, dirname, extname, relative } from 'node:path';
+import { readFile, writeFile, readdir, stat, mkdir, unlink } from 'node:fs/promises';
+import { join, dirname, extname, relative, resolve } from 'node:path';
 import { isNotFoundError } from './errors.js';
 import { slugify } from './utils.js';
-import { addEntry, escapeMarkdownLinkText } from './index-ops.js';
+import { addEntry, escapeMarkdownLinkText, removeEntry } from './index-ops.js';
 import type { IndexEntry } from './index-ops.js';
+import { getBacklinks } from './backlinks.js';
+import type { BacklinkResult } from './backlinks.js';
 
 export interface WikiPageFrontmatter {
   type?: string;
@@ -272,4 +274,61 @@ export async function addCrosslinks(
     frontmatter: page.frontmatter,
     body: newBody,
   });
+}
+
+export interface DeleteResult {
+  /** The relative path of the deleted page */
+  deletedPath: string;
+  /** Whether the file was successfully deleted */
+  deleted: boolean;
+  /** Backlink warnings - pages that still link to the deleted page */
+  backlinkWarnings: BacklinkResult[];
+}
+
+/**
+ * Delete a wiki page by relative path.
+ * Validates the page exists, computes backlink warnings, removes the index
+ * entry, then deletes the file from disk.
+ *
+ * Security: validates pagePath stays within wikiDir (no path traversal).
+ * Order: index entry removed FIRST, then file deleted (safer to have orphan
+ * file than orphan index entry).
+ */
+export async function deletePage(
+  wikiDir: string,
+  pagePath: string,
+): Promise<DeleteResult> {
+  // 1. Path traversal validation
+  const resolvedBase = resolve(wikiDir).replace(/\\/g, '/');
+  const resolvedFull = resolve(wikiDir, pagePath).replace(/\\/g, '/');
+  if (!resolvedFull.startsWith(resolvedBase + '/') && resolvedFull !== resolvedBase) {
+    throw new Error('Path traversal detected — pagePath must stay within wikiDir');
+  }
+
+  // 2. Validate page exists
+  const fullPath = join(wikiDir, pagePath);
+  try {
+    await stat(fullPath);
+  } catch (err) {
+    if (isNotFoundError(err)) {
+      throw new Error(`Page not found: ${pagePath}`);
+    }
+    throw err;
+  }
+
+  // 3. Compute backlinks before deletion
+  const backlinkWarnings = await getBacklinks(wikiDir, pagePath);
+
+  // 4. Remove index entry FIRST (safer order)
+  const indexPath = join(wikiDir, 'index.md');
+  await removeEntry(indexPath, pagePath);
+
+  // 5. Delete the file from disk
+  await unlink(fullPath);
+
+  return {
+    deletedPath: pagePath,
+    deleted: true,
+    backlinkWarnings,
+  };
 }
