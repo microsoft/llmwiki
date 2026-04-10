@@ -3,7 +3,7 @@ import { readFile, writeFile, readdir, stat, mkdir, unlink } from 'node:fs/promi
 import { join, dirname, extname, relative, resolve } from 'node:path';
 import { isNotFoundError } from './errors.js';
 import { slugify } from './utils.js';
-import { addEntry, escapeMarkdownLinkText, removeEntry } from './index-ops.js';
+import { addEntry, escapeMarkdownLinkText, readIndex, removeEntry, writeIndex } from './index-ops.js';
 import type { IndexEntry } from './index-ops.js';
 import { getBacklinks } from './backlinks.js';
 import type { BacklinkResult } from './backlinks.js';
@@ -331,4 +331,138 @@ export async function deletePage(
     deleted: true,
     backlinkWarnings,
   };
+}
+
+export interface RenameResult {
+  /** Whether the rename was successful */
+  renamed: boolean;
+  /** The old relative path */
+  oldPath: string;
+  /** The new relative path */
+  newPath: string;
+  /** Number of links that were rewritten across the wiki */
+  rewrittenLinks: number;
+  /** Relative paths of pages whose links were rewritten */
+  affectedPages: string[];
+}
+
+/**
+ * Rename (move) a wiki page from oldPath to newPath.
+ * Rewrites backlinks across the wiki, updates the index entry, and
+ * optionally updates a path-derived frontmatter title.
+ *
+ * Security: validates both paths stay within wikiDir (no path traversal).
+ */
+export async function renamePage(
+  wikiDir: string,
+  oldPath: string,
+  newPath: string,
+): Promise<RenameResult> {
+  // 1. Path traversal guard on BOTH paths
+  const resolvedBase = resolve(wikiDir).replace(/\\/g, '/');
+  const resolvedOld = resolve(wikiDir, oldPath).replace(/\\/g, '/');
+  if (!resolvedOld.startsWith(resolvedBase + '/') && resolvedOld !== resolvedBase) {
+    throw new Error('Path traversal detected — oldPath must stay within wikiDir');
+  }
+  const resolvedNew = resolve(wikiDir, newPath).replace(/\\/g, '/');
+  if (!resolvedNew.startsWith(resolvedBase + '/') && resolvedNew !== resolvedBase) {
+    throw new Error('Path traversal detected — newPath must stay within wikiDir');
+  }
+
+  // 2. Validate old page exists
+  const oldFull = join(wikiDir, oldPath);
+  try {
+    await stat(oldFull);
+  } catch (err) {
+    if (isNotFoundError(err)) {
+      throw new Error(`Page not found: ${oldPath}`);
+    }
+    throw err;
+  }
+
+  // 3. Validate new path does NOT exist
+  const newFull = join(wikiDir, newPath);
+  try {
+    await stat(newFull);
+    throw new Error(`Target path already exists: ${newPath}`);
+  } catch (err) {
+    if (!isNotFoundError(err)) throw err;
+    // Good — file doesn't exist
+  }
+
+  // 4. Read old page content
+  const page = await readPage(oldFull);
+
+  // 5. Update frontmatter title if it was path-derived
+  const oldStem = oldPath.replace(/\.md$/, '').split('/').pop()!;
+  const newStem = newPath.replace(/\.md$/, '').split('/').pop()!;
+  if (page.frontmatter.title) {
+    const normalizedTitle = page.frontmatter.title.toLowerCase().replace(/[\s_-]+/g, '-');
+    const normalizedOldStem = oldStem.toLowerCase().replace(/[\s_-]+/g, '-');
+    if (normalizedTitle === normalizedOldStem) {
+      page.frontmatter.title = newStem.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+  }
+
+  // 6. Create parent directories + write new file
+  await writePage(newFull, page);
+
+  // 7. Scan ALL wiki pages for links to oldPath and rewrite them
+  const allPages = await listPages(wikiDir);
+  const normOld = oldPath.replace(/\\/g, '/');
+  const affectedPages: string[] = [];
+  let rewrittenLinks = 0;
+
+  for (const absPagePath of allPages) {
+    // Skip the old file itself (it's about to be deleted)
+    if (resolve(absPagePath).replace(/\\/g, '/') === resolvedOld) continue;
+    // Skip the new file (just written)
+    if (resolve(absPagePath).replace(/\\/g, '/') === resolve(newFull).replace(/\\/g, '/')) continue;
+
+    const sourcePage = await readPage(absPagePath);
+    const links = getPageLinksDetailed(sourcePage.body);
+    let modified = false;
+    let updatedBody = sourcePage.body;
+
+    for (const { text, target } of links) {
+      const sourceDir = dirname(absPagePath);
+      const resolvedAbsolute = join(sourceDir, target);
+      const resolvedRelative = relative(wikiDir, resolvedAbsolute).replace(/\\/g, '/');
+
+      if (resolvedRelative === normOld) {
+        // Compute new relative link from this source page to new location
+        const newRelLink = relative(dirname(absPagePath), newFull).replace(/\\/g, '/');
+        // Replace the exact link in body
+        const oldLink = `[${text}](${target})`;
+        const newLink = `[${text}](${newRelLink})`;
+        updatedBody = updatedBody.replace(oldLink, newLink);
+        modified = true;
+        rewrittenLinks++;
+      }
+    }
+
+    if (modified) {
+      await writePage(absPagePath, { frontmatter: sourcePage.frontmatter, body: updatedBody });
+      const relSourcePath = relative(wikiDir, absPagePath).replace(/\\/g, '/');
+      affectedPages.push(relSourcePath);
+    }
+  }
+
+  // 8. Update index entry
+  const indexPath = join(wikiDir, 'index.md');
+  const entries = await readIndex(indexPath);
+  const entryIdx = entries.findIndex((e) => e.path === oldPath);
+  if (entryIdx >= 0) {
+    entries[entryIdx].path = newPath;
+    if (page.frontmatter.title) {
+      entries[entryIdx].title = page.frontmatter.title;
+    }
+    await writeIndex(indexPath, entries);
+  }
+
+  // 9. Delete old file
+  await unlink(oldFull);
+
+  // 10. Return result
+  return { renamed: true, oldPath, newPath, rewrittenLinks, affectedPages };
 }
