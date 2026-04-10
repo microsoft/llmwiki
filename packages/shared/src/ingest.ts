@@ -127,6 +127,7 @@ export async function ingestSource(
         title: sourceFilename,
         source_path: relativeSourcePath,
         ingested: today,
+        created: today,
         tags: [],
       },
       body: `# ${sourceFilename}\n\n**Source:** ${relativeSourcePath}  \n**Type:** ${sourceExt || 'unknown'}  \n**Size:** ${sourceStat.size} bytes  \n**Ingested:** ${today}\n\n## Content Preview\n\n${excerpt}`,
