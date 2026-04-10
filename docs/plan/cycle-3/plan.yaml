@@ -1,0 +1,780 @@
+plan_id: cycle-3
+objective: "Harden tool infrastructure: extract duplicated logic into shared library, add list command for agent interop, duplicate detection, frontmatter validation, coverage reporting, and testing improvements"
+created_at: "2026-04-10"
+created_by: gem-planner
+status: pending_approval
+research_confidence: high
+
+plan_metrics:
+  wave_1_task_count: 1
+  total_dependencies: 8
+  risk_score: low
+
+tldr: |
+  Cycle-3 focuses on tool infrastructure hardening after the CLI (cycle-1) and VS Code extension (cycle-2)
+  are complete. The #1 priority is extracting ~160 lines of duplicated logic from VS Code commands.ts into
+  @llmwiki/shared, fixing the biggest tech debt and an ARCHITECTURE.md violation. After that, four parallel
+  improvements: duplicate detection on ingest, frontmatter validation lint category, a new 'list' command
+  for agent interop, and vitest coverage reporting. Wave 3 adds lint unit tests, bulk ingest, and minor
+  schema/JSON fixes. Total: 10 tasks across 3 waves.
+
+open_questions:
+  - "LLM-powered ingest deferred to cycle-4 — current mechanical ingest is sufficient for infrastructure hardening"
+
+pre_mortem:
+  overall_risk_level: low
+  critical_failure_modes:
+    - scenario: "Refactoring shared library breaks existing 307 tests"
+      likelihood: low
+      impact: high
+      mitigation: "Move functions one at a time with re-exports from original locations. Run full test suite after each move."
+    - scenario: "VS Code extension breaks after shared refactor due to import path changes"
+      likelihood: medium
+      impact: medium
+      mitigation: "VS Code already imports from @llmwiki/shared. New functions will be added to the same barrel export."
+    - scenario: "Bulk ingest creates race conditions when ingesting multiple files"
+      likelihood: low
+      impact: medium
+      mitigation: "Sequential processing with duplicate detection. No concurrent file writes."
+  assumptions:
+    - "All 307 existing tests continue to pass throughout the cycle"
+    - "Moving functions to shared is a refactor — no behavior changes"
+    - "Personal wiki scale means no performance concerns with lint or list operations"
+
+implementation_specification:
+  code_structure: |
+    Wave 1 moves ingestSource, queryWiki, getWikiStatus plus utility functions (slugify, countOccurrences,
+    excerpt) from CLI and VS Code into @llmwiki/shared. CLI commands become thin wrappers. VS Code commands.ts
+    drops ~160 lines of duplicated logic and imports from shared instead.
+    Wave 2 adds four independent features: duplicate detection, frontmatter lint, list command, coverage.
+    Wave 3 adds lint unit tests, bulk ingest, and minor fixes.
+
+  affected_areas:
+    - "packages/shared/src/ — new modules: utils.ts, search.ts; expanded: ingest.ts, query.ts, status.ts"
+    - "packages/cli/src/commands/ — refactored to thin wrappers over shared"
+    - "packages/vscode/src/commands.ts — drops duplicated logic, imports from shared"
+    - "packages/vscode/src/statusBar.ts — imports getWikiStatus from shared"
+    - "packages/shared/src/lint.ts — new frontmatter-validation category"
+    - "packages/cli/src/commands/list.ts — new list command"
+    - "vitest.config.ts — coverage configuration"
+    - "tests/ — new lint unit tests, coverage thresholds"
+
+  component_details:
+    - component: "@llmwiki/shared (expanded)"
+      responsibility: "All business logic: page I/O, index, log, sources, backlinks, lint, ingest, query, status, search utilities"
+      interfaces:
+        - "slugify(filename) → string"
+        - "excerpt(body, maxLen) → string"
+        - "countOccurrences(text, term) → number"
+        - "ingestSource(sourcePath, wikiDir, dryRun) → IngestResult"
+        - "queryWiki(queryStr, wikiDir) → QueryResult"
+        - "getWikiStatus(wikiDir) → StatusResult"
+        - "listPages(wikiDir) → PageInfo[]"
+        - "listSources(rawDir) → SourceFile[]"
+        - "lintWiki(wikiDir) → LintResult (with frontmatter-validation)"
+
+    - component: "@llmwiki/cli (thinned)"
+      responsibility: "Commander.js CLI registration, option parsing, output formatting — delegates all logic to shared"
+      interfaces:
+        - "registerListCommand(wiki) → void"
+        - "All existing register*Command functions — simplified to call shared"
+
+  dependencies:
+    - component: "@llmwiki/cli"
+      relationship: "imports all operations from @llmwiki/shared"
+    - component: "llmwiki-vscode"
+      relationship: "imports all operations from @llmwiki/shared (no more duplication)"
+
+contracts:
+  - from_task: c3-01
+    to_task: c3-02
+    interface: "ingestSource() available from @llmwiki/shared with existing behavior"
+    format: "Exported function from packages/shared/src/ingest.ts"
+
+  - from_task: c3-01
+    to_task: c3-04
+    interface: "queryWiki(), getWikiStatus(), listPages() available from @llmwiki/shared"
+    format: "Exported functions from packages/shared barrel"
+
+  - from_task: c3-01
+    to_task: c3-07
+    interface: "ingestSource() in shared with duplicate detection hook point"
+    format: "Exported function that can check for existing summary before creating"
+
+  - from_task: c3-03
+    to_task: c3-06
+    interface: "lintWiki() returns LintResult including frontmatter-validation findings"
+    format: "New lint category in LintResult.findings array"
+
+  - from_task: c3-02
+    to_task: c3-07
+    interface: "Duplicate detection logic usable by bulk ingest"
+    format: "ingestSource returns status='skipped' for duplicates, --force flag overrides"
+
+tasks:
+  - id: c3-01
+    title: "Extract duplicated logic into @llmwiki/shared"
+    description: |
+      Move business logic from CLI commands and VS Code commands.ts into @llmwiki/shared:
+
+      1. Create packages/shared/src/utils.ts:
+         - slugify(filename: string): string — from CLI ingest.ts:22-28
+         - excerpt(body: string, maxLen?: number): string — from CLI ingest.ts:98-100
+
+      2. Create packages/shared/src/search.ts:
+         - countOccurrences(text: string, term: string): number — from CLI query.ts:24-35
+         - scoreEntry(entry, terms, pageBody): number — extract scoring logic from query.ts:60-120
+
+      3. Move ingestSource() from packages/cli/src/commands/ingest.ts to packages/shared/src/ingest.ts.
+         CLI ingest command becomes a thin wrapper that calls shared ingestSource() and formats output.
+
+      4. Move queryWiki() from packages/cli/src/commands/query.ts to packages/shared/src/query.ts.
+         CLI query command becomes a thin wrapper.
+
+      5. Move getWikiStatus() from packages/cli/src/commands/status.ts to packages/shared/src/status.ts.
+         CLI status command becomes a thin wrapper.
+
+      6. Update packages/vscode/src/commands.ts to import ingestSource, queryWiki, getWikiStatus,
+         slugify, excerpt, countOccurrences from @llmwiki/shared instead of reimplementing.
+         Remove ~160 lines of duplicated code.
+
+      7. Update packages/vscode/src/statusBar.ts to import getWikiStatus from @llmwiki/shared
+         instead of computing status inline.
+
+      8. Re-export all new modules from packages/shared/src/index.ts barrel.
+      9. All 307 existing tests must pass after refactor.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    conflicts_with: []
+    context_files:
+      - path: packages/cli/src/commands/ingest.ts
+        description: "Contains ingestSource(), slugify() to move to shared"
+      - path: packages/cli/src/commands/query.ts
+        description: "Contains queryWiki(), countOccurrences(), slugifyQuery() to move to shared"
+      - path: packages/cli/src/commands/status.ts
+        description: "Contains getWikiStatus() to move to shared"
+      - path: packages/vscode/src/commands.ts
+        description: "Contains ~160 lines of duplicated logic to replace with shared imports"
+      - path: packages/vscode/src/statusBar.ts
+        description: "Contains duplicated status computation to replace"
+      - path: packages/shared/src/index.ts
+        description: "Barrel export — add new module re-exports"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Fix #1 tech debt — DRY violation across CLI and VS Code"
+        timestamp: "2026-04-10"
+        estimated_effort: large
+        estimated_files: 12
+        estimated_lines: 400
+        focus_area: "shared library refactor"
+        verification:
+          - "All 307 existing tests pass after refactor"
+          - "VS Code commands.ts reduced by ~160 lines"
+          - "ingestSource, queryWiki, getWikiStatus importable from @llmwiki/shared"
+          - "slugify, excerpt, countOccurrences importable from @llmwiki/shared"
+          - "CLI commands still work identically (thin wrappers)"
+          - "VS Code commands still work identically"
+          - "No new duplicated logic across packages"
+        acceptance_criteria:
+          - "packages/shared/src/utils.ts exports slugify() and excerpt()"
+          - "packages/shared/src/search.ts exports countOccurrences()"
+          - "packages/shared/src/ingest.ts exports ingestSource()"
+          - "packages/shared/src/query.ts exports queryWiki()"
+          - "packages/shared/src/status.ts exports getWikiStatus()"
+          - "All new modules re-exported from shared barrel index.ts"
+          - "VS Code commands.ts has zero duplicated business logic"
+          - "VS Code statusBar.ts imports getWikiStatus from shared"
+          - "CLI commands are thin wrappers calling shared functions"
+          - "All 307+ existing tests pass"
+        failure_modes:
+          - scenario: "Moving functions breaks circular dependency between modules"
+            likelihood: low
+            impact: high
+            mitigation: "Functions have no circular deps — ingest depends on wiki+index+log, query depends on wiki+index, status depends on wiki+index+log+sources. All one-directional."
+          - scenario: "VS Code esbuild bundle fails to resolve new shared imports"
+            likelihood: low
+            impact: medium
+            mitigation: "VS Code already bundles @llmwiki/shared. New modules go through the same barrel export."
+        tech_stack:
+          - "TypeScript"
+          - "npm workspaces"
+        test_coverage: "All existing tests must pass. New shared module tests recommended."
+
+  - id: c3-02
+    title: "Add duplicate detection to ingest"
+    description: |
+      Before creating a summary page during ingest, check if wiki/sources/{slug}-summary.md already exists.
+
+      Behavior:
+      - If summary page exists and --force is NOT set: return IngestResult with status='skipped',
+        message explaining the source was already ingested.
+      - If summary page exists and --force IS set: overwrite the existing page, update index entry
+        (remove old, add new), log the re-ingest.
+      - If summary page does not exist: proceed as before.
+
+      Also check for duplicate index entries and clean them up during ingest.
+
+      Add --force flag to CLI ingest command and VS Code ingest handler.
+      Update --json output to include 'skipped' status.
+      Write tests for duplicate detection scenarios.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies:
+      - c3-01
+    conflicts_with: []
+    context_files:
+      - path: packages/shared/src/ingest.ts
+        description: "ingestSource() after c3-01 refactor — add duplicate check"
+      - path: packages/shared/src/wiki.ts
+        description: "readPage, writePage, listPages — used for existence check"
+      - path: packages/shared/src/index-ops.ts
+        description: "addEntry, removeEntry — for index dedup"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Prevent silent data corruption on re-ingest"
+        timestamp: "2026-04-10"
+        estimated_effort: small
+        estimated_files: 4
+        estimated_lines: 80
+        focus_area: "ingest safety"
+        verification:
+          - "Ingesting same source twice without --force returns status='skipped'"
+          - "Ingesting same source with --force overwrites summary page"
+          - "--force updates index entry (no duplicates)"
+          - "--json output includes 'skipped' status"
+          - "All existing tests still pass"
+        acceptance_criteria:
+          - "ingestSource checks for existing summary page before creating"
+          - "Returns status='skipped' with descriptive message for duplicates"
+          - "--force flag overrides duplicate check"
+          - "Index dedup on --force re-ingest"
+          - "Tests cover: duplicate skip, duplicate force, clean ingest"
+        failure_modes:
+          - scenario: "Slug collision between different source files"
+            likelihood: low
+            impact: medium
+            mitigation: "slugify is deterministic — same filename always produces same slug. Different filenames produce different slugs. Document this."
+        tech_stack:
+          - "TypeScript"
+          - "node:fs/promises (stat for existence check)"
+        test_coverage: "Tests for skip, force, and clean ingest paths"
+
+  - id: c3-03
+    title: "Add frontmatter-validation lint category"
+    description: |
+      Add a new lint check category 'frontmatter-validation' to packages/shared/src/lint.ts:
+
+      Rules:
+      1. Every wiki page must have frontmatter with 'type' field (error severity)
+      2. Every wiki page must have frontmatter with 'title' field (error severity)
+      3. The 'type' field must be one of: entity, concept, source, summary, query (warning severity)
+      4. Pages should have 'tags' field (info severity)
+      5. Pages should have 'created' field (info severity)
+
+      Update LintResult to include frontmatter-validation in the category summary.
+      Update lintWiki() to call the new check function.
+      Update the VS Code LintFindings tree to display frontmatter findings.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies:
+      - c3-01
+    conflicts_with: []
+    context_files:
+      - path: packages/shared/src/lint.ts
+        description: "Existing 5 lint categories — add frontmatter-validation as 6th"
+      - path: packages/shared/src/wiki.ts
+        description: "readPage() returns parsed frontmatter"
+      - path: packages/cli/src/commands/init.ts
+        description: "AGENTS.md template documents the frontmatter schema"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Enforce the schema that AGENTS.md documents"
+        timestamp: "2026-04-10"
+        estimated_effort: small
+        estimated_files: 3
+        estimated_lines: 80
+        focus_area: "lint category expansion"
+        verification:
+          - "lintWiki returns frontmatter-validation findings"
+          - "Missing 'type' field produces error-severity finding"
+          - "Missing 'title' field produces error-severity finding"
+          - "Invalid type value produces warning-severity finding"
+          - "Missing tags/created produces info-severity finding"
+          - "All existing tests pass"
+        acceptance_criteria:
+          - "New 'frontmatter-validation' category in lint results"
+          - "5 specific checks as described above"
+          - "Severity levels: error for required, warning for invalid, info for recommended"
+          - "Findings include file path and specific field name"
+          - "LintResult category summary includes frontmatter-validation count"
+        failure_modes:
+          - scenario: "Existing wiki pages fail frontmatter validation, causing false-positive lint noise"
+            likelihood: medium
+            impact: low
+            mitigation: "Summary pages from ingest already have type+title. Only manually created pages may lack them."
+        tech_stack:
+          - "TypeScript"
+        test_coverage: "Unit tests for each frontmatter validation rule"
+
+  - id: c3-04
+    title: "Add 'plaid wiki list' command"
+    description: |
+      New CLI command: plaid wiki list <type> [--path <dir>] [--json]
+
+      Types:
+      - pages: List all wiki pages with frontmatter metadata (title, type, tags, path)
+        Uses listPages() + readPage() from @llmwiki/shared
+      - sources: List all raw/ files with metadata (name, size, modified, extension)
+        Uses listSources() from @llmwiki/shared
+      - entries: List all index entries with category, title, path, summary, tags
+        Uses readIndex() from @llmwiki/shared
+
+      Output formats:
+      - Default (human): tabular format with aligned columns
+      - --json: Array of objects matching the respective interfaces
+
+      Register as registerListCommand(wiki) in packages/cli/src/commands/list.ts.
+      Add to CLI program in packages/cli/src/cli.ts.
+      Write tests for all three list types and --json output.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies:
+      - c3-01
+    conflicts_with: []
+    context_files:
+      - path: packages/shared/src/wiki.ts
+        description: "listPages(), readPage() for pages listing"
+      - path: packages/shared/src/sources.ts
+        description: "listSources() for sources listing"
+      - path: packages/shared/src/index-ops.ts
+        description: "readIndex() for entries listing"
+      - path: packages/cli/src/cli.ts
+        description: "CLI entry point — register new list command"
+      - path: packages/cli/src/commands/status.ts
+        description: "Reference for output formatting patterns"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Key agent interop primitive — agents need enumeration, not just search"
+        timestamp: "2026-04-10"
+        estimated_effort: medium
+        estimated_files: 3
+        estimated_lines: 180
+        focus_area: "CLI command expansion"
+        verification:
+          - "'plaid wiki list pages' shows all wiki pages with metadata"
+          - "'plaid wiki list sources' shows all raw/ files"
+          - "'plaid wiki list entries' shows all index entries"
+          - "--json returns valid JSON arrays"
+          - "Empty wiki returns empty arrays gracefully"
+          - "Command appears in 'plaid wiki --help'"
+        acceptance_criteria:
+          - "list.ts exports registerListCommand()"
+          - "Three subcommands: pages, sources, entries"
+          - "Human-readable tabular output for each type"
+          - "--json returns structured arrays matching interfaces"
+          - "Handles empty/missing wiki gracefully"
+          - "Tests for all three types + --json + empty state"
+        failure_modes:
+          - scenario: "Large wikis produce too much output in tabular format"
+            likelihood: low
+            impact: low
+            mitigation: "Personal scale (~100s pages). Could add --limit flag later."
+        tech_stack:
+          - "TypeScript"
+          - "Commander.js"
+        test_coverage: "Tests for each list type, --json mode, and empty wiki"
+
+  - id: c3-05
+    title: "Add vitest coverage reporting"
+    description: |
+      Configure vitest coverage to make testing gaps visible:
+
+      1. Install @vitest/coverage-v8 as devDependency at root
+      2. Configure in vitest.config.ts:
+         - provider: 'v8'
+         - reporter: ['text', 'lcov', 'json-summary']
+         - include: ['packages/*/src/**/*.ts']
+         - exclude: ['**/*.test.ts', '**/node_modules/**', '**/dist/**', '**/out/**']
+      3. Add coverage script to root package.json: "coverage": "vitest run --coverage"
+      4. Add coverage/ to .gitignore
+      5. Set initial thresholds (lines: 60, functions: 60, branches: 50, statements: 60)
+         to codify current baseline and prevent regression
+      6. Update CI workflow to run coverage and report summary
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies:
+      - c3-01
+    conflicts_with: []
+    context_files:
+      - path: vitest.config.ts
+        description: "Existing vitest config — add coverage configuration"
+      - path: package.json
+        description: "Root package.json — add coverage script"
+      - path: .github/workflows/ci.yml
+        description: "CI workflow — add coverage step"
+      - path: .gitignore
+        description: "Add coverage/ directory"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Make testing gaps visible, prevent coverage regression"
+        timestamp: "2026-04-10"
+        estimated_effort: small
+        estimated_files: 4
+        estimated_lines: 50
+        focus_area: "testing infrastructure"
+        verification:
+          - "'npm run coverage' produces coverage report"
+          - "Coverage report shows per-file line/branch/function coverage"
+          - "lcov report generated for CI integration"
+          - "Coverage thresholds fail build if not met"
+          - ".gitignore excludes coverage/"
+        acceptance_criteria:
+          - "@vitest/coverage-v8 installed"
+          - "vitest.config.ts has coverage configuration"
+          - "Root package.json has coverage script"
+          - "CI runs coverage and reports summary"
+          - "Initial thresholds set to prevent regression"
+          - "coverage/ in .gitignore"
+        failure_modes:
+          - scenario: "Coverage tool conflicts with vitest workspace config"
+            likelihood: low
+            impact: low
+            mitigation: "Coverage-v8 is the officially supported vitest coverage provider"
+        tech_stack:
+          - "@vitest/coverage-v8"
+          - "vitest"
+        test_coverage: "Coverage of existing 307+ tests measured and reported"
+
+  - id: c3-06
+    title: "Add dedicated lint unit tests"
+    description: |
+      Create tests/shared/lint.test.ts with isolated tests for each lint category:
+
+      1. broken-links: pages with links to non-existent targets
+      2. orphan-pages: pages not referenced in index
+      3. index-completeness: index entries pointing to missing files
+      4. stale-entries: index entries with stale metadata
+      5. missing-pages: referenced pages that don't exist
+      6. frontmatter-validation: the new category from c3-03
+
+      Each category should have:
+      - Happy path: wiki with no issues in that category
+      - Finding path: wiki with at least one issue detected
+      - Edge cases: empty wiki, single page wiki, pages with no links
+
+      Target: 20+ tests covering all 6 lint categories.
+      Use tmpdir-based fixtures matching existing test patterns.
+    wave: 3
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies:
+      - c3-03
+    conflicts_with: []
+    context_files:
+      - path: packages/shared/src/lint.ts
+        description: "Lint module with 6 categories (after c3-03)"
+      - path: tests/cli/commands/lint.test.ts
+        description: "Existing lint tests via CLI — reference for fixture patterns"
+      - path: tests/shared/wiki.test.ts
+        description: "Existing shared test — reference for tmpdir pattern"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "lint.ts is the most complex shared module — needs isolated tests"
+        timestamp: "2026-04-10"
+        estimated_effort: medium
+        estimated_files: 1
+        estimated_lines: 300
+        focus_area: "test coverage expansion"
+        verification:
+          - "tests/shared/lint.test.ts exists and passes"
+          - "All 6 lint categories have at least 2 tests each"
+          - "20+ tests total"
+          - "Edge cases: empty wiki, no index, malformed frontmatter"
+        acceptance_criteria:
+          - "tests/shared/lint.test.ts with 20+ tests"
+          - "Each of 6 lint categories tested: happy path + finding path"
+          - "Uses tmpdir fixtures consistent with existing test patterns"
+          - "All tests pass in CI"
+        failure_modes:
+          - scenario: "Test fixtures interfere with each other due to shared tmpdir"
+            likelihood: low
+            impact: low
+            mitigation: "Each test creates its own tmpdir via beforeEach/afterEach"
+        tech_stack:
+          - "vitest"
+          - "TypeScript"
+        test_coverage: "20+ new lint unit tests"
+
+  - id: c3-07
+    title: "Add bulk ingest support"
+    description: |
+      Add bulk ingest capability to process multiple source files at once:
+
+      1. In @llmwiki/shared, add bulkIngest(rawDir: string, wikiDir: string, options: BulkIngestOptions):
+         - Lists all files in raw/ via listSources()
+         - For each file, checks if already ingested (slug-summary.md exists)
+         - Ingests new files via ingestSource()
+         - Returns BulkIngestResult with counts: ingested, skipped, failed, total
+
+      2. CLI: 'plaid wiki ingest --all' or 'plaid wiki ingest <directory>':
+         - --all: process entire raw/ directory
+         - <directory>: process specified directory
+         - --force: re-ingest even if already ingested
+         - Show progress: "Ingesting 3/10..."
+         - --json: return BulkIngestResult
+
+      3. VS Code: update ingest command to offer "Ingest all new sources" option
+         when user triggers llmwiki.ingest without selecting a file.
+
+      4. Update GitHub Actions ingest.yml to use --all instead of shell loop.
+    wave: 3
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies:
+      - c3-02
+    conflicts_with: []
+    context_files:
+      - path: packages/shared/src/ingest.ts
+        description: "ingestSource() with duplicate detection (after c3-02)"
+      - path: packages/shared/src/sources.ts
+        description: "listSources() for enumerating raw/ files"
+      - path: packages/cli/src/commands/ingest.ts
+        description: "CLI ingest command — add --all flag"
+      - path: .github/workflows/ingest.yml
+        description: "GitHub Actions workflow — simplify with --all"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Simplify multi-file ingest for automation and manual use"
+        timestamp: "2026-04-10"
+        estimated_effort: medium
+        estimated_files: 5
+        estimated_lines: 150
+        focus_area: "ingest pipeline"
+        verification:
+          - "'plaid wiki ingest --all' processes all un-ingested sources"
+          - "Already-ingested sources are skipped (not re-processed)"
+          - "--force re-ingests all sources"
+          - "--json returns BulkIngestResult with counts"
+          - "VS Code offers bulk ingest option"
+          - "GitHub Actions workflow simplified"
+        acceptance_criteria:
+          - "bulkIngest() in @llmwiki/shared"
+          - "CLI --all flag triggers bulk ingest"
+          - "CLI <directory> argument processes specified directory"
+          - "Progress output shows current/total"
+          - "--json returns structured BulkIngestResult"
+          - "Tests: bulk with mix of new and existing sources"
+        failure_modes:
+          - scenario: "Bulk ingest on large raw/ directory is slow"
+            likelihood: low
+            impact: low
+            mitigation: "Sequential processing at personal scale. Could add concurrency later."
+        tech_stack:
+          - "TypeScript"
+        test_coverage: "Tests for bulk ingest: new only, mix, all existing, empty dir"
+
+  - id: c3-08
+    title: "Add 'query' page type to AGENTS.md template"
+    description: |
+      Update the AGENTS.md template in packages/cli/src/commands/init.ts:
+
+      1. Add 'query' to the page types section alongside entity, concept, source, summary.
+         Document that query pages are created by 'plaid wiki query --save'.
+
+      2. Document the query page frontmatter schema:
+         - type: query
+         - title: the query string
+         - tags: derived from query terms
+         - created: ISO date
+         - query: the original query string
+         - results_count: number of results
+
+      3. Update any existing tests that validate the AGENTS.md template content.
+    wave: 3
+    agent: gem-implementer
+    prototype: false
+    priority: low
+    status: pending
+    dependencies:
+      - c3-01
+    conflicts_with: []
+    context_files:
+      - path: packages/cli/src/commands/init.ts
+        description: "AGENTS.md template string constant (lines 37-119)"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Fix schema inconsistency — query page type undocumented"
+        timestamp: "2026-04-10"
+        estimated_effort: small
+        estimated_files: 2
+        estimated_lines: 30
+        focus_area: "schema documentation"
+        verification:
+          - "AGENTS.md template mentions 'query' page type"
+          - "Query page frontmatter schema documented"
+          - "Existing tests still pass"
+        acceptance_criteria:
+          - "'query' listed in page types"
+          - "Query page frontmatter schema documented"
+          - "Tests updated if they validate template content"
+        failure_modes:
+          - scenario: "Template string change breaks init test assertions"
+            likelihood: medium
+            impact: low
+            mitigation: "Update test expectations to match new template"
+        tech_stack:
+          - "TypeScript"
+        test_coverage: "Existing init tests updated"
+
+  - id: c3-09
+    title: "Add api_version field to JSON output"
+    description: |
+      Add 'api_version': '1' to all CLI --json responses for future compatibility:
+
+      1. Define API_VERSION constant in @llmwiki/shared (e.g., shared/constants.ts)
+      2. Update all result interfaces (IngestResult, QueryResult, StatusResult, LintResult,
+         InitResult, ListResult, BulkIngestResult) to include api_version field
+      3. Set api_version: '1' in all result constructors
+      4. Update E2E tests that validate --json output to check for api_version field
+      5. Document versioning policy: increment on breaking schema changes
+    wave: 3
+    agent: gem-implementer
+    prototype: false
+    priority: low
+    status: pending
+    dependencies:
+      - c3-01
+    conflicts_with: []
+    context_files:
+      - path: packages/shared/src/ingest.ts
+        description: "IngestResult interface"
+      - path: packages/shared/src/query.ts
+        description: "QueryResult/QueryOutput interface"
+      - path: packages/shared/src/status.ts
+        description: "StatusResult interface"
+      - path: tests/cli/e2e/cli.test.ts
+        description: "E2E tests validating --json output"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Future-proof JSON schema for agent consumers"
+        timestamp: "2026-04-10"
+        estimated_effort: small
+        estimated_files: 6
+        estimated_lines: 40
+        focus_area: "API stability"
+        verification:
+          - "All --json responses include api_version: '1'"
+          - "E2E tests validate api_version field"
+          - "Constant defined in shared package"
+        acceptance_criteria:
+          - "API_VERSION constant in @llmwiki/shared"
+          - "All result interfaces include api_version"
+          - "All --json output includes api_version: '1'"
+          - "E2E tests updated"
+        failure_modes:
+          - scenario: "Changing result interfaces breaks test type assertions"
+            likelihood: medium
+            impact: low
+            mitigation: "Add api_version as optional field first, then required"
+        tech_stack:
+          - "TypeScript"
+        test_coverage: "E2E tests updated for api_version"
+
+  - id: c3-10
+    title: "Update documentation for cycle-3 changes"
+    description: |
+      Update all documentation to reflect cycle-3 changes:
+
+      1. ARCHITECTURE.md:
+         - Update shared library section with new modules (ingest.ts, query.ts, status.ts, utils.ts, search.ts)
+         - Remove note about VS Code duplicating logic (it no longer does)
+         - Add list command to CLI command reference
+         - Add frontmatter-validation to lint categories
+         - Add bulk ingest description
+         - Update data flow diagram
+
+      2. README.md:
+         - Add 'list' command to usage examples
+         - Add --force and --all flags to ingest examples
+         - Add coverage reporting instructions
+         - Update test count
+
+      3. packages/vscode/README.md:
+         - Note that extension now uses shared library exclusively (no duplicated logic)
+
+      4. AGENTS.md template:
+         - Already updated by c3-08 (query page type)
+    wave: 3
+    agent: gem-documentation-writer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies:
+      - c3-01
+      - c3-04
+    conflicts_with: []
+    context_files:
+      - path: ARCHITECTURE.md
+        description: "Main architecture documentation"
+      - path: README.md
+        description: "Project README"
+      - path: packages/vscode/README.md
+        description: "VS Code extension README"
+    planning_pass: 1
+    planning_history:
+      - pass: 1
+        reason: "Keep documentation in sync with code changes"
+        timestamp: "2026-04-10"
+        estimated_effort: medium
+        estimated_files: 3
+        estimated_lines: 150
+        focus_area: "documentation"
+        verification:
+          - "ARCHITECTURE.md reflects new shared modules"
+          - "README.md shows list command examples"
+          - "No stale references to duplicated logic"
+        acceptance_criteria:
+          - "ARCHITECTURE.md updated for new shared modules and lint categories"
+          - "README.md includes list, --force, --all examples"
+          - "VS Code README updated"
+          - "No contradictions between docs and code"
+        failure_modes: []
+        tech_stack: []
+        test_coverage: null
+        task_type: documentation
+        audience: developers
+
+planning_pass: 1
+planning_history:
+  - pass: 1
+    reason: "Cycle-3 planning based on research findings and strategy priorities — hardening focus"
+    timestamp: "2026-04-10"

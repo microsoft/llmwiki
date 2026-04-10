@@ -1,0 +1,713 @@
+plan_id: cycle-3
+objective: "Identify high-value, low-effort improvements for the LLM Wiki after CLI (cycle-1) and VS Code extension (cycle-2) are complete"
+focus_area: "cycle-3 planning — CLI maturity, extension polish, agent interop, schema evolution, ingest quality, testing, MCP"
+created_at: "2025-07-17"
+created_by: gem-researcher
+status: completed
+
+tldr: |
+  - BIGGEST WIN: Extract duplicated logic (slugify, excerpt, countOccurrences, ingest workflow, query scoring, status computation) from VS Code commands.ts into @llmwiki/shared. This is the single highest-value refactor — it fixes a DRY violation across 6+ functions and unblocks all other improvements.
+  - CLI is solid but lacks config file, verbose mode, bulk ingest, and a `list` command for agent interop. No duplicate detection on re-ingest.
+  - Ingest pipeline is scaffolding only: 500-char excerpt, no LLM summarization, no cross-referencing, no tag generation, no duplicate detection. The idea.md vision of "touching 10-15 pages per ingest" is not yet realized.
+  - Test coverage is strong (307 tests, all passing) but has no coverage reporting, no shared/lint unit tests, and VS Code integration tests are excluded from CI.
+  - MCP server is premature — CLI --json is not yet battle-tested by real agent consumers. Shared library factoring is already good for future MCP wrapping.
+
+research_metadata:
+  methodology: "Hybrid retrieval: grep + glob + view for all source files. Full read of all shared library modules, all CLI commands, all VS Code extension files, all test directories, CI/CD workflows, STRATEGY.md, ARCHITECTURE.md, idea.md. Relationship discovery via import tracing. Duplicate detection via pattern matching."
+  scope: "Full codebase — 3 packages (shared: 7 modules, cli: 6 files, vscode: 7 files), 20 test files, 2 GitHub Actions workflows, all documentation"
+  confidence: high
+  coverage: 95
+  decision_blockers: 2
+  research_blockers: 0
+
+files_analyzed:
+  - file: wiki.ts
+    path: packages/shared/src/wiki.ts
+    purpose: "Core wiki page operations — read/write pages with gray-matter frontmatter, list pages, extract links, check directory existence"
+    key_elements:
+      - element: readPage
+        type: function
+        location: "wiki.ts:20"
+        description: "Reads a markdown file and parses frontmatter via gray-matter"
+      - element: writePage
+        type: function
+        location: "wiki.ts:29"
+        description: "Writes a WikiPage to disk with frontmatter serialization"
+      - element: getPageLinks
+        type: function
+        location: "wiki.ts:60"
+        description: "Extracts internal .md link targets from markdown content via regex"
+      - element: WikiPageFrontmatter
+        type: interface
+        location: "wiki.ts:5"
+        description: "Frontmatter schema — type, title, tags, sources, created, updated, plus arbitrary keys"
+    language: TypeScript
+    lines: 72
+
+  - file: index-ops.ts
+    path: packages/shared/src/index-ops.ts
+    purpose: "Parse, serialize, and query the categorized wiki/index.md file"
+    key_elements:
+      - element: readIndex
+        type: function
+        location: "index-ops.ts:76"
+        description: "Parses markdown index into IndexEntry[] with category, title, path, summary, tags"
+      - element: addEntry
+        type: function
+        location: "index-ops.ts:144"
+        description: "Appends an entry to the index file under the appropriate category"
+      - element: findEntries
+        type: function
+        location: "index-ops.ts:171"
+        description: "Filters entries by title substring and/or tags"
+    language: TypeScript
+    lines: 188
+
+  - file: lint.ts
+    path: packages/shared/src/lint.ts
+    purpose: "5-category wiki health check: broken-links, orphan-pages, index-completeness, stale-entries, missing-pages"
+    key_elements:
+      - element: lintWiki
+        type: function
+        location: "lint.ts:42"
+        description: "Runs all lint checks, returns structured LintResult with severity-categorized findings"
+    language: TypeScript
+    lines: 184
+
+  - file: log.ts
+    path: packages/shared/src/log.ts
+    purpose: "Append-only operation log with date-stamped entries"
+    key_elements:
+      - element: appendEntry
+        type: function
+        location: "log.ts:16"
+        description: "Appends a timestamped entry to log.md"
+      - element: readLog
+        type: function
+        location: "log.ts:38"
+        description: "Parses log.md into LogEntry[] array"
+    language: TypeScript
+    lines: 104
+
+  - file: sources.ts
+    path: packages/shared/src/sources.ts
+    purpose: "List files in raw/ directory with metadata"
+    key_elements:
+      - element: listSources
+        type: function
+        location: "sources.ts:21"
+        description: "Recursively lists files in raw/ with name, path, size, modified date, extension"
+    language: TypeScript
+    lines: 51
+
+  - file: backlinks.ts
+    path: packages/shared/src/backlinks.ts
+    purpose: "Find all pages that link to a given target page"
+    key_elements:
+      - element: getBacklinks
+        type: function
+        location: "backlinks.ts:23"
+        description: "Iterates all pages, resolves link targets, finds pages linking to targetPage"
+    language: TypeScript
+    lines: 70
+
+  - file: cli.ts
+    path: packages/cli/src/cli.ts
+    purpose: "CLI entry point — creates Commander program with 'plaid wiki' command group and 5 subcommands"
+    key_elements:
+      - element: createProgram
+        type: function
+        location: "cli.ts:18"
+        description: "Factory function that builds the Commander program tree"
+    language: TypeScript
+    lines: 44
+
+  - file: ingest.ts
+    path: packages/cli/src/commands/ingest.ts
+    purpose: "CLI ingest command — reads source, creates summary page, updates index and log"
+    key_elements:
+      - element: slugify
+        type: function
+        location: "ingest.ts:22"
+        description: "Converts filename to URL-safe slug (lowercase, strip extension, hyphens)"
+      - element: ingestSource
+        type: function
+        location: "ingest.ts:36"
+        description: "Full ingest pipeline: validate → read source → create summary → update index → log"
+    language: TypeScript
+    lines: 184
+
+  - file: query.ts
+    path: packages/cli/src/commands/query.ts
+    purpose: "CLI query command — keyword search with weighted scoring across index and page bodies"
+    key_elements:
+      - element: countOccurrences
+        type: function
+        location: "query.ts:24"
+        description: "Case-insensitive substring occurrence counter"
+      - element: queryWiki
+        type: function
+        location: "query.ts:60"
+        description: "Scores index entries by title(3x) + summary(2x) + body(1x), returns sorted results"
+      - element: slugifyQuery
+        type: function
+        location: "query.ts:40"
+        description: "Slugifies query string for --save filename generation"
+    language: TypeScript
+    lines: 208
+
+  - file: commands.ts
+    path: packages/vscode/src/commands.ts
+    purpose: "VS Code command implementations — init, ingest, query, lint, status, openPage, refresh"
+    key_elements:
+      - element: "llmwiki.ingest handler"
+        type: function
+        location: "commands.ts:91-167"
+        description: "DUPLICATES ingest logic from CLI: slugify, excerpt, summary page creation, index update, log entry"
+      - element: "llmwiki.query handler"
+        type: function
+        location: "commands.ts:170-252"
+        description: "DUPLICATES query logic from CLI: countOccurrences, scoring, excerpt"
+      - element: "llmwiki.status handler"
+        type: function
+        location: "commands.ts:281-323"
+        description: "DUPLICATES status computation from CLI status command and statusBar.ts"
+    language: TypeScript
+    lines: 363
+
+  - file: statusBar.ts
+    path: packages/vscode/src/statusBar.ts
+    purpose: "Status bar showing page count with auto-refresh via file watchers"
+    key_elements:
+      - element: StatusBarManager._refresh
+        type: function
+        location: "statusBar.ts:53-104"
+        description: "DUPLICATES status computation (source count, page count, coverage, last ingest)"
+    language: TypeScript
+    lines: 127
+
+  - file: extension.ts
+    path: packages/vscode/src/extension.ts
+    purpose: "Extension activation — registers tree providers, watchers, commands, status bar"
+    language: TypeScript
+    lines: 56
+
+  - file: ci.yml
+    path: .github/workflows/ci.yml
+    purpose: "CI pipeline — lint, build, test on push/PR to main"
+    language: YAML
+    lines: 50
+
+  - file: ingest.yml
+    path: .github/workflows/ingest.yml
+    purpose: "Auto-ingest workflow — triggers on push to raw/, runs CLI ingest, auto-commits"
+    language: YAML
+    lines: 69
+
+patterns_found:
+  - category: architecture
+    pattern: "Shared library pattern with DRY violation"
+    description: |
+      The project uses a well-designed shared library (@llmwiki/shared) consumed by both CLI and VS Code.
+      However, VS Code commands.ts DUPLICATES significant logic that should be in shared:
+      - slugify() — duplicated from CLI ingest.ts (commands.ts:128-129 vs ingest.ts:22-28)
+      - excerpt extraction — duplicated (commands.ts:136-137 vs ingest.ts:98-100)
+      - countOccurrences() — duplicated from CLI query.ts (commands.ts:186-196 vs query.ts:24-35)
+      - Full ingest workflow — duplicated (commands.ts:91-167 vs ingest.ts:36-153)
+      - Full query scoring — duplicated (commands.ts:170-252 vs query.ts:60-176)
+      - Status computation — duplicated across commands.ts:281-323 AND statusBar.ts:53-104 AND CLI status.ts:23-91
+      This contradicts ARCHITECTURE.md line 472: "The extension never duplicates core logic"
+    examples:
+      - file: packages/vscode/src/commands.ts
+        location: "lines 128-129"
+        snippet: "const slug = sourceFilename.replace(/\\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');"
+      - file: packages/cli/src/commands/ingest.ts
+        location: "lines 22-28"
+        snippet: "function slugify(filename: string): string { ... }"
+      - file: packages/vscode/src/commands.ts
+        location: "lines 186-196"
+        snippet: "const countOccurrences = (text: string, term: string): number => { ... }"
+    prevalence: common
+
+  - category: architecture
+    pattern: "Clean separation of concerns in shared library"
+    description: "Each module in shared has a single responsibility: wiki.ts (page I/O), index-ops.ts (index CRUD), log.ts (log append/read), sources.ts (raw file listing), backlinks.ts (link graph), lint.ts (health checks). All exports are re-exported through index.ts."
+    examples:
+      - file: packages/shared/src/index.ts
+        location: "lines 1-7"
+        snippet: "export * from './wiki.js'; export * from './index-ops.js'; ..."
+    prevalence: common
+
+  - category: error_handling
+    pattern: "Graceful degradation on missing files"
+    description: "All shared library functions use try/catch with empty-array fallbacks for ENOENT errors. readIndex, readLog, listPages, listSources all return empty arrays when files/directories don't exist."
+    examples:
+      - file: packages/shared/src/index-ops.ts
+        location: "lines 78-83"
+        snippet: "try { content = await readFile(filePath, 'utf-8'); } catch { return []; }"
+    prevalence: common
+
+  - category: error_handling
+    pattern: "Structured error results in CLI"
+    description: "CLI commands return result objects with status: 'error' and error message strings instead of throwing. The CLI layer converts these to exit codes. Uses process.exitCode (not process.exit()) for clean shutdown."
+    examples:
+      - file: packages/cli/src/commands/ingest.ts
+        location: "lines 47-56"
+        snippet: "return { command: 'ingest', status: 'error', error: 'Wiki is not initialized...' }"
+    prevalence: common
+
+  - category: testing
+    pattern: "Three-tier test structure"
+    description: "Tests are organized as: shared/ (library unit tests), cli/commands/ (command integration tests), cli/e2e/ (subprocess CLI tests), cli/unit/ (structural tests), vscode/ (VS Code mock tests). Each tier tests at a different abstraction level."
+    examples:
+      - file: tests/cli/e2e/cli.test.ts
+        location: "lines 26-43"
+        snippet: "function runCLI(args: string[], cwd: string, json = false): Promise<RunResult>"
+    prevalence: common
+
+  - category: naming
+    pattern: "Consistent file and function naming"
+    description: "Files use kebab-case (index-ops.ts, backlinks.ts). Functions use camelCase (readIndex, listPages, getBacklinks). Interfaces use PascalCase (IndexEntry, WikiPage, LintFinding). CLI commands match their filenames (init.ts → registerInitCommand)."
+    prevalence: common
+
+  - category: structure
+    pattern: "Command registration pattern"
+    description: "Each CLI command exports a registerXCommand(wiki: Command) function that uses Commander.js to register the subcommand with options and an action handler. The handler checks --json mode and formats output accordingly."
+    examples:
+      - file: packages/cli/src/commands/init.ts
+        location: "lines 180-199"
+        snippet: "export function registerInitCommand(wiki: Command): void { wiki.command('init')... }"
+    prevalence: common
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: "@llmwiki/shared"
+      responsibility: "Core wiki operations — all business logic for page I/O, index management, log, sources, backlinks, lint"
+      location: "packages/shared/src/"
+      relationship_to_domain: "Foundation that CLI and VS Code both depend on"
+    - component: "@llmwiki/cli"
+      responsibility: "Command-line interface with 5 subcommands and --json output"
+      location: "packages/cli/src/"
+      relationship_to_domain: "Primary agent-facing interface, wraps shared library"
+    - component: "llmwiki-vscode"
+      responsibility: "VS Code extension with 4 tree views, 7 commands, status bar"
+      location: "packages/vscode/src/"
+      relationship_to_domain: "Human-facing interactive layer, wraps shared library"
+    - component: "GitHub Actions workflows"
+      responsibility: "CI (build/lint/test) and auto-ingest on push to raw/"
+      location: ".github/workflows/"
+      relationship_to_domain: "Automation backbone for the wiki lifecycle"
+
+  data_flow_involving_domain: |
+    Human drops file into raw/ → GitHub Actions (or manual CLI) triggers ingest →
+    CLI/shared reads source file → Creates summary page in wiki/sources/ →
+    Updates wiki/index.md → Appends to wiki/log.md → Auto-commits.
+    Query: user provides terms → CLI reads index.md → scores by title(3x)/summary(2x)/body(1x) → returns ranked results.
+    Lint: scans all wiki pages + index → produces findings with severity levels.
+
+  key_relationships_to_domain:
+    - from: "@llmwiki/cli"
+      to: "@llmwiki/shared"
+      relationship: "imports all core operations"
+    - from: "llmwiki-vscode"
+      to: "@llmwiki/shared"
+      relationship: "imports core operations BUT also duplicates some (ingest, query, status)"
+    - from: "ingest.yml"
+      to: "@llmwiki/cli"
+      relationship: "calls CLI as subprocess for auto-ingest"
+    - from: "ci.yml"
+      to: "all packages"
+      relationship: "builds, lints, and tests all three packages"
+
+related_technology_stack:
+  languages_used_in_domain:
+    - TypeScript
+    - YAML (GitHub Actions)
+  frameworks_used_in_domain:
+    - name: Commander.js v14
+      usage_in_domain: "CLI command hierarchy and option parsing"
+    - name: Vitest
+      usage_in_domain: "Test framework for all packages"
+    - name: VS Code Extension API
+      usage_in_domain: "Tree views, commands, status bar, file watchers"
+  libraries_used_in_domain:
+    - name: gray-matter
+      purpose_in_domain: "Parse and serialize YAML frontmatter in markdown wiki pages"
+    - name: tsup
+      purpose_in_domain: "Bundle CLI to ESM with shebang banner"
+    - name: esbuild
+      purpose_in_domain: "Bundle VS Code extension to CJS"
+    - name: "@vscode/vsce"
+      purpose_in_domain: "Package extension as .vsix"
+
+related_conventions:
+  naming_patterns_in_domain: "Files: kebab-case. Functions: camelCase. Interfaces: PascalCase. Commands: llmwiki.verbNoun. Wiki slugs: lowercase-hyphenated."
+  structure_of_domain: "npm workspaces monorepo. shared → cli + vscode. Each CLI command in its own file with register/execute split."
+  error_handling_in_domain: "Shared library returns empty arrays on missing files. CLI returns structured error objects. VS Code shows showErrorMessage/showWarningMessage. No exceptions thrown across package boundaries."
+  testing_in_domain: "Vitest with tmpdir-based fixtures. 307 tests across 19 files. E2E tests run CLI as subprocess. VS Code tests use mock stubs."
+  documentation_in_domain: "ARCHITECTURE.md (detailed), STRATEGY.md (direction), idea.md (vision). No JSDoc on shared library functions. No API docs."
+
+related_dependencies:
+  internal:
+    - component: "@llmwiki/shared"
+      relationship_to_domain: "Core dependency for both CLI and VS Code"
+      direction: outbound
+    - component: "@llmwiki/cli"
+      relationship_to_domain: "Consumed by GitHub Actions ingest workflow"
+      direction: outbound
+  external:
+    - name: commander
+      purpose_for_domain: "CLI framework (v14)"
+    - name: gray-matter
+      purpose_for_domain: "Frontmatter parsing"
+    - name: "@types/vscode"
+      purpose_for_domain: "VS Code extension API types"
+
+# ================================================================
+# AREA-BY-AREA FINDINGS
+# ================================================================
+
+area_1_cli_maturity:
+  current_state: |
+    5 commands (init, ingest, query, lint, status) all functional with --json support.
+    Path traversal protection on ingest. Structured error returns. Clean exit codes.
+    307 tests all passing. E2E tests cover full workflows and --json output.
+
+  gaps_found:
+    - id: cli-no-config
+      description: "No config file support (.wikirc, wiki.config.json, or similar). All options must be passed as CLI flags."
+      impact: low
+      rationale: "At personal scale with few options (--path, --json), flags suffice. Config adds complexity without proportional value yet."
+
+    - id: cli-no-verbose
+      description: "No --verbose or --debug flag. Operations are silent beyond success/error messages."
+      impact: low
+      rationale: "Current operations are simple enough that verbose output has limited value. Would matter more with LLM-powered ingest."
+
+    - id: cli-no-bulk-ingest
+      description: "No bulk ingest — must call 'plaid wiki ingest' once per file. The GitHub Actions workflow works around this with a shell loop."
+      impact: medium
+      rationale: "Bulk ingest (glob pattern or directory) would simplify both manual and automated workflows."
+
+    - id: cli-no-list-command
+      description: "No 'plaid wiki list' command for programmatic access to pages, sources, or entries. Status gives counts but not items."
+      impact: medium
+      rationale: "Agents need to enumerate wiki contents. Currently requires reading files directly. A list command with --json would be a key agent interop primitive."
+
+    - id: cli-no-duplicate-detection
+      description: "Ingesting the same source file twice creates a second summary page (overwriting the first) and adds a duplicate index entry."
+      impact: medium
+      rationale: "No check for existing summary page or index entry. Silent data corruption."
+
+    - id: cli-slugify-not-shared
+      description: "slugify() is defined in CLI ingest.ts and inline-duplicated in VS Code commands.ts. Should be in @llmwiki/shared."
+      impact: high
+      rationale: "DRY violation. Any slug behavior change must be made in two places."
+
+area_2_extension_polish:
+  current_state: |
+    4 tree views (Wiki Pages, Raw Sources, Backlinks, Lint Findings), 7 commands,
+    status bar with auto-refresh. File watchers for live updates. Error handling
+    via try/catch wrapper. .vsix packaging working.
+
+  gaps_found:
+    - id: ext-code-duplication
+      description: |
+        commands.ts duplicates significant logic from CLI:
+        - Ingest workflow (slugify, excerpt, summary page, index update, log) — ~75 lines
+        - Query scoring (countOccurrences, weighted scoring, excerpt) — ~45 lines
+        - Status computation (source count, page count, coverage) — ~40 lines
+        statusBar.ts ALSO duplicates status computation — ~50 lines
+        ARCHITECTURE.md claims "The extension never duplicates core logic" but this is violated.
+      impact: high
+      rationale: "Single biggest technical debt. Bugs fixed in one place won't be fixed in the other. Blocks safe iteration."
+
+    - id: ext-no-settings
+      description: "No contributes.configuration in package.json. No user-configurable settings (e.g., wiki path, auto-lint on save, excerpt length)."
+      impact: low
+      rationale: "Sane defaults work for now. Settings become important when the extension serves diverse wiki setups."
+
+    - id: ext-no-keybindings
+      description: "No contributes.keybindings in package.json. All commands are command-palette only."
+      impact: low
+      rationale: "Low friction to add. Ctrl+Shift+Q for query, Ctrl+Shift+I for ingest would be useful."
+
+    - id: ext-marketplace-not-ready
+      description: |
+        Missing for marketplace publishing:
+        - No extension icon
+        - Category is generic "Other"
+        - No galleryBanner
+        - No badges
+        - Publisher is placeholder "llmwiki"
+        - CHANGELOG.md content not verified
+      impact: low
+      rationale: "Extension works locally. Marketplace readiness is a distribution concern, not a functionality concern."
+
+    - id: ext-init-agents-md-simplified
+      description: "VS Code init command writes a minimal AGENTS.md ('See CLI docs for full schema') instead of the full template that CLI init generates."
+      impact: medium
+      rationale: "Users who init via VS Code get an inferior AGENTS.md. Should call same logic."
+
+area_3_agent_interop_json:
+  current_state: |
+    All 5 commands support --json with documented schemas in ARCHITECTURE.md.
+    E2E tests verify --json output for all commands including error cases.
+    JSON output includes command name, status, and command-specific data.
+
+  gaps_found:
+    - id: json-no-schema-version
+      description: "JSON output has no version field. Breaking changes to the JSON schema would be invisible to consumers."
+      impact: low
+      rationale: "No external consumers yet. Can add version field when MCP or agent consumers emerge."
+
+    - id: json-no-list-primitive
+      description: "No way to list wiki pages, sources, or index entries via --json. Agents can only get counts (status) or search results (query). No enumeration."
+      impact: medium
+      rationale: "An agent that wants to browse the wiki must read files directly. A 'plaid wiki list [pages|sources|entries]' command would be a key building block."
+
+    - id: json-error-codes-informal
+      description: "Error responses use free-text error strings, not structured error codes. Example: 'Wiki is not initialized. Run \"plaid wiki init\" first.'"
+      impact: low
+      rationale: "Free text is fine for human consumers. Agents benefit from stable error codes for programmatic handling."
+
+area_4_schema_evolution:
+  current_state: |
+    AGENTS.md is generated by 'plaid wiki init' with 7 sections: page types, directory
+    structure, frontmatter schema, naming conventions, ingest workflow, lint rules,
+    cross-referencing guidelines. The template is embedded as a string constant in
+    packages/cli/src/commands/init.ts (lines 37-119).
+
+  gaps_found:
+    - id: schema-no-validation
+      description: "Frontmatter schema is documented but not enforced. Pages can have any/missing frontmatter and pass lint."
+      impact: medium
+      rationale: "Lint checks structural health (links, index, orphans) but not content health (missing type, missing title, invalid tags). A 'frontmatter-validation' lint category would enforce the schema."
+
+    - id: schema-static-template
+      description: "AGENTS.md template is hardcoded in init.ts. No mechanism for users to customize or extend it."
+      impact: low
+      rationale: "Users can edit AGENTS.md manually. An 'evolve' command could be useful later."
+
+    - id: schema-no-query-type-in-template
+      description: "The AGENTS.md template lists page types: entity, concept, source, summary. But the query command creates pages of type 'query' which is undocumented in the template."
+      impact: low
+      rationale: "Minor inconsistency. The query page type should be documented."
+
+area_5_ingest_quality:
+  current_state: |
+    Current ingest is SCAFFOLDING ONLY. It reads the source file, creates a summary
+    page with a 500-character content excerpt, adds an index entry with generic
+    summary text ('Source file (.ext)'), and logs the operation. No LLM involvement.
+
+  gaps_found:
+    - id: ingest-no-llm-summarization
+      description: |
+        The ingest pipeline does NOT use an LLM. It creates a mechanical summary page with:
+        - File metadata (name, type, size, date)
+        - A 500-character content excerpt
+        - Empty tags array
+        - Generic index summary ('Source file (.txt)')
+        This is far from the idea.md vision of LLM-powered ingest that 'reads the source,
+        extracts key information, integrates it into the existing wiki, updates entity pages,
+        notes contradictions, and touches 10-15 wiki pages.'
+      impact: "DECISION BLOCKER — defines cycle-3 scope"
+      rationale: |
+        The current scaffolding was correct for cycle-1 (prove the CLI works).
+        Cycle-3 must decide: do we add LLM-powered ingest, or continue hardening
+        the tool infrastructure? This is the fork in the road.
+
+    - id: ingest-no-cross-referencing
+      description: "Ingest creates an isolated summary page. No links to/from existing wiki pages. No entity or concept extraction."
+      impact: high
+      rationale: "Cross-referencing is the core value proposition. Without it, the wiki is just a file organizer."
+
+    - id: ingest-no-tag-generation
+      description: "Tags are always empty []. The index entry has no tags. No tag taxonomy."
+      impact: medium
+      rationale: "Tags enable filtering and categorization. Even simple keyword extraction would add value."
+
+    - id: ingest-no-duplicate-handling
+      description: "Re-ingesting the same source overwrites the summary page and adds a duplicate index entry."
+      impact: medium
+      rationale: "Should detect existing summary, offer update/skip/force options."
+
+    - id: ingest-text-only
+      description: "readFile(sourcePath, 'utf-8') — only reads text files. PDFs, images, and binary formats fail silently or produce garbage."
+      impact: medium
+      rationale: "idea.md lists 'articles, papers, images, data files' as source types. Only text works today."
+
+area_6_testing_gaps:
+  current_state: |
+    307 tests across 19 files, all passing. Good coverage of shared library, CLI commands,
+    E2E workflows, and VS Code extension components. vitest.config.ts excludes VS Code
+    integration tests.
+
+  gaps_found:
+    - id: test-no-coverage-reporting
+      description: "No coverage tool configured (no c8, istanbul, or vitest coverage). Can't quantify what's covered."
+      impact: medium
+      rationale: "Without coverage metrics, testing gaps are invisible. Easy to add: vitest has built-in coverage support."
+
+    - id: test-no-lint-unit-tests
+      description: "No tests/shared/lint.test.ts file. Lint is only tested via CLI command integration tests (tests/cli/commands/lint.test.ts)."
+      impact: medium
+      rationale: "lint.ts is the most complex shared module (184 lines, 5 check categories). It deserves isolated unit tests."
+
+    - id: test-vscode-integration-excluded
+      description: "VS Code integration tests exist (tests/vscode/integration/) but are excluded from vitest and CI. CI comment: 'will be added as a separate CI job in task c2-12'."
+      impact: low
+      rationale: "VS Code integration tests require the VS Code runtime. This is a known gap with a planned fix."
+
+    - id: test-no-concurrent-ops
+      description: "No tests for concurrent operations (e.g., two ingests at the same time, ingest during lint)."
+      impact: low
+      rationale: "At personal scale, concurrent operations are unlikely. But the shared library has no locking."
+
+area_7_mcp_server:
+  current_state: |
+    No MCP code exists. Strategy says 'start with CLI --json output, add MCP server mode
+    later when agent interop patterns stabilize.' The shared library's clean factoring
+    (structured return types, no side effects beyond file I/O) makes it MCP-ready.
+
+  assessment: |
+    MCP is PREMATURE for cycle-3. Reasons:
+    1. CLI --json has not been battle-tested by real agent consumers yet.
+    2. The shared library still has DRY violations that should be fixed first.
+    3. The ingest pipeline is scaffolding — MCP wrapping scaffolding is low value.
+    4. The 'list' command gap means MCP tools would also lack enumeration.
+    5. Strategy explicitly says 'when agent interop patterns stabilize.'
+    
+    However, the shared library is well-structured for future MCP wrapping:
+    - All operations return structured data (interfaces, not strings)
+    - Functions are stateless (take paths, return results)
+    - No global state or singletons
+    - Clean async/await throughout
+
+# ================================================================
+# RECOMMENDATIONS (ordered by value/effort ratio)
+# ================================================================
+
+recommended_cycle3_priorities:
+  tier_1_must_do:
+    - id: "P1-refactor-shared"
+      title: "Extract duplicated logic into @llmwiki/shared"
+      description: |
+        Move from VS Code commands.ts and CLI commands into shared:
+        - slugify(filename) → shared/utils.ts or shared/wiki.ts
+        - countOccurrences(text, term) → shared/search.ts
+        - excerpt(body, maxLen) → shared/search.ts  
+        - ingestSource(sourcePath, targetPath, dryRun) — already exists in CLI, VS Code should call it
+        - queryWiki(queryStr, targetPath, save) — already exists in CLI, VS Code should call it
+        - getWikiStatus(targetPath) — already exists in CLI, VS Code should call it
+        Then update VS Code commands.ts to import these instead of reimplementing.
+      effort: medium
+      value: high
+      rationale: "Fixes the single biggest tech debt. Unblocks safe iteration on ingest/query/status logic."
+
+    - id: "P2-duplicate-detection"
+      title: "Add duplicate detection to ingest"
+      description: "Before creating a summary page, check if wiki/sources/{slug}-summary.md already exists. If so, return an error (or update with --force flag)."
+      effort: low
+      value: medium
+      rationale: "Prevents silent data corruption. Simple stat() check."
+
+    - id: "P3-lint-frontmatter"
+      title: "Add frontmatter-validation lint category"
+      description: "New lint check: verify every wiki page has required frontmatter fields (type, title). Warn on missing recommended fields (tags, created)."
+      effort: low
+      value: medium
+      rationale: "Enforces the schema that AGENTS.md documents. Easy to implement — readPage already parses frontmatter."
+
+  tier_2_high_value:
+    - id: "P4-list-command"
+      title: "Add 'plaid wiki list' command"
+      description: |
+        New command: 'plaid wiki list [pages|sources|entries] [--path <dir>]'
+        - pages: list all wiki pages with frontmatter metadata
+        - sources: list raw/ files with metadata (uses listSources)
+        - entries: list index entries (uses readIndex)
+        With --json, returns structured arrays. Key agent interop primitive.
+      effort: medium
+      value: high
+      rationale: "Fills the biggest agent interop gap. Agents need to enumerate, not just search."
+
+    - id: "P5-coverage-reporting"
+      title: "Add vitest coverage reporting"
+      description: "Add @vitest/coverage-v8 or @vitest/coverage-istanbul. Configure in vitest.config.ts. Add coverage threshold enforcement."
+      effort: low
+      value: medium
+      rationale: "Makes testing gaps visible. Prevents coverage regression."
+
+    - id: "P6-lint-unit-tests"
+      title: "Add dedicated lint unit tests"
+      description: "Create tests/shared/lint.test.ts with isolated tests for each of the 5 lint categories."
+      effort: medium
+      value: medium
+      rationale: "lint.ts is the most complex shared module. Needs its own test file."
+
+    - id: "P7-bulk-ingest"
+      title: "Add bulk ingest support"
+      description: "'plaid wiki ingest raw/' or 'plaid wiki ingest --all' to ingest all un-ingested sources. Uses listSources + slug check to find new sources."
+      effort: medium
+      value: medium
+      rationale: "Simplifies the GitHub Actions workflow and manual multi-file ingest."
+
+  tier_3_nice_to_have:
+    - id: "P8-ext-keybindings"
+      title: "Add default keybindings for common commands"
+      description: "Add keybindings for query (Ctrl+Shift+Q), ingest (Ctrl+Shift+I), lint (Ctrl+Shift+L) to package.json."
+      effort: low
+      value: low
+
+    - id: "P9-schema-query-type"
+      title: "Add 'query' page type to AGENTS.md template"
+      description: "Document the query page type that --save creates."
+      effort: low
+      value: low
+
+    - id: "P10-json-version"
+      title: "Add version field to JSON output"
+      description: "Include 'api_version': '1' in all --json responses for future compatibility."
+      effort: low
+      value: low
+
+# ================================================================
+# DECISION BLOCKERS
+# ================================================================
+
+open_questions:
+  - question: "Should cycle-3 focus on LLM-powered ingest or continue hardening tool infrastructure?"
+    context: |
+      The current ingest is mechanical scaffolding (500-char excerpt, no summarization, no cross-referencing).
+      The idea.md vision describes rich LLM-powered ingest that touches 10-15 pages per source.
+      Adding LLM-powered ingest is a large scope increase (API integration, prompt engineering, testing).
+      Meanwhile, the tool infrastructure has concrete improvement opportunities (DRY refactor, list command,
+      duplicate detection, coverage) that are lower risk and compound the wiki's reliability.
+    type: decision_blocker
+    affects: ["all-cycle-3-tasks"]
+
+  - question: "Should the ingest/query/status functions move from CLI package to shared package?"
+    context: |
+      Currently ingestSource(), queryWiki(), and getWikiStatus() live in packages/cli/src/commands/.
+      VS Code duplicates their logic instead of importing them (can't import from @llmwiki/cli).
+      Moving these to @llmwiki/shared would be the clean fix for the duplication.
+      Alternative: have VS Code depend on @llmwiki/cli and import the functions directly.
+    type: decision_blocker
+    affects: ["P1-refactor-shared"]
+
+gaps:
+  - area: "No JSDoc documentation on shared library exports"
+    description: "Functions in @llmwiki/shared have brief TSDoc comments but no @param/@returns documentation. Consumers must read source to understand interfaces."
+    impact: nice_to_know
+    affects: []
+
+  - area: "No changelog tracking across cycles"
+    description: "No CHANGELOG.md at root level. VS Code has one but its content wasn't verified. No semver strategy."
+    impact: nice_to_know
+    affects: []
+
+  - area: "idea.md mentions qmd integration for search"
+    description: "idea.md references qmd (BM25/vector hybrid search) as an upgrade path when scale demands it. No integration exists. Current keyword search is sufficient at personal scale."
+    impact: nice_to_know
+    affects: []
