@@ -23,7 +23,7 @@ describe('lintWiki', () => {
 
     // Create a page that is indexed and has no broken links
     await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
-      frontmatter: { type: 'entity', title: 'Person' },
+      frontmatter: { type: 'entity', title: 'Person', tags: ['test'], created: '2026-04-10' },
       body: 'A person page with no links.',
     });
 

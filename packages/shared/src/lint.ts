@@ -1,6 +1,6 @@
 import { access, constants } from 'node:fs/promises';
 import { join, resolve, relative, dirname } from 'node:path';
-import { listPages, readPage, getPageLinks } from './wiki.js';
+import { listPages, readPage, getPageLinks, type WikiPageFrontmatter } from './wiki.js';
 import { readIndex } from './index-ops.js';
 
 export interface LintFinding {
@@ -16,6 +16,7 @@ export interface LintResult {
   errorCount: number;
   warningCount: number;
   infoCount: number;
+  categorySummary: Record<string, number>;
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -66,6 +67,7 @@ export async function lintWiki(
 
   // Read all pages and collect links
   const pageContents = new Map<string, string>(); // fullPath → body
+  const pageFrontmatter = new Map<string, WikiPageFrontmatter>(); // fullPath → frontmatter
   const pageLinks = new Map<string, string[]>(); // fullPath → link targets (resolved relative paths)
   const inboundLinks = new Set<string>(); // relative paths that are linked TO
 
@@ -73,6 +75,7 @@ export async function lintWiki(
     try {
       const page = await readPage(pagePath);
       pageContents.set(pagePath, page.body);
+      pageFrontmatter.set(pagePath, page.frontmatter);
       const links = getPageLinks(page.body);
       const resolvedLinks: string[] = [];
       for (const link of links) {
@@ -170,9 +173,67 @@ export async function lintWiki(
     }
   }
 
+  // ── frontmatter-validation: Check page frontmatter fields ──
+  if (shouldRun('frontmatter-validation')) {
+    const validTypes = ['entity', 'concept', 'source', 'summary', 'query'];
+    for (const pagePath of wikiPages) {
+      const pageRel = normalizePath(relative(wikiDir, pagePath));
+      const fm = pageFrontmatter.get(pagePath);
+      if (!fm) continue;
+
+      if (!fm.type) {
+        findings.push({
+          severity: 'error',
+          category: 'frontmatter-validation',
+          message: `Missing required "type" field in frontmatter of "${pageRel}"`,
+          file: pageRel,
+        });
+      } else if (!validTypes.includes(fm.type)) {
+        findings.push({
+          severity: 'warning',
+          category: 'frontmatter-validation',
+          message: `Invalid type "${fm.type}" in "${pageRel}" — expected one of: ${validTypes.join(', ')}`,
+          file: pageRel,
+        });
+      }
+
+      if (!fm.title) {
+        findings.push({
+          severity: 'error',
+          category: 'frontmatter-validation',
+          message: `Missing required "title" field in frontmatter of "${pageRel}"`,
+          file: pageRel,
+        });
+      }
+
+      if (!fm.tags) {
+        findings.push({
+          severity: 'info',
+          category: 'frontmatter-validation',
+          message: `Missing recommended "tags" field in "${pageRel}"`,
+          file: pageRel,
+        });
+      }
+
+      if (!fm.created) {
+        findings.push({
+          severity: 'info',
+          category: 'frontmatter-validation',
+          message: `Missing recommended "created" field in "${pageRel}"`,
+          file: pageRel,
+        });
+      }
+    }
+  }
+
   const errorCount = findings.filter((f) => f.severity === 'error').length;
   const warningCount = findings.filter((f) => f.severity === 'warning').length;
   const infoCount = findings.filter((f) => f.severity === 'info').length;
+
+  const categorySummary: Record<string, number> = {};
+  for (const f of findings) {
+    categorySummary[f.category] = (categorySummary[f.category] ?? 0) + 1;
+  }
 
   return {
     command: 'lint',
@@ -180,5 +241,6 @@ export async function lintWiki(
     errorCount,
     warningCount,
     infoCount,
+    categorySummary,
   };
 }
