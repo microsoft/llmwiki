@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initWiki } from '../../../packages/cli/src/commands/init.js';
+import { initWiki } from '../../../packages/shared/src/init.js';
 import { readLog } from '../../../packages/shared/src/log.js';
 import { readIndex } from '../../../packages/shared/src/index-ops.js';
 import { mkdtemp, rm, readFile, stat, mkdir } from 'node:fs/promises';

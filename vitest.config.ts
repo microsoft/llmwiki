@@ -4,7 +4,6 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     exclude: ["tests/vscode/integration/**"],
-    passWithNoTests: true,
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov", "json-summary"],

@@ -58,16 +58,31 @@ export async function directoryExists(dirPath: string): Promise<boolean> {
   }
 }
 
-export function getPageLinks(content: string): string[] {
+export interface PageLinkDetail {
+  /** The display text of the markdown link */
+  text: string;
+  /** The link target (href) */
+  target: string;
+}
+
+/**
+ * Extract all internal markdown links (relative `.md` paths) from content,
+ * returning both the display text and target for each link.
+ */
+export function getPageLinksDetailed(content: string): PageLinkDetail[] {
   const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-  const links: string[] = [];
+  const links: PageLinkDetail[] = [];
   let match: RegExpExecArray | null;
   while ((match = linkRegex.exec(content)) !== null) {
+    const text = match[1];
     const target = match[2];
-    // Only internal links (relative paths ending in .md), not external URLs
     if (target.endsWith('.md') && !target.startsWith('http://') && !target.startsWith('https://')) {
-      links.push(target);
+      links.push({ text, target });
     }
   }
   return links;
+}
+
+export function getPageLinks(content: string): string[] {
+  return getPageLinksDetailed(content).map((link) => link.target);
 }
