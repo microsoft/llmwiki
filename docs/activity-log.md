@@ -228,3 +228,5 @@
 - [2026-04-10T13:36:29.232Z] [commander] cycle=88 action=review-pr summary=Reviewed PR #49 (c4-03 tech debt cleanup): LGTM — regex deduplication, initWiki extraction, passWithNoTests removal, CI passing, ready to merge.
 
 - [2026-04-10T14:28:00Z] [commander] cycle=cycle-4 action=merge-pr pr=51 summary=Resolved merge conflict in activity-log.md and merged PR #51 (feat(c4-05): entity and concept creation MCP tools) via squash merge. Task c4-05 complete. 5/11 tasks done. Wave 2 tasks c4-06, c4-07 now ready.
+
+- [2026-04-10T14:53:00Z] [commander] cycle=cycle-4 action=execute-task task=c4-06 summary=Completed task c4-06 (crosslinks and index update MCP tools): addCrosslinks(), updateIndexEntry(), wiki_add_crosslinks + wiki_update_index MCP tools, 16+ tests. All 467 tests pass. Opened PR #52.
