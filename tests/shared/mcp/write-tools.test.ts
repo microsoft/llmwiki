@@ -471,6 +471,178 @@ describe('wiki_update_page', () => {
 });
 
 // ---------------------------------------------------------------------------
+// wiki_create_entity
+// ---------------------------------------------------------------------------
+
+describe('wiki_create_entity', () => {
+  it('should create an entity page with frontmatter and index entry', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_create_entity',
+      {
+        name: 'Alan Turing',
+        content: 'Father of computer science.',
+        tags: ['cs', 'math'],
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe('created');
+    expect(parsed.path).toBe('entities/alan-turing.md');
+    expect(parsed.title).toBe('Alan Turing');
+    expect(parsed.type).toBe('entity');
+    expect(parsed.tags).toEqual(['cs', 'math']);
+
+    // Verify the page was actually written
+    const page = await readPage(join(wikiDir, 'entities', 'alan-turing.md'));
+    expect(page.frontmatter.type).toBe('entity');
+    expect(page.frontmatter.title).toBe('Alan Turing');
+    expect(page.frontmatter.tags).toEqual(['cs', 'math']);
+    expect(page.body).toContain('Father of computer science.');
+  });
+
+  it('should create an entity page without tags', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_create_entity',
+      {
+        name: 'Ada Lovelace',
+        content: 'First programmer.',
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe('created');
+    expect(parsed.tags).toEqual([]);
+  });
+
+  it('should register the entity in the index', async () => {
+    await handleWriteToolCall(
+      'wiki_create_entity',
+      {
+        name: 'Grace Hopper',
+        content: 'Invented the compiler.',
+        tags: ['cs'],
+      },
+      wikiRoot,
+    );
+
+    const entries = await readIndex(indexPath);
+    const entry = entries.find((e) => e.path === 'entities/grace-hopper.md');
+    expect(entry).toBeDefined();
+    expect(entry!.title).toBe('Grace Hopper');
+    expect(entry!.category).toBe('Entities');
+    expect(entry!.tags).toEqual(['cs']);
+  });
+
+  it('should reject missing required name', async () => {
+    await expect(
+      handleWriteToolCall(
+        'wiki_create_entity',
+        { content: 'Some content.' },
+        wikiRoot,
+      ),
+    ).rejects.toThrow("'name' must be a non-empty string");
+  });
+
+  it('should reject missing required content', async () => {
+    await expect(
+      handleWriteToolCall(
+        'wiki_create_entity',
+        { name: 'Test Entity' },
+        wikiRoot,
+      ),
+    ).rejects.toThrow("'content' must be a non-empty string");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// wiki_create_concept
+// ---------------------------------------------------------------------------
+
+describe('wiki_create_concept', () => {
+  it('should create a concept page with frontmatter and index entry', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_create_concept',
+      {
+        name: 'Machine Learning',
+        content: 'A subset of artificial intelligence.',
+        tags: ['ai', 'ml'],
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe('created');
+    expect(parsed.path).toBe('concepts/machine-learning.md');
+    expect(parsed.title).toBe('Machine Learning');
+    expect(parsed.type).toBe('concept');
+    expect(parsed.tags).toEqual(['ai', 'ml']);
+
+    // Verify the page was actually written
+    const page = await readPage(join(wikiDir, 'concepts', 'machine-learning.md'));
+    expect(page.frontmatter.type).toBe('concept');
+    expect(page.frontmatter.title).toBe('Machine Learning');
+    expect(page.frontmatter.tags).toEqual(['ai', 'ml']);
+    expect(page.body).toContain('A subset of artificial intelligence.');
+  });
+
+  it('should create a concept page without tags', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_create_concept',
+      {
+        name: 'Neural Networks',
+        content: 'Inspired by the brain.',
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe('created');
+    expect(parsed.tags).toEqual([]);
+  });
+
+  it('should register the concept in the index', async () => {
+    await handleWriteToolCall(
+      'wiki_create_concept',
+      {
+        name: 'Reinforcement Learning',
+        content: 'Learning through rewards.',
+        tags: ['rl'],
+      },
+      wikiRoot,
+    );
+
+    const entries = await readIndex(indexPath);
+    const entry = entries.find((e) => e.path === 'concepts/reinforcement-learning.md');
+    expect(entry).toBeDefined();
+    expect(entry!.title).toBe('Reinforcement Learning');
+    expect(entry!.category).toBe('Concepts');
+    expect(entry!.tags).toEqual(['rl']);
+  });
+
+  it('should reject missing required name', async () => {
+    await expect(
+      handleWriteToolCall(
+        'wiki_create_concept',
+        { content: 'Some content.' },
+        wikiRoot,
+      ),
+    ).rejects.toThrow("'name' must be a non-empty string");
+  });
+
+  it('should reject missing required content', async () => {
+    await expect(
+      handleWriteToolCall(
+        'wiki_create_concept',
+        { name: 'Test Concept' },
+        wikiRoot,
+      ),
+    ).rejects.toThrow("'content' must be a non-empty string");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Unknown tool
 // ---------------------------------------------------------------------------
 
@@ -479,5 +651,255 @@ describe('handleWriteToolCall — unknown tool', () => {
     await expect(
       handleWriteToolCall('wiki_nonexistent', {}, wikiRoot),
     ).rejects.toThrow('Unknown tool: wiki_nonexistent');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// wiki_create_entity
+// ---------------------------------------------------------------------------
+
+describe('wiki_create_entity', () => {
+  it('should create an entity page with proper frontmatter', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_create_entity',
+      {
+        name: 'Alan Turing',
+        content: 'Father of computer science.',
+        tags: ['cs', 'math'],
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe('created');
+    expect(parsed.path).toBe('entities/alan-turing.md');
+    expect(parsed.title).toBe('Alan Turing');
+    expect(parsed.type).toBe('entity');
+    expect(parsed.tags).toEqual(['cs', 'math']);
+
+    // Verify the page file was written with correct frontmatter
+    const page = await readPage(join(wikiDir, 'entities', 'alan-turing.md'));
+    expect(page.frontmatter.type).toBe('entity');
+    expect(page.frontmatter.title).toBe('Alan Turing');
+    expect(page.frontmatter.tags).toEqual(['cs', 'math']);
+    expect(page.frontmatter.created).toBeDefined();
+    expect(page.body).toBe('Father of computer science.');
+  });
+
+  it('should auto-register in index with category "Entities"', async () => {
+    await handleWriteToolCall(
+      'wiki_create_entity',
+      {
+        name: 'Grace Hopper',
+        content: 'Pioneer of computer programming.',
+        tags: ['cs'],
+      },
+      wikiRoot,
+    );
+
+    const entries = await readIndex(indexPath);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].path).toBe('entities/grace-hopper.md');
+    expect(entries[0].title).toBe('Grace Hopper');
+    expect(entries[0].category).toBe('Entities');
+    expect(entries[0].tags).toEqual(['cs']);
+  });
+
+  it('should slugify names with special characters', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_create_entity',
+      {
+        name: 'C++ Programming Language',
+        content: 'A general-purpose programming language.',
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.path).toBe('entities/c-programming-language.md');
+
+    const page = await readPage(join(wikiDir, 'entities', 'c-programming-language.md'));
+    expect(page.frontmatter.title).toBe('C++ Programming Language');
+  });
+
+  it('should create entity without tags', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_create_entity',
+      {
+        name: 'Simple Entity',
+        content: 'No tags here.',
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.tags).toEqual([]);
+
+    const page = await readPage(join(wikiDir, 'entities', 'simple-entity.md'));
+    expect(page.frontmatter.tags).toEqual([]);
+  });
+
+  it('should reject missing required name', async () => {
+    await expect(
+      handleWriteToolCall(
+        'wiki_create_entity',
+        {
+          content: 'Some content.',
+        },
+        wikiRoot,
+      ),
+    ).rejects.toThrow("'name' must be a non-empty string");
+  });
+
+  it('should reject missing required content', async () => {
+    await expect(
+      handleWriteToolCall(
+        'wiki_create_entity',
+        {
+          name: 'Test Entity',
+        },
+        wikiRoot,
+      ),
+    ).rejects.toThrow("'content' must be a non-empty string");
+  });
+
+  it('should set created timestamp in frontmatter', async () => {
+    const before = new Date().toISOString();
+    await handleWriteToolCall(
+      'wiki_create_entity',
+      {
+        name: 'Timestamped Entity',
+        content: 'Has a timestamp.',
+      },
+      wikiRoot,
+    );
+    const after = new Date().toISOString();
+
+    const page = await readPage(join(wikiDir, 'entities', 'timestamped-entity.md'));
+    const created = page.frontmatter.created as string;
+    expect(created >= before).toBe(true);
+    expect(created <= after).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// wiki_create_concept
+// ---------------------------------------------------------------------------
+
+describe('wiki_create_concept', () => {
+  it('should create a concept page with proper frontmatter', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_create_concept',
+      {
+        name: 'Machine Learning',
+        content: 'A subset of artificial intelligence.',
+        tags: ['ai', 'ml'],
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.status).toBe('created');
+    expect(parsed.path).toBe('concepts/machine-learning.md');
+    expect(parsed.title).toBe('Machine Learning');
+    expect(parsed.type).toBe('concept');
+    expect(parsed.tags).toEqual(['ai', 'ml']);
+
+    // Verify the page file
+    const page = await readPage(join(wikiDir, 'concepts', 'machine-learning.md'));
+    expect(page.frontmatter.type).toBe('concept');
+    expect(page.frontmatter.title).toBe('Machine Learning');
+    expect(page.frontmatter.tags).toEqual(['ai', 'ml']);
+    expect(page.frontmatter.created).toBeDefined();
+    expect(page.body).toBe('A subset of artificial intelligence.');
+  });
+
+  it('should auto-register in index with category "Concepts"', async () => {
+    await handleWriteToolCall(
+      'wiki_create_concept',
+      {
+        name: 'Neural Networks',
+        content: 'Computational models inspired by the brain.',
+        tags: ['ai', 'deep-learning'],
+      },
+      wikiRoot,
+    );
+
+    const entries = await readIndex(indexPath);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].path).toBe('concepts/neural-networks.md');
+    expect(entries[0].title).toBe('Neural Networks');
+    expect(entries[0].category).toBe('Concepts');
+    expect(entries[0].tags).toEqual(['ai', 'deep-learning']);
+  });
+
+  it('should slugify names with special characters', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_create_concept',
+      {
+        name: 'Object-Oriented Programming (OOP)',
+        content: 'A programming paradigm.',
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.path).toBe('concepts/object-oriented-programming-oop.md');
+  });
+
+  it('should create concept without tags', async () => {
+    const result = await handleWriteToolCall(
+      'wiki_create_concept',
+      {
+        name: 'Simple Concept',
+        content: 'No tags here.',
+      },
+      wikiRoot,
+    );
+
+    const parsed = JSON.parse(result);
+    expect(parsed.tags).toEqual([]);
+  });
+
+  it('should reject missing required name', async () => {
+    await expect(
+      handleWriteToolCall(
+        'wiki_create_concept',
+        {
+          content: 'Some content.',
+        },
+        wikiRoot,
+      ),
+    ).rejects.toThrow("'name' must be a non-empty string");
+  });
+
+  it('should reject missing required content', async () => {
+    await expect(
+      handleWriteToolCall(
+        'wiki_create_concept',
+        {
+          name: 'Test Concept',
+        },
+        wikiRoot,
+      ),
+    ).rejects.toThrow("'content' must be a non-empty string");
+  });
+
+  it('should set created timestamp in frontmatter', async () => {
+    const before = new Date().toISOString();
+    await handleWriteToolCall(
+      'wiki_create_concept',
+      {
+        name: 'Timestamped Concept',
+        content: 'Has a timestamp.',
+      },
+      wikiRoot,
+    );
+    const after = new Date().toISOString();
+
+    const page = await readPage(join(wikiDir, 'concepts', 'timestamped-concept.md'));
+    const created = page.frontmatter.created as string;
+    expect(created >= before).toBe(true);
+    expect(created <= after).toBe(true);
   });
 });
