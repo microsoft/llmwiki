@@ -1,7 +1,7 @@
 import { access, constants } from 'node:fs/promises';
-import { join, resolve, relative, dirname } from 'node:path';
-import { listPages, readPage, getPageLinks, type WikiPageFrontmatter } from './wiki.js';
-import { readIndex } from './index-ops.js';
+import { join, resolve, relative, dirname, basename } from 'node:path';
+import { listPages, readPage, writePage, getPageLinks, type WikiPageFrontmatter } from './wiki.js';
+import { readIndex, removeEntry, addEntry, type IndexEntry } from './index-ops.js';
 import { API_VERSION } from './constants.js';
 import { isNotFoundError } from './errors.js';
 
@@ -247,5 +247,226 @@ export async function lintWiki(
     warningCount,
     infoCount,
     categorySummary,
+  };
+}
+
+export interface LintFixOptions {
+  /** When true, remove orphan pages (destructive). Default: false. */
+  fixOrphans?: boolean;
+}
+
+export interface LintFixResult {
+  command: string;
+  api_version: string;
+  fixed: LintFinding[];
+  remaining: LintFinding[];
+  fixedCount: number;
+}
+
+/** Categories that lintFix can auto-fix. */
+const FIXABLE_CATEGORIES = new Set([
+  'stale-entries',
+  'index-completeness',
+  'frontmatter-validation',
+]);
+
+/**
+ * Derive a human-readable title from a relative page path.
+ * e.g. "entities/my-topic.md" → "My Topic"
+ */
+function titleFromPath(relPath: string): string {
+  const stem = basename(relPath, '.md');
+  return stem.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Derive a default category from a relative page path.
+ * e.g. "entities/foo.md" → "Entities", "concepts/bar.md" → "Concepts"
+ */
+function categoryFromPath(relPath: string): string {
+  const dir = dirname(relPath);
+  if (dir === '.') return 'Uncategorized';
+  const first = dir.split('/')[0];
+  return first.charAt(0).toUpperCase() + first.slice(1);
+}
+
+/**
+ * Run lint checks and automatically fix deterministic issues.
+ *
+ * Fixable:
+ *  - stale-entries → remove from index
+ *  - index-completeness → add missing pages to index
+ *  - frontmatter-validation (missing fields) → add defaults
+ *
+ * NOT auto-fixed (by default):
+ *  - orphan-pages → destructive, requires fixOrphans: true
+ *  - broken-links → requires human judgment
+ *  - missing-pages → informational (broken-links covers the error)
+ */
+export async function lintFix(
+  targetPath: string,
+  options: LintFixOptions = {},
+): Promise<LintFixResult> {
+  const root = resolve(targetPath);
+  const wikiDir = join(root, 'wiki');
+  const indexPath = join(wikiDir, 'index.md');
+
+  // 1. Run full lint to get all findings
+  const lintResult = await lintWiki(targetPath);
+
+  const fixed: LintFinding[] = [];
+  const remaining: LintFinding[] = [];
+
+  // Partition findings into fixable and non-fixable
+  const fixableFindings: LintFinding[] = [];
+  for (const finding of lintResult.findings) {
+    if (FIXABLE_CATEGORIES.has(finding.category)) {
+      fixableFindings.push(finding);
+    } else if (finding.category === 'orphan-pages' && options.fixOrphans) {
+      fixableFindings.push(finding);
+    } else {
+      remaining.push(finding);
+    }
+  }
+
+  // 2. Fix stale-entries: remove index entries pointing to missing files
+  const staleFindings = fixableFindings.filter((f) => f.category === 'stale-entries');
+  for (const finding of staleFindings) {
+    if (!finding.file) {
+      remaining.push(finding);
+      continue;
+    }
+    try {
+      await removeEntry(indexPath, finding.file);
+      fixed.push(finding);
+    } catch {
+      remaining.push(finding);
+    }
+  }
+
+  // 3. Fix index-completeness: add missing pages to index
+  const missingIndexFindings = fixableFindings.filter(
+    (f) => f.category === 'index-completeness',
+  );
+  for (const finding of missingIndexFindings) {
+    if (!finding.file) {
+      remaining.push(finding);
+      continue;
+    }
+    const relPath = finding.file;
+    const fullPath = join(wikiDir, relPath);
+    try {
+      const page = await readPage(fullPath);
+      const entry: IndexEntry = {
+        path: relPath,
+        title: page.frontmatter.title || titleFromPath(relPath),
+        summary: '',
+        category: categoryFromPath(relPath),
+        tags: page.frontmatter.tags || [],
+      };
+      await addEntry(indexPath, entry);
+      fixed.push(finding);
+    } catch {
+      remaining.push(finding);
+    }
+  }
+
+  // 4. Fix frontmatter-validation: add missing default fields
+  const fmFindings = fixableFindings.filter(
+    (f) => f.category === 'frontmatter-validation',
+  );
+
+  // Group frontmatter findings by file to batch writes per page
+  const fmByFile = new Map<string, LintFinding[]>();
+  for (const finding of fmFindings) {
+    if (!finding.file) {
+      remaining.push(finding);
+      continue;
+    }
+    if (!fmByFile.has(finding.file)) {
+      fmByFile.set(finding.file, []);
+    }
+    fmByFile.get(finding.file)!.push(finding);
+  }
+
+  for (const [relPath, findings] of fmByFile) {
+    const fullPath = join(wikiDir, relPath);
+    try {
+      const page = await readPage(fullPath);
+      let modified = false;
+      const fixedInPage: LintFinding[] = [];
+      const remainingInPage: LintFinding[] = [];
+
+      for (const finding of findings) {
+        const msg = finding.message;
+        if (msg.includes('Missing required "type"')) {
+          page.frontmatter.type = 'entity';
+          modified = true;
+          fixedInPage.push(finding);
+        } else if (msg.includes('Missing required "title"')) {
+          page.frontmatter.title = titleFromPath(relPath);
+          modified = true;
+          fixedInPage.push(finding);
+        } else if (msg.includes('Missing recommended "tags"')) {
+          page.frontmatter.tags = [];
+          modified = true;
+          fixedInPage.push(finding);
+        } else if (msg.includes('Missing recommended "created"')) {
+          page.frontmatter.created = new Date().toISOString().split('T')[0];
+          modified = true;
+          fixedInPage.push(finding);
+        } else if (msg.includes('Invalid type')) {
+          // Invalid type is not auto-fixable — requires human judgment
+          remainingInPage.push(finding);
+        } else {
+          remainingInPage.push(finding);
+        }
+      }
+
+      if (modified) {
+        await writePage(fullPath, page);
+      }
+      fixed.push(...fixedInPage);
+      remaining.push(...remainingInPage);
+    } catch {
+      remaining.push(...findings);
+    }
+  }
+
+  // 5. Fix orphan-pages (only when fixOrphans is true): add to index
+  if (options.fixOrphans) {
+    const orphanFindings = fixableFindings.filter(
+      (f) => f.category === 'orphan-pages',
+    );
+    for (const finding of orphanFindings) {
+      if (!finding.file) {
+        remaining.push(finding);
+        continue;
+      }
+      const relPath = finding.file;
+      const fullPath = join(wikiDir, relPath);
+      try {
+        const page = await readPage(fullPath);
+        const entry: IndexEntry = {
+          path: relPath,
+          title: page.frontmatter.title || titleFromPath(relPath),
+          summary: '',
+          category: categoryFromPath(relPath),
+          tags: page.frontmatter.tags || [],
+        };
+        await addEntry(indexPath, entry);
+        fixed.push(finding);
+      } catch {
+        remaining.push(finding);
+      }
+    }
+  }
+
+  return {
+    command: 'lint-fix',
+    api_version: API_VERSION,
+    fixed,
+    remaining,
+    fixedCount: fixed.length,
   };
 }
