@@ -26,7 +26,7 @@
     "c2-09": { "status": "completed", "attempts": 1, "pr": 30, "merged": true },
     "c2-10": { "status": "completed", "attempts": 1, "pr": 31, "merged": true },
     "c2-11": { "status": "completed", "attempts": 1, "pr": 32, "merged": true },
-    "c2-12": { "status": "pending", "attempts": 0, "pr": null, "merged": false },
+    "c2-12": { "status": "running", "attempts": 1, "pr": null, "merged": false },
     "c2-13": { "status": "pending", "attempts": 0, "pr": null, "merged": false }
   },
   "cycle_history": [
