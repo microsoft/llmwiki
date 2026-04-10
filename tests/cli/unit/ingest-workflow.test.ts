@@ -91,22 +91,7 @@ describe('ingest workflow YAML', () => {
     expect(buildStep).toBeDefined();
   });
 
-  it('should detect changed files using git diff', async () => {
-    content ??= await readFile(WORKFLOW_PATH, 'utf-8');
-    workflow ??= yaml.load(content) as Record<string, unknown>;
-
-    const jobs = workflow.jobs as Record<string, unknown>;
-    const ingest = jobs.ingest as Record<string, unknown>;
-    const steps = ingest.steps as Array<Record<string, unknown>>;
-
-    const diffStep = steps.find(
-      (s) => s.run && (s.run as string).includes('git diff'),
-    );
-    expect(diffStep).toBeDefined();
-    expect((diffStep!.run as string)).toContain('raw/');
-  });
-
-  it('should run ingest for each changed file', async () => {
+  it('should run bulk ingest with --all flag', async () => {
     content ??= await readFile(WORKFLOW_PATH, 'utf-8');
     workflow ??= yaml.load(content) as Record<string, unknown>;
 
@@ -118,6 +103,7 @@ describe('ingest workflow YAML', () => {
       (s) => s.run && (s.run as string).includes('dist/cli.js wiki ingest'),
     );
     expect(ingestStep).toBeDefined();
+    expect((ingestStep!.run as string)).toContain('--all');
   });
 
   it('should use stefanzweifel/git-auto-commit-action@v5', async () => {
