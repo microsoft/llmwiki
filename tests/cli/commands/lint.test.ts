@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { lintWiki, LintResult, LintFinding } from '../../../packages/cli/src/commands/lint.js';
+import { lintWiki, LintResult, LintFinding } from '../../../packages/shared/src/lint.js';
 import { writeIndex } from '../../../packages/shared/src/index-ops.js';
 import { writePage } from '../../../packages/shared/src/wiki.js';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
