@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { WikiPagesTreeDataProvider } from './wikiPagesTree';
+import { RawSourcesTreeDataProvider } from './rawSourcesTree';
 import { registerCommands } from './commands';
 import { createStatusBar } from './statusBar';
 
@@ -27,11 +28,19 @@ export function activate(context: vscode.ExtensionContext): void {
   watcher.onDidCreate(() => wikiPagesProvider.refresh());
   watcher.onDidDelete(() => wikiPagesProvider.refresh());
 
-  registerCommands(context, workspaceFolder, { wikiPages: wikiPagesProvider }, outputChannel);
+  const rawSourcesProvider = new RawSourcesTreeDataProvider(workspaceFolder);
+  const rawSourcesRegistration = vscode.window.registerTreeDataProvider('rawSources', rawSourcesProvider);
+
+  const rawWatcher = vscode.workspace.createFileSystemWatcher('**/raw/**');
+  rawWatcher.onDidChange(() => rawSourcesProvider.refresh());
+  rawWatcher.onDidCreate(() => rawSourcesProvider.refresh());
+  rawWatcher.onDidDelete(() => rawSourcesProvider.refresh());
+
+  registerCommands(context, workspaceFolder, { wikiPages: wikiPagesProvider, rawSources: rawSourcesProvider }, outputChannel);
 
   const statusBar = createStatusBar(context, workspaceFolder);
 
-  context.subscriptions.push(treeRegistration, watcher, wikiPagesProvider, statusBar);
+  context.subscriptions.push(treeRegistration, watcher, wikiPagesProvider, rawSourcesRegistration, rawWatcher, rawSourcesProvider, statusBar);
 }
 
 export function deactivate(): void {

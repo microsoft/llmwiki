@@ -39,7 +39,22 @@
         { "id": "backlinks", "name": "Backlinks" },
         { "id": "lintFindings", "name": "Lint Findings" }
       ]
-    }
+    },
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "llmwiki.ingest",
+          "when": "viewItem == rawSource",
+          "group": "inline"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "rawSources",
+        "contents": "No sources yet.\n[Add Source Files](command:llmwiki.ingest)"
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.config.mjs",
