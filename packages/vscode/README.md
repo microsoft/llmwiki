@@ -72,6 +72,18 @@ The extension activates automatically when a workspace contains a `wiki/index.md
 
 The extension uses `@llmwiki/shared` exclusively for all business logic — no wiki operations are duplicated in the extension code. Commands delegate to shared functions like `ingestSource`, `bulkIngest`, `queryWiki`, `getWikiStatus`, and `lintWiki`, keeping the extension a thin UI layer.
 
+## MCP Server
+
+The `@llmwiki/shared` package also includes an MCP (Model Context Protocol) server that exposes all wiki operations to external LLM agents. While the VS Code extension provides a GUI for wiki interaction, the MCP server enables agents like Claude Desktop, Cursor, and VS Code Copilot to programmatically read, write, and maintain wiki content.
+
+Start the MCP server alongside the extension:
+
+```bash
+plaid wiki mcp --path /path/to/your/wiki
+```
+
+See the [MCP Tools Reference](https://github.com/microsoft/llmwiki/blob/main/docs/mcp-tools.md) for details on available tools.
+
 ## License
 
 MIT — see [LICENSE](https://github.com/microsoft/llmwiki/blob/main/LICENSE) for details.

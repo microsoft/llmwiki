@@ -13,8 +13,8 @@
     "c4-06": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T14:30:00Z", "completed_at": "2026-04-10T15:01:00Z", "branch": "task/cycle-4/c4-06", "pr": 52, "note": "addCrosslinks + updateIndexEntry + 2 MCP tools, ~40 tests. Merged PR #52." },
     "c4-07": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T15:02:00Z", "completed_at": "2026-04-10T15:20:00Z", "branch": "task/cycle-4/c4-07", "pr": 53, "note": "ingestWithContext + wiki_ingest_with_context MCP tool, 48 new tests. Merged PR #53." },
     "c4-08": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T15:50:00Z", "completed_at": "2026-04-10T16:04:00Z", "branch": "task/cycle-4/c4-08", "pr": 54, "note": "123 MCP integration tests: in-memory transport for all 14 tools, error cases, E2E subprocess, advanced workflows. Merged PR #54." },
-    "c4-09": { "status": "pending", "attempts": 0 },
-    "c4-10": { "status": "pending", "attempts": 0, "note": "Documentation update — not yet started. Was mislabeled as completed in error." },
+    "c4-09": { "status": "completed", "attempts": 1, "started_at": "2026-04-10T16:22:00Z", "completed_at": "2026-04-10T16:40:00Z", "branch": "task/cycle-4/c4-09", "pr": 55, "note": "Security review: 0 blockers, 4 concerns fixed (index injection, length limits, empty slugs, empty titles), 3 nits documented. 551 tests pass." },
+    "c4-10": { "status": "running", "attempts": 1, "started_at": "2026-04-10T16:51:00Z", "branch": "task/cycle-4/c4-10" },
     "c4-11": { "status": "pending", "attempts": 0 }
   },
   "cycle_history": [
