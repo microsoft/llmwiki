@@ -1,33 +1,20 @@
 {
-  "cycle_id": "cycle-2",
-  "plan_id": "cycle-2",
+  "cycle_id": "cycle-3",
+  "plan_id": "cycle-3",
   "plan_path": "docs/plan/current/plan.yaml",
-  "status": "completed",
-  "started_at": "2026-04-09T23:04:48Z",
-  "completed_at": "2026-04-10T05:34:00Z",
-  "score": {
-    "tasks_completed": 13,
-    "tasks_total": 13,
-    "tasks_failed": 0,
-    "prs_merged": 13,
-    "prs_open": 0,
-    "completion_rate": 1.0,
-    "retry_rate": 0.0
-  },
+  "status": "active",
+  "started_at": "2026-04-10T05:50:00Z",
   "tasks": {
-    "c2-01": { "status": "completed", "attempts": 1, "pr": 21, "merged": true },
-    "c2-02": { "status": "completed", "attempts": 1, "pr": 22, "merged": true },
-    "c2-03": { "status": "completed", "attempts": 1, "pr": 23, "merged": true },
-    "c2-04": { "status": "completed", "attempts": 1, "pr": 24, "merged": true },
-    "c2-05": { "status": "completed", "attempts": 1, "pr": 26, "merged": true },
-    "c2-06": { "status": "completed", "attempts": 1, "pr": 27, "merged": true },
-    "c2-07": { "status": "completed", "attempts": 1, "pr": 28, "merged": true },
-    "c2-08": { "status": "completed", "attempts": 1, "pr": 29, "merged": true },
-    "c2-09": { "status": "completed", "attempts": 1, "pr": 30, "merged": true },
-    "c2-10": { "status": "completed", "attempts": 1, "pr": 31, "merged": true },
-    "c2-11": { "status": "completed", "attempts": 1, "pr": 32, "merged": true },
-    "c2-12": { "status": "completed", "attempts": 1, "pr": 33, "merged": true },
-    "c2-13": { "status": "completed", "attempts": 1, "pr": 34, "merged": true }
+    "c3-01": { "status": "pending", "attempts": 0 },
+    "c3-02": { "status": "pending", "attempts": 0 },
+    "c3-03": { "status": "pending", "attempts": 0 },
+    "c3-04": { "status": "pending", "attempts": 0 },
+    "c3-05": { "status": "pending", "attempts": 0 },
+    "c3-06": { "status": "pending", "attempts": 0 },
+    "c3-07": { "status": "pending", "attempts": 0 },
+    "c3-08": { "status": "pending", "attempts": 0 },
+    "c3-09": { "status": "pending", "attempts": 0 },
+    "c3-10": { "status": "pending", "attempts": 0 }
   },
   "cycle_history": [
     {
