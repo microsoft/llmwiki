@@ -28,7 +28,7 @@ The project is an npm workspaces monorepo with three packages:
 
 | Package | npm name | Description |
 |---------|----------|-------------|
-| [`packages/shared`](./packages/shared) | `@llmwiki/shared` | Core wiki operations — page I/O, index parsing, log management, lint checks, `listSources`, `getBacklinks` |
+| [`packages/shared`](./packages/shared) | `@llmwiki/shared` | Core wiki operations — page I/O, index parsing, log management, lint checks, `listSources`, `getBacklinks`, `ingestSource`, `queryWiki`, `getWikiStatus`, `slugify`, `excerpt`, `countOccurrences`, `bulkIngest` |
 | [`packages/cli`](./packages/cli) | `@llmwiki/cli` | Commander.js CLI (`plaid wiki` commands) |
 | [`packages/vscode`](./packages/vscode) | `llmwiki-vscode` | VS Code extension — tree views, command palette, status bar |
 
@@ -73,6 +73,7 @@ The primary interface is a TypeScript/Node.js CLI invoked as `plaid wiki <comman
 | `plaid wiki query <query>` | Search wiki pages by keyword with scored results |
 | `plaid wiki lint` | Run health checks — broken links, orphan pages, index completeness |
 | `plaid wiki status` | Show wiki statistics — source count, page count, last activity |
+| `plaid wiki list <type>` | List wiki pages, source files, or index entries |
 
 ### `plaid wiki init`
 
@@ -93,13 +94,15 @@ Creates: `raw/`, `wiki/entities/`, `wiki/concepts/`, `wiki/sources/`, `wiki/inde
 Reads a source file, creates a summary page in `wiki/sources/`, updates `wiki/index.md`, and appends to `wiki/log.md`.
 
 ```bash
-plaid wiki ingest <source> [--path <dir>] [--dry-run]
+plaid wiki ingest <source> [--path <dir>] [--dry-run] [--force] [--all]
 ```
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--path <dir>` | `.` | Wiki root directory |
 | `--dry-run` | `false` | Preview changes without writing files |
+| `--force` | `false` | Re-ingest even if source was already ingested |
+| `--all` | `false` | Ingest all files from the `raw/` directory |
 
 The source filename is slugified for the output path. Example: `raw/My Report (2024).pdf` produces `wiki/sources/my-report-2024-summary.md`.
 
@@ -138,6 +141,7 @@ plaid wiki lint [--path <dir>] [--category <categories>]
 | `index-completeness` | warning | Wiki pages not listed in `wiki/index.md` |
 | `stale-entries` | error | Index entries pointing to deleted files |
 | `missing-pages` | info | Referenced pages that do not exist yet |
+| `frontmatter-validation` | error/warning/info | Validates page frontmatter: missing type (error), missing title (error), invalid type (warning), missing tags (info), missing created (info) |
 
 Exits with code 1 if any errors are found.
 
@@ -219,6 +223,7 @@ npm run build     # Build all packages (shared → cli → vscode)
 npm test          # Run tests (vitest)
 npm run lint      # Type-check all packages (tsc --noEmit)
 npm run dev       # Watch mode (vitest watch)
+npm run coverage  # Run tests with coverage reporting (@vitest/coverage-v8)
 ```
 
 **Per-package commands:**

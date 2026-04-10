@@ -69,6 +69,10 @@ The extension activates automatically when a workspace contains a `wiki/index.md
 - **Node.js** 20.x or later
 - **Git** (for wiki version tracking)
 
+## Architecture
+
+The extension uses `@llmwiki/shared` exclusively for all business logic — no wiki operations are duplicated in the extension code. Commands delegate to shared functions like `ingestSource`, `bulkIngest`, `queryWiki`, `getWikiStatus`, and `lintWiki`, keeping the extension a thin UI layer.
+
 ## License
 
 MIT — see [LICENSE](https://github.com/microsoft/llmwiki/blob/main/LICENSE) for details.
