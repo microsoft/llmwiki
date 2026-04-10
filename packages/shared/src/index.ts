@@ -1,3 +1,4 @@
+export * from './constants.js';
 export * from './wiki.js';
 export * from './index-ops.js';
 export * from './log.js';

@@ -99,6 +99,7 @@ describe('E2E: CLI integration', () => {
 
       expect(exitCode).toBe(0);
       const result = JSON.parse(stdout);
+      expect(result.api_version).toBe('1');
       expect(result.command).toBe('init');
       expect(result.status).toBe('created');
       expect(result.created_dirs).toContain('wiki');
@@ -132,6 +133,7 @@ describe('E2E: CLI integration', () => {
       );
 
       const result = JSON.parse(stdout);
+      expect(result.api_version).toBe('1');
       expect(result.status).toBe('already_initialized');
       expect(result.created_dirs).toEqual([]);
       expect(result.created_files).toEqual([]);
@@ -196,6 +198,7 @@ describe('E2E: CLI integration', () => {
 
       expect(exitCode).toBe(0);
       const result = JSON.parse(stdout);
+      expect(result.api_version).toBe('1');
       expect(result.command).toBe('ingest');
       expect(result.status).toBe('success');
       expect(result.dry_run).toBe(false);
@@ -242,6 +245,7 @@ describe('E2E: CLI integration', () => {
       );
 
       const result = JSON.parse(stdout);
+      expect(result.api_version).toBe('1');
       expect(result.status).toBe('error');
       expect(result.error).toContain('Wiki is not initialized');
     });
@@ -322,6 +326,7 @@ describe('E2E: CLI integration', () => {
 
       expect(exitCode).toBe(0);
       const result = JSON.parse(stdout);
+      expect(result.api_version).toBe('1');
       expect(result.command).toBe('status');
       expect(result.source_count).toBe(0);
       expect(result.wiki_page_count).toBe(0);
@@ -378,6 +383,7 @@ describe('E2E: CLI integration', () => {
 
       expect(exitCode).toBe(0);
       const result = JSON.parse(stdout);
+      expect(result.api_version).toBe('1');
       expect(result.command).toBe('lint');
       expect(result.findings).toEqual([]);
       expect(result.errorCount).toBe(0);
@@ -515,6 +521,7 @@ describe('E2E: CLI integration', () => {
 
       expect(exitCode).toBe(0);
       const result = JSON.parse(stdout);
+      expect(result.api_version).toBe('1');
       expect(result.command).toBe('query');
       expect(result.query).toBe('neural');
       expect(result.matches).toBe(0);
@@ -550,6 +557,7 @@ describe('E2E: CLI integration', () => {
 
       expect(exitCode).toBe(0);
       const result = JSON.parse(stdout);
+      expect(result.api_version).toBe('1');
       expect(result.command).toBe('query');
       expect(result.matches).toBeGreaterThan(0);
       expect(result.results[0]).toHaveProperty('title');
@@ -660,6 +668,7 @@ describe('E2E: CLI integration', () => {
         true,
       );
       const init = JSON.parse(initOut);
+      expect(init.api_version).toBe('1');
       expect(init.status).toBe('created');
 
       // 2. Ingest
@@ -675,6 +684,7 @@ describe('E2E: CLI integration', () => {
         true,
       );
       const ingest = JSON.parse(ingestOut);
+      expect(ingest.api_version).toBe('1');
       expect(ingest.status).toBe('success');
       expect(ingest.pages_created.length).toBe(1);
 
@@ -685,6 +695,7 @@ describe('E2E: CLI integration', () => {
         true,
       );
       const status = JSON.parse(statusOut);
+      expect(status.api_version).toBe('1');
       expect(status.source_count).toBe(1);
       expect(status.wiki_page_count).toBe(1);
       expect(status.last_ingest_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -697,6 +708,7 @@ describe('E2E: CLI integration', () => {
         true,
       );
       const lint = JSON.parse(lintOut);
+      expect(lint.api_version).toBe('1');
       expect(lint.errorCount).toBe(0);
 
       // 5. Query
@@ -706,6 +718,7 @@ describe('E2E: CLI integration', () => {
         true,
       );
       const query = JSON.parse(queryOut);
+      expect(query.api_version).toBe('1');
       expect(query.matches).toBeGreaterThan(0);
       expect(query.results[0].title).toContain('transformers.md');
       expect(query.results[0].score).toBeGreaterThan(0);
@@ -772,6 +785,7 @@ describe('E2E: CLI integration', () => {
       // status gracefully returns zeros, no crash
       expect(exitCode).toBe(0);
       const result = JSON.parse(stdout);
+      expect(result.api_version).toBe('1');
       expect(result.source_count).toBe(0);
       expect(result.wiki_page_count).toBe(0);
     });
@@ -785,6 +799,7 @@ describe('E2E: CLI integration', () => {
 
       expect(exitCode).toBe(0);
       const result = JSON.parse(stdout);
+      expect(result.api_version).toBe('1');
       expect(result.matches).toBe(0);
     });
 

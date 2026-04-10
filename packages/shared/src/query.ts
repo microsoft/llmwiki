@@ -5,6 +5,7 @@ import { readIndex, type IndexEntry } from './index-ops.js';
 import { appendEntry } from './log.js';
 import { countOccurrences } from './search.js';
 import { excerpt } from './utils.js';
+import { API_VERSION } from './constants.js';
 
 export interface QueryResult {
   title: string;
@@ -15,6 +16,7 @@ export interface QueryResult {
 
 export interface QueryOutput {
   command: string;
+  api_version: string;
   query: string;
   matches: number;
   results: QueryResult[];
@@ -47,6 +49,7 @@ export async function queryWiki(
   if (!(await directoryExists(wikiDir))) {
     return {
       command: 'query',
+      api_version: API_VERSION,
       query: queryStr,
       matches: 0,
       results: [],
@@ -59,6 +62,7 @@ export async function queryWiki(
   if (terms.length === 0) {
     return {
       command: 'query',
+      api_version: API_VERSION,
       query: queryStr,
       matches: 0,
       results: [],
@@ -107,6 +111,7 @@ export async function queryWiki(
 
   const output: QueryOutput = {
     command: 'query',
+    api_version: API_VERSION,
     query: queryStr,
     matches: results.length,
     results,

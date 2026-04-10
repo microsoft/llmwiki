@@ -4,6 +4,7 @@ import { listSources } from './sources.js';
 import { ingestSource, type IngestResult } from './ingest.js';
 import { slugify } from './utils.js';
 import { directoryExists } from './wiki.js';
+import { API_VERSION } from './constants.js';
 
 export interface BulkIngestOptions {
   dryRun?: boolean;
@@ -19,6 +20,7 @@ export interface BulkIngestFileResult {
 
 export interface BulkIngestResult {
   command: string;
+  api_version: string;
   total: number;
   ingested: number;
   skipped: number;
@@ -38,6 +40,7 @@ export async function bulkIngest(
   if (!(await directoryExists(wikiPath))) {
     return {
       command: 'bulk-ingest',
+      api_version: API_VERSION,
       total: 0,
       ingested: 0,
       skipped: 0,
@@ -50,6 +53,7 @@ export async function bulkIngest(
   const sources = await listSources(rawDir);
   const result: BulkIngestResult = {
     command: 'bulk-ingest',
+    api_version: API_VERSION,
     total: sources.length,
     ingested: 0,
     skipped: 0,

@@ -1,13 +1,14 @@
 import { Command } from 'commander';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { appendEntry } from '@llmwiki/shared';
+import { appendEntry, API_VERSION } from '@llmwiki/shared';
 
 /**
  * Result of running the init command.
  */
 export interface InitResult {
   command: string;
+  api_version: string;
   status: 'created' | 'already_initialized';
   created_dirs: string[];
   created_files: string[];
@@ -150,6 +151,7 @@ export async function initWiki(targetPath: string): Promise<InitResult> {
     if (wikiStat.isDirectory()) {
       return {
         command: 'init',
+        api_version: API_VERSION,
         status: 'already_initialized',
         created_dirs: [],
         created_files: [],
@@ -185,6 +187,7 @@ export async function initWiki(targetPath: string): Promise<InitResult> {
 
   return {
     command: 'init',
+    api_version: API_VERSION,
     status: 'created',
     created_dirs: [...DIRS],
     created_files: createdFiles,

@@ -2,6 +2,7 @@ import { access, constants } from 'node:fs/promises';
 import { join, resolve, relative, dirname } from 'node:path';
 import { listPages, readPage, getPageLinks, type WikiPageFrontmatter } from './wiki.js';
 import { readIndex } from './index-ops.js';
+import { API_VERSION } from './constants.js';
 
 export interface LintFinding {
   severity: 'error' | 'warning' | 'info';
@@ -12,6 +13,7 @@ export interface LintFinding {
 
 export interface LintResult {
   command: string;
+  api_version: string;
   findings: LintFinding[];
   errorCount: number;
   warningCount: number;
@@ -237,6 +239,7 @@ export async function lintWiki(
 
   return {
     command: 'lint',
+    api_version: API_VERSION,
     findings,
     errorCount,
     warningCount,
