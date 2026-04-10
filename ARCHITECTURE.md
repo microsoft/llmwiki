@@ -9,18 +9,20 @@
 │                     Human Interface                     │
 │  ┌──────────┐   ┌──────────────┐   ┌────────────────┐  │
 │  │ VS Code  │   │   Obsidian   │   │  GitHub Web    │  │
-│  │          │   │  (read-only) │   │   (browse)     │  │
+│  │ Extension│   │  (read-only) │   │   (browse)     │  │
 │  └────┬─────┘   └──────────────┘   └────────────────┘  │
 │       │                                                 │
-│       ▼                                                 │
-│  ┌──────────┐   ┌──────────────┐                        │
-│  │  plaid   │◄──│ GitHub       │                        │
-│  │ wiki CLI │   │ Actions      │                        │
-│  └────┬─────┘   └──────┬───────┘                        │
-│       │                │                                │
-└───────┼────────────────┼────────────────────────────────┘
-        │                │
-        ▼                ▼
+│       ├──────── @llmwiki/shared ◄────────┐              │
+│       │                                  │              │
+│       ▼                                  │              │
+│  ┌──────────┐   ┌──────────────┐         │              │
+│  │  plaid   │──▶│ @llmwiki/    │   ┌─────┴────────┐    │
+│  │ wiki CLI │   │  shared      │◄──│ GitHub       │    │
+│  └────┬─────┘   └──────────────┘   │ Actions      │    │
+│       │                            └──────┬───────┘    │
+└───────┼───────────────────────────────────┼────────────┘
+        │                                   │
+        ▼                                   ▼
 ┌─────────────────────────────────────────────────────────┐
 │                    Git Repository                       │
 │                                                         │
@@ -70,12 +72,13 @@ The conventions document that tells the LLM how the wiki is structured and what 
 
 - **Runtime:** Node.js ≥ 20
 - **Language:** TypeScript (ES2022 target, NodeNext modules, strict mode)
-- **Build tool:** [tsup](https://tsup.egoist.dev/) — bundles `src/cli.ts` to ESM with a `#!/usr/bin/env node` banner
+- **Build tools:** [tsup](https://tsup.egoist.dev/) for CLI bundling, [esbuild](https://esbuild.github.io/) for VS Code extension, `tsc` for shared library
 - **Test framework:** [Vitest](https://vitest.dev/)
 - **CLI framework:** [Commander.js](https://github.com/tj/commander.js/) v14
-- **Frontmatter parsing:** [gray-matter](https://github.com/jonschlinkert/gray-matter)
-- **Binary name:** `plaid` (via `package.json` `bin` field)
-- **Distribution:** `npm link` for local development
+- **Frontmatter parsing:** [gray-matter](https://github.com/jonschlinkert/gray-matter) (in `@llmwiki/shared`)
+- **Binary name:** `plaid` (via `packages/cli/package.json` `bin` field)
+- **Monorepo:** npm workspaces with build order: shared → cli → vscode
+- **Distribution:** `npm link --workspace=packages/cli` for local development; `vsce package` for VS Code extension
 
 ### Command Structure
 
@@ -234,40 +237,66 @@ All commands produce human-readable output by default. With `--json` on the `wik
 
 ## Source Code Structure
 
+The project is an npm workspaces monorepo with three packages:
+
 ```
 llmwiki/
-├── src/                        # CLI source code (TypeScript)
-│   ├── cli.ts                  # Entry point — creates Commander program, registers commands
-│   ├── commands/
-│   │   ├── init.ts             # plaid wiki init — directory scaffolding, AGENTS.md template
-│   │   ├── ingest.ts           # plaid wiki ingest — source → summary page pipeline
-│   │   ├── query.ts            # plaid wiki query — keyword search with weighted scoring
-│   │   ├── lint.ts             # plaid wiki lint — 5 health-check categories
-│   │   └── status.ts           # plaid wiki status — aggregate stats from filesystem + log
-│   └── lib/
-│       ├── wiki.ts             # readPage, writePage, listPages, getPageLinks (gray-matter)
-│       ├── index.ts            # readIndex, writeIndex, addEntry, removeEntry, findEntries
-│       └── log.ts              # appendEntry, readLog, getRecentEntries
-├── tests/                      # Test suite (Vitest)
-│   ├── unit/                   # Unit tests (cli structure, ingest workflow)
-│   ├── commands/               # Command integration tests (init, ingest, query, lint, status)
-│   ├── lib/                    # Library unit tests (wiki, index, log)
-│   ├── e2e/                    # End-to-end CLI integration tests
-│   └── fixtures/               # Test fixture data (index, log, wiki samples)
+├── packages/
+│   ├── shared/                     # @llmwiki/shared — core wiki operations
+│   │   ├── src/
+│   │   │   ├── index.ts            # Barrel export (re-exports all modules)
+│   │   │   ├── wiki.ts             # readPage, writePage, listPages, getPageLinks, directoryExists
+│   │   │   ├── index-ops.ts        # readIndex, writeIndex, addEntry, removeEntry, findEntries
+│   │   │   ├── log.ts              # appendEntry, readLog, getRecentEntries
+│   │   │   ├── sources.ts          # listSources (raw/ directory metadata)
+│   │   │   ├── backlinks.ts        # getBacklinks (reverse link resolution)
+│   │   │   └── lint.ts             # lintWiki (5 check categories)
+│   │   ├── package.json            # @llmwiki/shared, exports: ./dist/index.js
+│   │   └── tsconfig.json           # Extends tsconfig.base.json, composite: true
+│   │
+│   ├── cli/                        # @llmwiki/cli — Commander.js CLI
+│   │   ├── src/
+│   │   │   ├── cli.ts              # Entry point — creates Commander program, registers commands
+│   │   │   └── commands/
+│   │   │       ├── init.ts         # plaid wiki init — directory scaffolding, AGENTS.md template
+│   │   │       ├── ingest.ts       # plaid wiki ingest — source → summary page pipeline
+│   │   │       ├── query.ts        # plaid wiki query — keyword search with weighted scoring
+│   │   │       ├── lint.ts         # plaid wiki lint — delegates to @llmwiki/shared lintWiki
+│   │   │       └── status.ts       # plaid wiki status — aggregate stats from filesystem + log
+│   │   ├── package.json            # bin: { plaid: ./dist/cli.js }, depends on @llmwiki/shared
+│   │   └── tsup.config.ts          # ESM bundle, node20 target, shebang banner
+│   │
+│   └── vscode/                     # llmwiki-vscode — VS Code extension
+│       ├── src/
+│       │   ├── extension.ts        # activate/deactivate — registers tree views, commands, status bar
+│       │   ├── commands.ts         # 7 command handlers (init, ingest, query, lint, status, openPage, refresh)
+│       │   ├── statusBar.ts        # StatusBarManager — live page count with debounced file watching
+│       │   ├── wikiPagesTree.ts    # WikiPagesTreeDataProvider — index-based category → page tree
+│       │   ├── rawSourcesTree.ts   # RawSourcesTreeDataProvider — raw/ directory browser via listSources
+│       │   ├── backlinksTree.ts    # BacklinksTreeDataProvider — reverse links for active editor page
+│       │   └── lintFindingsTree.ts # LintFindingsTreeDataProvider — severity-grouped lint results
+│       ├── package.json            # VS Code extension manifest (contributes, activationEvents)
+│       └── esbuild.config.mjs      # CJS bundle, external: ['vscode'], node20 target
+│
+├── tests/                          # Test suite (Vitest)
+│   ├── shared/                     # Shared library tests
+│   ├── cli/                        # CLI command tests
+│   ├── vscode/                     # VS Code extension tests
+│   └── fixtures/                   # Test fixture data (index, log, wiki samples)
 ├── .github/
 │   └── workflows/
-│       ├── ci.yml              # CI — lint, build, test on push/PR to main
-│       └── ingest.yml          # Auto-ingest on push to raw/ or manual dispatch
-├── package.json                # bin: { plaid: ./dist/cli.js }
-├── tsconfig.json               # ES2022, NodeNext, strict
-├── tsup.config.ts              # ESM bundle, node20 target, shebang banner
-├── vitest.config.ts            # tests/**/*.test.ts
-├── AGENTS.md                   # Schema conventions (generated by init)
+│       ├── ci.yml                  # CI — lint, build, test on push/PR to main
+│       └── ingest.yml              # Auto-ingest on push to raw/ or manual dispatch
+├── package.json                    # Workspace root — workspaces: [packages/shared, packages/cli, packages/vscode]
+├── tsconfig.base.json              # Shared TypeScript config (ES2022, NodeNext, strict)
+├── tsconfig.json                   # Root references
+├── vitest.config.ts                # tests/**/*.test.ts
+├── AGENTS.md                       # Schema conventions (generated by init)
 ├── README.md
 ├── ARCHITECTURE.md
 ├── STRATEGY.md
 ├── SECURITY.md
-└── LICENSE                     # MIT
+└── LICENSE                         # MIT
 ```
 
 ## Wiki Data Structure
@@ -428,36 +457,135 @@ Human provides search terms
 
 ### CI (`ci.yml`)
 
-Runs on every push and pull request to `main`. Executes lint (`tsc --noEmit`), build (`tsup`), and test (`vitest run`) on Node.js 20.
+Runs on every push and pull request to `main`. Executes lint (`tsc --noEmit`), build, and test (`vitest run`) across all workspaces on Node.js 20.
 
 ### Auto-Ingest (`ingest.yml`)
 
 Triggers on pushes that modify `raw/**` or via manual `workflow_dispatch`. The workflow:
 
 1. Checks out the repo with full history (`fetch-depth: 0`)
-2. Installs dependencies and builds the CLI
+2. Installs dependencies and builds all packages
 3. Detects changed files in `raw/` using `git diff` (or `find` for manual dispatch)
-4. Runs `node dist/cli.js wiki ingest "$file"` for each changed file
+4. Runs `node packages/cli/dist/cli.js wiki ingest "$file"` for each changed file
 5. Auto-commits wiki updates via [stefanzweifel/git-auto-commit-action@v5](https://github.com/stefanzweifel/git-auto-commit-action)
+
+## VS Code Extension Architecture
+
+The extension (`packages/vscode`) provides a GUI layer over `@llmwiki/shared`. It never duplicates core logic — all wiki operations delegate to the shared library.
+
+### Activation
+
+The extension activates when:
+- The workspace contains `wiki/index.md` (`workspaceContains:wiki/index.md`)
+- The user runs `llmwiki.init` (`onCommand:llmwiki.init`)
+
+### Tree View Providers
+
+```
+Activity Bar: "LLM Wiki" ($(book) icon)
+├── Wiki Pages (wikiPagesTree.ts)
+│   └── WikiPagesTreeDataProvider
+│       ├── Reads wiki/index.md via readIndex()
+│       ├── Root: category nodes (Entities, Concepts, Sources)
+│       └── Children: page items with click-to-open
+│
+├── Raw Sources (rawSourcesTree.ts)
+│   └── RawSourcesTreeDataProvider
+│       ├── Reads raw/ via listSources()
+│       ├── Groups files by subdirectory (flat if no subdirs)
+│       └── Shows size + date in description
+│
+├── Backlinks (backlinksTree.ts)
+│   └── BacklinksTreeDataProvider
+│       ├── Calls getBacklinks() for the active editor's wiki page
+│       ├── Updates on editor change (200ms debounce)
+│       └── Shows "Open a wiki page" message when no wiki page is active
+│
+└── Lint Findings (lintFindingsTree.ts)
+    └── LintFindingsTreeDataProvider
+        ├── Populated by llmwiki.lint command via setFindings()
+        ├── Groups by severity (Errors → Warnings → Info)
+        └── Click to open the affected file
+```
+
+### Commands
+
+| Command ID | Trigger | Behavior |
+|------------|---------|----------|
+| `llmwiki.init` | Command palette | Creates wiki scaffold (dirs, index, log, AGENTS.md) |
+| `llmwiki.ingest` | Command palette / context menu on raw source | Opens file picker, creates summary page, updates index + log |
+| `llmwiki.query` | Command palette | Input box → weighted search → quick pick results |
+| `llmwiki.lint` | Command palette | Runs `lintWiki()`, populates Lint Findings tree |
+| `llmwiki.status` | Command palette / status bar click | Shows page count, sources, coverage, last ingest in notification |
+| `llmwiki.openPage` | Command palette | Quick pick from index entries → opens selected page |
+| `llmwiki.refresh` | Command palette | Refreshes Wiki Pages and Raw Sources tree views |
+
+### Status Bar
+
+`StatusBarManager` (left-aligned, priority 100) displays: `$(book) Wiki: N pages`
+
+- **Tooltip:** source count, last ingest date, coverage %
+- **Click action:** runs `llmwiki.status`
+- **Auto-refresh:** file system watchers on `wiki/**/*.md` and `raw/**` with 300ms debounce
+- **Uninitialized state:** shows "Wiki: Not initialized"
+
+### Bundling
+
+The extension uses esbuild (CJS format) with `vscode` as an external. Packaging via `vsce package --no-dependencies` produces a `.vsix` file with `@llmwiki/shared` bundled inline.
 
 ## Module Dependencies
 
+### Package Dependency Graph
+
 ```
-cli.ts
-  └─► commands/init.ts ──► lib/log.ts
-  └─► commands/ingest.ts ──► lib/wiki.ts, lib/index.ts, lib/log.ts
-  └─► commands/query.ts ──► lib/wiki.ts, lib/index.ts, lib/log.ts
-  └─► commands/lint.ts ──► lib/wiki.ts, lib/index.ts
-  └─► commands/status.ts ──► lib/wiki.ts, lib/index.ts, lib/log.ts
+┌─────────────────────┐     ┌─────────────────────┐
+│   @llmwiki/cli      │     │   llmwiki-vscode     │
+│   (Commander.js)    │     │   (VS Code ext)      │
+└────────┬────────────┘     └────────┬────────────┘
+         │                           │
+         └───────────┬───────────────┘
+                     │
+                     ▼
+         ┌─────────────────────┐
+         │   @llmwiki/shared   │
+         │   (core operations) │
+         └─────────────────────┘
 ```
 
-### Core Libraries
+### CLI Internal Dependencies
+
+```
+cli.ts
+  └─► commands/init.ts ──► @llmwiki/shared (log)
+  └─► commands/ingest.ts ──► @llmwiki/shared (wiki, index-ops, log)
+  └─► commands/query.ts ──► @llmwiki/shared (wiki, index-ops, log)
+  └─► commands/lint.ts ──► @llmwiki/shared (lint)
+  └─► commands/status.ts ──► @llmwiki/shared (wiki, index-ops, log)
+```
+
+### VS Code Extension Internal Dependencies
+
+```
+extension.ts
+  └─► commands.ts ──► @llmwiki/shared (readIndex, readPage, writePage, listPages,
+  │                    readLog, addEntry, appendEntry, directoryExists, lintWiki)
+  └─► wikiPagesTree.ts ──► @llmwiki/shared (readIndex)
+  └─► rawSourcesTree.ts ──► @llmwiki/shared (listSources)
+  └─► backlinksTree.ts ──► @llmwiki/shared (getBacklinks)
+  └─► lintFindingsTree.ts ──► @llmwiki/shared (LintFinding type)
+  └─► statusBar.ts ──► @llmwiki/shared (readIndex, listPages, readLog, directoryExists)
+```
+
+### Shared Library Modules
 
 | Module | Exports | Purpose |
 |--------|---------|---------|
-| `lib/wiki.ts` | `readPage`, `writePage`, `listPages`, `getPageLinks` | Read/write wiki pages with gray-matter frontmatter. List `.md` files recursively. Extract internal markdown links. |
-| `lib/index.ts` | `readIndex`, `writeIndex`, `addEntry`, `removeEntry`, `findEntries` | Parse and serialize the categorized `index.md` format. CRUD operations on index entries. |
-| `lib/log.ts` | `appendEntry`, `readLog`, `getRecentEntries` | Append timestamped entries to `log.md`. Parse log entries. Retrieve recent entries. |
+| `wiki.ts` | `readPage`, `writePage`, `listPages`, `getPageLinks`, `directoryExists` | Read/write wiki pages with gray-matter frontmatter. List `.md` files recursively. Extract internal markdown links. |
+| `index-ops.ts` | `readIndex`, `writeIndex`, `addEntry`, `removeEntry`, `findEntries` | Parse and serialize the categorized `index.md` format. CRUD operations on index entries. |
+| `log.ts` | `appendEntry`, `readLog`, `getRecentEntries` | Append timestamped entries to `log.md`. Parse log entries. Retrieve recent entries. |
+| `sources.ts` | `listSources` | List all files in `raw/` with metadata (name, path, size, modified, extension). |
+| `backlinks.ts` | `getBacklinks` | Find all pages containing links to a target page via link resolution. |
+| `lint.ts` | `lintWiki` | Run 5 health-check categories and return structured `LintResult`. |
 
 ## Design Decisions
 
@@ -470,7 +598,7 @@ cli.ts
 
 ### Why a CLI as the foundation?
 
-- **Single source of behavior.** The CLI implements all logic. GitHub Actions calls it. Extensions can wrap it. No behavior duplication.
+- **Single source of behavior.** The shared library (`@llmwiki/shared`) implements all logic. The CLI, VS Code extension, and GitHub Actions all consume the same library. No behavior duplication.
 - **Agent interop via `--json`.** External LLM agents can invoke the CLI and parse structured output. This makes the wiki a shared knowledge layer, not a siloed tool.
 - **Testable.** CLI commands are easy to unit test and integration test without UI dependencies.
 
@@ -488,6 +616,18 @@ cli.ts
 
 ### Why TypeScript/Node.js?
 
-- **Ecosystem.** Rich npm ecosystem for CLI tooling (Commander.js, gray-matter).
+- **Ecosystem.** Rich npm ecosystem for CLI tooling (Commander.js, gray-matter) and VS Code extension development.
 - **LLM familiarity.** LLMs are fluent in TypeScript, making the codebase easy to maintain via LLM agents.
-- **Modern toolchain.** tsup for fast bundling, Vitest for testing, ESM throughout.
+- **Modern toolchain.** tsup for CLI bundling, esbuild for VS Code extension, Vitest for testing, ESM throughout.
+
+### Why a monorepo with npm workspaces?
+
+- **Shared logic, multiple surfaces.** The core wiki operations live in `@llmwiki/shared` and are consumed by both the CLI and the VS Code extension without duplication.
+- **Atomic changes.** A single PR can update the shared library and both consumers together, avoiding version drift.
+- **Simple tooling.** npm workspaces require no additional monorepo tools — `npm ci` at the root resolves all cross-package dependencies via symlinks.
+
+### Why a VS Code extension?
+
+- **Primary editor.** Most wiki users already work in VS Code. A native extension removes context-switching between terminal and editor.
+- **Zero logic duplication.** The extension imports `@llmwiki/shared` directly — tree views call `readIndex`, `listSources`, `getBacklinks`, and `lintWiki` without reimplementing any wiki logic.
+- **Rich interaction.** Tree views, quick picks, and the status bar provide discovery and navigation that a CLI cannot match.

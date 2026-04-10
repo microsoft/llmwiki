@@ -22,6 +22,21 @@ The system has three layers:
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for full technical design and data-flow diagrams.
 
+## Packages
+
+The project is an npm workspaces monorepo with three packages:
+
+| Package | npm name | Description |
+|---------|----------|-------------|
+| [`packages/shared`](./packages/shared) | `@llmwiki/shared` | Core wiki operations — page I/O, index parsing, log management, lint checks, `listSources`, `getBacklinks` |
+| [`packages/cli`](./packages/cli) | `@llmwiki/cli` | Commander.js CLI (`plaid wiki` commands) |
+| [`packages/vscode`](./packages/vscode) | `llmwiki-vscode` | VS Code extension — tree views, command palette, status bar |
+
+```
+@llmwiki/cli ──depends-on──▶ @llmwiki/shared
+llmwiki-vscode ──depends-on──▶ @llmwiki/shared
+```
+
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) v20 or later
@@ -33,17 +48,17 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for full technical design and data-flow
 git clone <repo-url>
 cd llmwiki
 
-# Install dependencies
+# Install all workspace dependencies
 npm ci
 
-# Build the CLI
+# Build all packages (shared → cli → vscode)
 npm run build
 
-# Link globally (optional — makes `plaid` available everywhere)
-npm link
+# Link the CLI globally (optional — makes `plaid` available everywhere)
+npm link --workspace=packages/cli
 ```
 
-After building, the CLI is available at `./dist/cli.js` or, if linked, as the `plaid` command.
+After building, the CLI is available at `packages/cli/dist/cli.js` or, if linked, as the `plaid` command.
 
 ## CLI Tool (`plaid wiki`)
 
@@ -162,21 +177,56 @@ Example output from `plaid wiki --json ingest raw/notes.md`:
 }
 ```
 
+## VS Code Extension
+
+The `llmwiki-vscode` extension (`packages/vscode`) provides an interactive wiki experience inside VS Code.
+
+**Activity Bar views:**
+
+| View | Description |
+|------|-------------|
+| Wiki Pages | Browse pages by index category (Entities, Concepts, Sources) |
+| Raw Sources | Browse files in `raw/` with size and date metadata |
+| Backlinks | Shows pages that link to the currently open wiki page |
+| Lint Findings | Displays lint results grouped by severity |
+
+**Command Palette commands** (prefix `LLM Wiki:`):
+
+`Initialize Wiki` · `Ingest Source` · `Query Wiki` · `Lint Wiki` · `Show Status` · `Open Page` · `Refresh`
+
+**Status bar:** Displays live page count, source count, coverage %, and last ingest date. Updates automatically when wiki or source files change.
+
+**Install from VSIX:**
+
+```bash
+cd packages/vscode
+npm run package          # produces llmwiki-vscode-0.1.0.vsix
+code --install-extension llmwiki-vscode-0.1.0.vsix
+```
+
 ## GitHub Actions
 
 Two workflows are included in `.github/workflows/`:
 
-- **`ci.yml`** — Runs on push and PR to `main`. Lints (`tsc --noEmit`), builds (`tsup`), and tests (`vitest`).
+- **`ci.yml`** — Runs on push and PR to `main`. Lints (`tsc --noEmit`), builds, and tests (`vitest`) across all workspaces.
 - **`ingest.yml`** — Triggers on pushes that modify `raw/**` or via manual `workflow_dispatch`. Detects changed files, runs `plaid wiki ingest` on each, and auto-commits wiki updates.
 
 ## Development
 
 ```bash
-npm ci            # Install dependencies
-npm run build     # Build with tsup
+npm ci            # Install all workspace dependencies
+npm run build     # Build all packages (shared → cli → vscode)
 npm test          # Run tests (vitest)
-npm run lint      # Type-check (tsc --noEmit)
+npm run lint      # Type-check all packages (tsc --noEmit)
 npm run dev       # Watch mode (vitest watch)
+```
+
+**Per-package commands:**
+
+```bash
+npm run build --workspace=packages/shared    # Build shared library
+npm run build --workspace=packages/cli       # Build CLI
+npm run build --workspace=packages/vscode    # Build VS Code extension
 ```
 
 ## License
