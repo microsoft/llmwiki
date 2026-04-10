@@ -1,16 +1,59 @@
 {
   "name": "@llmwiki/vscode",
+  "displayName": "LLM Wiki",
+  "description": "Interactive wiki browsing powered by LLM maintenance",
   "version": "0.1.0",
-  "type": "module",
+  "publisher": "llmwiki",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "workspaceContains:wiki/index.md",
+    "onCommand:llmwiki.init"
+  ],
+  "contributes": {
+    "commands": [
+      { "command": "llmwiki.init", "title": "LLM Wiki: Initialize Wiki" },
+      { "command": "llmwiki.ingest", "title": "LLM Wiki: Ingest Source" },
+      { "command": "llmwiki.query", "title": "LLM Wiki: Query Wiki" },
+      { "command": "llmwiki.lint", "title": "LLM Wiki: Lint Wiki" },
+      { "command": "llmwiki.status", "title": "LLM Wiki: Show Status" },
+      { "command": "llmwiki.openPage", "title": "LLM Wiki: Open Page" },
+      { "command": "llmwiki.refresh", "title": "LLM Wiki: Refresh" }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "llmwiki-explorer",
+          "title": "LLM Wiki",
+          "icon": "$(book)"
+        }
+      ]
+    },
+    "views": {
+      "llmwiki-explorer": [
+        { "id": "wikiPages", "name": "Wiki Pages" },
+        { "id": "rawSources", "name": "Raw Sources" },
+        { "id": "backlinks", "name": "Backlinks" },
+        { "id": "lintFindings", "name": "Lint Findings" }
+      ]
+    }
+  },
   "scripts": {
-    "build": "tsc",
-    "lint": "tsc --noEmit"
+    "build": "node esbuild.config.mjs",
+    "lint": "tsc --noEmit",
+    "watch": "node esbuild.config.mjs --watch",
+    "package": "vsce package --no-dependencies"
   },
   "dependencies": {
     "@llmwiki/shared": "*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.20.0",
     "typescript": "^5.4.0"
   }
 }
