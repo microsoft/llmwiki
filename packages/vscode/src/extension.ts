@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { WikiPagesTreeDataProvider } from './wikiPagesTree';
 import { registerCommands } from './commands';
+import { createStatusBar } from './statusBar';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -28,7 +29,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   registerCommands(context, workspaceFolder, { wikiPages: wikiPagesProvider }, outputChannel);
 
-  context.subscriptions.push(treeRegistration, watcher, wikiPagesProvider);
+  const statusBar = createStatusBar(context, workspaceFolder);
+
+  context.subscriptions.push(treeRegistration, watcher, wikiPagesProvider, statusBar);
 }
 
 export function deactivate(): void {
