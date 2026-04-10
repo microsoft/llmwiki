@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {
   CallToolRequestSchema,
@@ -117,6 +117,38 @@ export const READ_TOOLS: ToolDefinition[] = [
 
 type ToolArgs = Record<string, unknown>;
 
+/** Validate that a required argument is a non-empty string. */
+function requireString(args: ToolArgs, key: string): string {
+  const val = args[key];
+  if (typeof val !== 'string' || val.length === 0) {
+    throw new Error(`'${key}' must be a non-empty string`);
+  }
+  return val;
+}
+
+/** Validate that an optional argument, if present, is a string. */
+function optionalString(args: ToolArgs, key: string): string | undefined {
+  const val = args[key];
+  if (val === undefined || val === null) return undefined;
+  if (typeof val !== 'string') {
+    throw new Error(`'${key}' must be a string`);
+  }
+  return val;
+}
+
+/**
+ * S-7: Prevent path traversal — resolved path must stay within baseDir.
+ * Mirrors the guard in ingest.ts.
+ */
+function assertWithinDir(baseDir: string, relPath: string): string {
+  const resolvedBase = resolve(baseDir).replace(/\\/g, '/');
+  const resolvedFull = resolve(baseDir, relPath).replace(/\\/g, '/');
+  if (!resolvedFull.startsWith(resolvedBase + '/') && resolvedFull !== resolvedBase) {
+    throw new Error('Path traversal detected — path must stay within wiki directory');
+  }
+  return resolvedFull;
+}
+
 /** Resolve a tool call to its result text. */
 async function handleToolCall(
   name: string,
@@ -133,11 +165,11 @@ async function handleToolCall(
 
     case 'wiki_query':
       return JSON.stringify(
-        await queryWiki(args.query as string, wikiRoot),
+        await queryWiki(requireString(args, 'query'), wikiRoot),
       );
 
     case 'wiki_lint': {
-      const category = args.category as string | undefined;
+      const category = optionalString(args, 'category');
       return JSON.stringify(
         await lintWiki(wikiRoot, category ? [category] : undefined),
       );
@@ -162,8 +194,8 @@ async function handleToolCall(
       return JSON.stringify(await listSources(rawDir));
 
     case 'wiki_read_page': {
-      const relPath = args.path as string;
-      const fullPath = join(wikiDir, relPath);
+      const relPath = requireString(args, 'path');
+      const fullPath = assertWithinDir(wikiDir, relPath);
       return JSON.stringify(await readPage(fullPath));
     }
 
