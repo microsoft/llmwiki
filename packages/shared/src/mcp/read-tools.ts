@@ -1,9 +1,4 @@
 import { join, resolve } from 'node:path';
-import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
 import { getWikiStatus } from '../status.js';
 import { queryWiki } from '../query.js';
 import { lintWiki } from '../lint.js';
@@ -116,10 +111,10 @@ export const READ_TOOLS: ToolDefinition[] = [
 // Tool handler dispatch
 // ---------------------------------------------------------------------------
 
-type ToolArgs = Record<string, unknown>;
+export type ToolArgs = Record<string, unknown>;
 
 /** Validate that a required argument is a non-empty string. */
-function requireString(args: ToolArgs, key: string): string {
+export function requireString(args: ToolArgs, key: string): string {
   const val = args[key];
   if (typeof val !== 'string' || val.length === 0) {
     throw new Error(`'${key}' must be a non-empty string`);
@@ -128,7 +123,7 @@ function requireString(args: ToolArgs, key: string): string {
 }
 
 /** Validate that an optional argument, if present, is a string. */
-function optionalString(args: ToolArgs, key: string): string | undefined {
+export function optionalString(args: ToolArgs, key: string): string | undefined {
   const val = args[key];
   if (val === undefined || val === null) return undefined;
   if (typeof val !== 'string') {
@@ -141,7 +136,7 @@ function optionalString(args: ToolArgs, key: string): string | undefined {
  * S-7: Prevent path traversal — resolved path must stay within baseDir.
  * Mirrors the guard in ingest.ts.
  */
-function assertWithinDir(baseDir: string, relPath: string): string {
+export function assertWithinDir(baseDir: string, relPath: string): string {
   const resolvedBase = resolve(baseDir).replace(/\\/g, '/');
   const resolvedFull = resolve(baseDir, relPath).replace(/\\/g, '/');
   if (!resolvedFull.startsWith(resolvedBase + '/') && resolvedFull !== resolvedBase) {
@@ -151,7 +146,7 @@ function assertWithinDir(baseDir: string, relPath: string): string {
 }
 
 /** Resolve a tool call to its result text. */
-async function handleToolCall(
+export async function handleReadToolCall(
   name: string,
   args: ToolArgs,
   wikiRoot: string,
@@ -209,32 +204,4 @@ async function handleToolCall(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Registration
-// ---------------------------------------------------------------------------
 
-/**
- * Register all read-only tool handlers on the given MCP server instance.
- *
- * @param server  MCP Server instance
- * @param wikiRoot  Absolute (or relative) path to the wiki root directory
- */
-export function registerReadTools(server: Server, wikiRoot: string): void {
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: READ_TOOLS,
-  }));
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    try {
-      const text = await handleToolCall(name, (args ?? {}) as ToolArgs, wikiRoot);
-      return { content: [{ type: 'text' as const, text }] };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return {
-        content: [{ type: 'text' as const, text: `Error: ${message}` }],
-        isError: true,
-      };
-    }
-  });
-}
