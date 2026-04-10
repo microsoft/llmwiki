@@ -25,11 +25,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Build shared
+        run: npm run build --workspace=packages/shared
 
-      - name: Lint
-        run: npm run lint
+      - name: Build CLI
+        run: npm run build --workspace=packages/cli
+
+      - name: Build VS Code extension
+        run: npm run build --workspace=packages/vscode
+
+      - name: Lint shared
+        run: npm run lint --workspace=packages/shared
+
+      - name: Lint CLI
+        run: npm run lint --workspace=packages/cli
+
+      - name: Lint VS Code extension
+        run: npm run lint --workspace=packages/vscode
 
       - name: Test
         run: npm test
+        # Note: VS Code extension integration tests require VS Code runtime
+        # and will be added as a separate CI job in task c2-12
