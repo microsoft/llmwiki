@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
+import { copyFile, mkdir } from 'node:fs/promises';
 import { listSources } from '@llmwiki/shared';
 import type { SourceFile } from '@llmwiki/shared';
 
@@ -50,7 +51,7 @@ export class RawSourceTreeItem extends vscode.TreeItem {
 }
 
 export class RawSourcesTreeDataProvider
-  implements vscode.TreeDataProvider<RawSourceTreeItem>, vscode.Disposable
+  implements vscode.TreeDataProvider<RawSourceTreeItem>, vscode.TreeDragAndDropController<RawSourceTreeItem>, vscode.Disposable
 {
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<
     RawSourceTreeItem | undefined | null | void
@@ -58,10 +59,58 @@ export class RawSourcesTreeDataProvider
 
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
+  readonly dropMimeTypes = ['text/uri-list'];
+  readonly dragMimeTypes: string[] = [];
+
   private readonly rawDir: string;
 
   constructor(private readonly workspaceFolder: string) {
     this.rawDir = join(workspaceFolder, 'raw');
+  }
+
+  // ── Drag & Drop ────────────────────────────────────────────────
+
+  handleDrag(): void {
+    // We don't support dragging items out of this tree
+  }
+
+  async handleDrop(
+    _target: RawSourceTreeItem | undefined,
+    dataTransfer: vscode.DataTransfer,
+    _token: vscode.CancellationToken,
+  ): Promise<void> {
+    const uriListItem = dataTransfer.get('text/uri-list');
+    if (!uriListItem) return;
+
+    const raw = await uriListItem.asString();
+    const uris = raw
+      .split(/\r?\n/)
+      .filter((line) => line.length > 0 && !line.startsWith('#'))
+      .map((line) => vscode.Uri.parse(line.trim()));
+
+    if (uris.length === 0) return;
+
+    // Ensure raw/ directory exists
+    await mkdir(this.rawDir, { recursive: true });
+
+    let copied = 0;
+    for (const uri of uris) {
+      if (uri.scheme !== 'file') continue;
+      const dest = join(this.rawDir, basename(uri.fsPath));
+      try {
+        await copyFile(uri.fsPath, dest);
+        copied++;
+      } catch (err) {
+        vscode.window.showWarningMessage(`Failed to copy ${basename(uri.fsPath)}: ${err}`);
+      }
+    }
+
+    if (copied > 0) {
+      this.refresh();
+      vscode.window.showInformationMessage(
+        `Copied ${copied} file(s) to raw/. Use "LLM Wiki: Ingest Source" to process them.`,
+      );
+    }
   }
 
   getTreeItem(element: RawSourceTreeItem): RawSourceTreeItem {

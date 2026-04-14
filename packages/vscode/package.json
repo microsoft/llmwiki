@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "publisher": "llmwiki",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.93.0"
   },
   "categories": [
     "Other"
@@ -17,10 +17,37 @@
   },
   "main": "./out/extension.js",
   "activationEvents": [
-    "workspaceContains:wiki/index.md",
+    "workspaceContains:.wiki/wiki/index.md",
     "onCommand:llmwiki.init"
   ],
   "contributes": {
+    "chatParticipants": [
+      {
+        "id": "llmwiki.wiki",
+        "fullName": "LLM Wiki",
+        "name": "wiki",
+        "description": "Ask questions about your wiki knowledge base",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "status",
+            "description": "Show wiki status and statistics"
+          },
+          {
+            "name": "save",
+            "description": "Save the previous answer as a wiki page"
+          },
+          {
+            "name": "lint",
+            "description": "Run wiki health checks and get fix suggestions"
+          },
+          {
+            "name": "fix",
+            "description": "Auto-fix wiki issues using LLM"
+          }
+        ]
+      }
+    ],
     "commands": [
       {
         "command": "llmwiki.init",
@@ -35,10 +62,6 @@
         "title": "LLM Wiki: Query Wiki"
       },
       {
-        "command": "llmwiki.lint",
-        "title": "LLM Wiki: Lint Wiki"
-      },
-      {
         "command": "llmwiki.status",
         "title": "LLM Wiki: Show Status"
       },
@@ -48,7 +71,28 @@
       },
       {
         "command": "llmwiki.refresh",
-        "title": "LLM Wiki: Refresh"
+        "title": "LLM Wiki: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "llmwiki.fix",
+        "title": "LLM Wiki: Fix Issues",
+        "icon": "$(wand)"
+      },
+      {
+        "command": "llmwiki.search",
+        "title": "LLM Wiki: Search Wiki",
+        "icon": "$(search)"
+      },
+      {
+        "command": "llmwiki.searchRaw",
+        "title": "LLM Wiki: Search Sources",
+        "icon": "$(search)"
+      },
+      {
+        "command": "llmwiki.removeSource",
+        "title": "LLM Wiki: Remove Source",
+        "icon": "$(trash)"
       }
     ],
     "viewsContainers": {
@@ -63,29 +107,57 @@
     "views": {
       "llmwiki-explorer": [
         {
-          "id": "wikiPages",
-          "name": "Wiki Pages"
+          "id": "entities",
+          "name": "Entities"
+        },
+        {
+          "id": "concepts",
+          "name": "Concepts"
         },
         {
           "id": "rawSources",
-          "name": "Raw Sources"
+          "name": "Raw Sources",
+          "canSelectMany": true
         },
         {
           "id": "backlinks",
           "name": "Backlinks"
-        },
-        {
-          "id": "lintFindings",
-          "name": "Lint Findings"
         }
       ]
     },
     "menus": {
+      "view/title": [
+        {
+          "command": "llmwiki.search",
+          "when": "view =~ /^(entities|concepts)$/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "llmwiki.searchRaw",
+          "when": "view == rawSources",
+          "group": "navigation@1"
+        },
+        {
+          "command": "llmwiki.fix",
+          "when": "view =~ /^(entities|concepts|rawSources)$/",
+          "group": "navigation@2"
+        },
+        {
+          "command": "llmwiki.refresh",
+          "when": "view =~ /^(entities|concepts|rawSources)$/",
+          "group": "navigation@3"
+        }
+      ],
       "view/item/context": [
         {
           "command": "llmwiki.ingest",
           "when": "viewItem == rawSource",
-          "group": "inline"
+          "group": "inline@1"
+        },
+        {
+          "command": "llmwiki.removeSource",
+          "when": "viewItem == rawSource",
+          "group": "inline@2"
         }
       ]
     },
@@ -111,7 +183,7 @@
     "@types/glob": "^9.0.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.0.0",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.93.0",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.25.0",

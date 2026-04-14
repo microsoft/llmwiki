@@ -179,8 +179,8 @@ describe('StatusBarManager', () => {
       manager = createStatusBar(mockContext, WORKSPACE);
 
       expect(mockCreateFileSystemWatcher).toHaveBeenCalledTimes(2);
-      expect(mockCreateFileSystemWatcher).toHaveBeenCalledWith('**/wiki/**/*.md');
-      expect(mockCreateFileSystemWatcher).toHaveBeenCalledWith('**/raw/**');
+      expect(mockCreateFileSystemWatcher).toHaveBeenCalledWith('**/.wiki/wiki/**/*.md');
+      expect(mockCreateFileSystemWatcher).toHaveBeenCalledWith('**/.wiki/raw/**');
     });
   });
 

@@ -36,6 +36,7 @@ vi.mock('@llmwiki/shared', () => ({
   appendEntry: vi.fn(),
   directoryExists: vi.fn(),
   lintWiki: vi.fn(),
+  lintFix: vi.fn(),
   ingestSource: vi.fn(),
   queryWiki: vi.fn(),
   getWikiStatus: vi.fn(),
@@ -46,7 +47,7 @@ vi.mock('@llmwiki/shared', () => ({
 vi.mock('node:fs/promises', () => ({
   readFile: vi.fn(),
   writeFile: vi.fn(),
-  readdir: vi.fn(),
+  readdir: vi.fn().mockResolvedValue([]),
   mkdir: vi.fn(),
   stat: vi.fn(),
 }));
@@ -82,9 +83,9 @@ const mockShowQuickPick = vscode.window.showQuickPick as Mock;
 const WORKSPACE = '/test/workspace';
 
 const mockProviders = {
-  wikiPages: { refresh: vi.fn() },
+  entities: { refresh: vi.fn() },
+  concepts: { refresh: vi.fn() },
   rawSources: { refresh: vi.fn() },
-  lintFindings: { setFindings: vi.fn() },
 };
 
 const mockOutputChannel = {
@@ -193,49 +194,6 @@ describe('Command handlers', () => {
     });
   });
 
-  describe('llmwiki.lint', () => {
-    it('should show warning when wiki not initialized', async () => {
-      mockDirectoryExists.mockResolvedValue(false);
-
-      await commandHandlers['llmwiki.lint']();
-
-      expect(mockShowWarningMessage).toHaveBeenCalledWith(
-        'Wiki not initialized. Run "LLM Wiki: Initialize Wiki" first.',
-      );
-    });
-
-    it('should show success message when no lint issues found', async () => {
-      mockDirectoryExists.mockResolvedValue(true);
-      mockLintWiki.mockResolvedValue({
-        findings: [],
-        errorCount: 0,
-        warningCount: 0,
-      });
-
-      await commandHandlers['llmwiki.lint']();
-
-      expect(mockProviders.lintFindings.setFindings).toHaveBeenCalledWith([]);
-      expect(mockShowInformationMessage).toHaveBeenCalledWith(
-        'Lint: no issues found ✓',
-      );
-    });
-
-    it('should show warning message when errors found', async () => {
-      mockDirectoryExists.mockResolvedValue(true);
-      mockLintWiki.mockResolvedValue({
-        findings: [{ severity: 'error', message: 'broken link' }],
-        errorCount: 1,
-        warningCount: 0,
-      });
-
-      await commandHandlers['llmwiki.lint']();
-
-      expect(mockShowWarningMessage).toHaveBeenCalledWith(
-        'Lint: 1 error(s)',
-      );
-    });
-  });
-
   describe('llmwiki.openPage', () => {
     it('should show warning when readIndex throws', async () => {
       const err = Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
@@ -296,13 +254,22 @@ describe('Command handlers', () => {
   });
 
   describe('llmwiki.refresh', () => {
-    it('should refresh wiki pages and raw sources providers', async () => {
+    it('should refresh all providers and run lint-fix', async () => {
+      mockDirectoryExists.mockResolvedValue(true);
+      const { lintFix } = await import('@llmwiki/shared');
+      (lintFix as Mock).mockResolvedValue({
+        fixed: [],
+        remaining: [],
+        fixedCount: 0,
+      });
+
       await commandHandlers['llmwiki.refresh']();
 
-      expect(mockProviders.wikiPages.refresh).toHaveBeenCalled();
+      expect(mockProviders.entities.refresh).toHaveBeenCalled();
+      expect(mockProviders.concepts.refresh).toHaveBeenCalled();
       expect(mockProviders.rawSources.refresh).toHaveBeenCalled();
       expect(mockShowInformationMessage).toHaveBeenCalledWith(
-        'LLM Wiki: views refreshed.',
+        expect.stringContaining('no issues found'),
       );
     });
   });
@@ -310,9 +277,9 @@ describe('Command handlers', () => {
   describe('error wrapping', () => {
     it('should catch errors and show error message', async () => {
       mockDirectoryExists.mockResolvedValue(true);
-      mockLintWiki.mockRejectedValue(new Error('Unexpected disk failure'));
+      mockQueryWiki.mockRejectedValue(new Error('Unexpected disk failure'));
 
-      await commandHandlers['llmwiki.lint']();
+      await commandHandlers['llmwiki.query']();
 
       expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
         'LLM Wiki: Unexpected disk failure',

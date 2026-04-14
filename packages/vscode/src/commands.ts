@@ -1,26 +1,48 @@
 import * as vscode from 'vscode';
-import { join, resolve } from 'node:path';
-import { writeFile, mkdir } from 'node:fs/promises';
+import { join, resolve, basename, extname } from 'node:path';
+import { writeFile, mkdir, copyFile, unlink, readdir } from 'node:fs/promises';
 import {
   readIndex,
   directoryExists,
-  lintWiki,
   appendEntry,
-  ingestSource,
-  bulkIngest,
+  lintWiki,
   queryWiki,
   getWikiStatus,
   isNotFoundError,
+  deletePage,
+  readPage,
+  slugify,
   type IndexEntry,
 } from '@llmwiki/shared';
+import { llmIngest } from './llmIngest';
 import type { WikiPagesTreeDataProvider } from './wikiPagesTree';
 import type { RawSourcesTreeDataProvider } from './rawSourcesTree';
-import type { LintFindingsTreeDataProvider } from './lintFindingsTree';
+
+/**
+ * If the selected file is outside the workspace, copy it into raw/ first.
+ * Returns the path inside raw/ (or the original path if already inside).
+ */
+async function ensureInRaw(
+  filePath: string,
+  rawDir: string,
+  workspaceFolder: string,
+): Promise<string> {
+  const resolved = resolve(filePath).replace(/\\/g, '/');
+  const root = resolve(workspaceFolder).replace(/\\/g, '/');
+  if (resolved.startsWith(root + '/') || resolved === root) {
+    return filePath; // already inside workspace
+  }
+  // External file — copy to raw/
+  await mkdir(rawDir, { recursive: true });
+  const dest = join(rawDir, basename(filePath));
+  await copyFile(filePath, dest);
+  return dest;
+}
 
 interface TreeProviders {
-  wikiPages: WikiPagesTreeDataProvider;
+  entities: WikiPagesTreeDataProvider;
+  concepts: WikiPagesTreeDataProvider;
   rawSources: RawSourcesTreeDataProvider;
-  lintFindings: LintFindingsTreeDataProvider;
 }
 
 export function registerCommands(
@@ -75,16 +97,10 @@ export function registerCommands(
       details: 'Wiki knowledge base initialized.',
     });
 
-    await writeFile(
-      join(root, 'AGENTS.md'),
-      '# AGENTS.md\n\n## Wiki Schema\n\n_See CLI docs for full schema._\n',
-      'utf-8',
-    );
-
     vscode.window.showInformationMessage(
-      `Wiki initialized: ${dirs.length} directories, 3 files created.`,
+      `Wiki initialized in .wiki/: ${dirs.length} directories, 2 files created.`,
     );
-    providers.wikiPages.refresh();
+    providers.entities.refresh(); providers.concepts.refresh();
   });
 
   // ── llmwiki.ingest ───────────────────────────────────────────
@@ -99,47 +115,6 @@ export function registerCommands(
       return;
     }
 
-    const mode = await vscode.window.showQuickPick(
-      [
-        { label: '$(file-add) Ingest a single file', value: 'single' },
-        { label: '$(files) Ingest all new sources', value: 'all' },
-      ],
-      { placeHolder: 'How would you like to ingest?' },
-    );
-    if (!mode) return;
-
-    if (mode.value === 'all') {
-      const result = await vscode.window.withProgress(
-        {
-          location: vscode.ProgressLocation.Notification,
-          title: 'Ingesting sources…',
-          cancellable: false,
-        },
-        async (progress) => {
-          return bulkIngest(rawDir, workspaceFolder, {
-            onProgress: (current, total, file) => {
-              progress.report({
-                message: `${current}/${total}: ${file}`,
-                increment: (1 / total) * 100,
-              });
-            },
-          });
-        },
-      );
-
-      if (result.total === 0) {
-        vscode.window.showInformationMessage('No source files found in raw/.');
-      } else {
-        vscode.window.showInformationMessage(
-          `Bulk ingest complete — Ingested: ${result.ingested}, Skipped: ${result.skipped}, Failed: ${result.failed}`,
-        );
-      }
-      providers.wikiPages.refresh();
-      providers.rawSources.refresh();
-      return;
-    }
-
-    // Single file ingest
     const rawUri = vscode.Uri.file(rawDir);
     const selected = await vscode.window.showOpenDialog({
       canSelectFiles: true,
@@ -151,17 +126,101 @@ export function registerCommands(
     });
     if (!selected || selected.length === 0) return;
 
-    const sourcePath = selected[0].fsPath;
-    const result = await ingestSource(sourcePath, workspaceFolder, false);
+    const sourcePath = await ensureInRaw(selected[0].fsPath, rawDir, workspaceFolder);
 
-    if (result.status === 'error') {
-      vscode.window.showErrorMessage(result.error ?? 'Ingest failed.');
-      return;
-    }
+    const result = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Ingesting with LLM…',
+        cancellable: true,
+      },
+      async (progress, cancelToken) => {
+        return llmIngest(sourcePath, workspaceFolder, false, outputChannel, progress, cancelToken);
+      },
+    );
 
-    vscode.window.showInformationMessage(`Ingested: ${result.pages_created.join(', ')}`);
-    providers.wikiPages.refresh();
+    const totalCreated = result.pagesCreated.length;
+    const totalUpdated = result.pagesUpdated.length;
+    vscode.window.showInformationMessage(
+      `Ingest complete — ${totalCreated} pages created, ${totalUpdated} pages updated`,
+    );
+    providers.entities.refresh(); providers.concepts.refresh();
+    providers.rawSources.refresh();
   });
+
+  // ── llmwiki.removeSource ─────────────────────────────────────
+  context.subscriptions.push(
+    vscode.commands.registerCommand('llmwiki.removeSource', async (item?: { filePath?: string }) => {
+      try {
+        const filePath = item?.filePath;
+        if (!filePath) return;
+
+        const fileName = basename(filePath);
+        const confirm = await vscode.window.showWarningMessage(
+          `Remove "${fileName}" and its wiki pages?`,
+          { modal: true },
+          'Remove',
+        );
+        if (confirm !== 'Remove') return;
+
+        // Delete the raw source file
+        await unlink(filePath);
+        outputChannel.appendLine(`[removeSource] Deleted raw file: ${filePath}`);
+
+        // Delete the corresponding summary page + index entry
+        const slug = slugify(fileName);
+        const summaryRelPath = `sources/${slug}-summary.md`;
+        try {
+          await deletePage(wikiDir, summaryRelPath);
+          outputChannel.appendLine(`[removeSource] Deleted wiki page: ${summaryRelPath}`);
+        } catch {
+          // Summary page may not exist (never ingested)
+        }
+
+        // Delete entity/concept pages that were created from this source
+        let removedPages = 0;
+        try {
+          const allFiles = await readdir(wikiDir, { recursive: true }) as unknown as string[];
+          const mdPages = allFiles
+            .filter((f) => typeof f === 'string' && extname(f) === '.md')
+            .map((f) => f.replace(/\\/g, '/'))
+            .filter((f) => f !== 'index.md' && f !== 'log.md');
+
+          for (const relPath of mdPages) {
+            try {
+              const page = await readPage(join(wikiDir, relPath));
+              const sources = page.frontmatter.sources as string[] | undefined;
+              if (sources && sources.includes(summaryRelPath)) {
+                await deletePage(wikiDir, relPath);
+                removedPages++;
+                outputChannel.appendLine(`[removeSource] Deleted tagged page: ${relPath}`);
+              }
+            } catch {
+              // Skip unreadable pages
+            }
+          }
+        } catch {
+          // readdir may fail if wiki dir is empty
+        }
+
+        // Log the removal
+        await appendEntry(logPath, {
+          verb: 'removed',
+          subject: fileName,
+          details: `Source file and ${removedPages + 1} wiki pages removed.`,
+        });
+
+        providers.entities.refresh(); providers.concepts.refresh();
+        providers.rawSources.refresh();
+        const pageCount = removedPages + 1; // summary + tagged pages
+        vscode.window.showInformationMessage(`Removed "${fileName}" and ${pageCount} wiki page(s).`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        outputChannel.appendLine(`[removeSource] Error: ${msg}`);
+        vscode.window.showErrorMessage(`LLM Wiki: ${msg}`);
+      }
+    }),
+  );
 
   // ── llmwiki.query ────────────────────────────────────────────
   reg('llmwiki.query', async () => {
@@ -197,32 +256,6 @@ export function registerCommands(
     if (pick) {
       const uri = vscode.Uri.file(join(wikiDir, pick.path));
       await vscode.commands.executeCommand('vscode.open', uri);
-    }
-  });
-
-  // ── llmwiki.lint ─────────────────────────────────────────────
-  reg('llmwiki.lint', async () => {
-    if (!(await directoryExists(wikiDir))) {
-      vscode.window.showWarningMessage('Wiki not initialized. Run "LLM Wiki: Initialize Wiki" first.');
-      return;
-    }
-
-    const result = await lintWiki(workspaceFolder);
-    providers.lintFindings.setFindings(result.findings);
-
-    const parts: string[] = [];
-    if (result.errorCount > 0) parts.push(`${result.errorCount} error(s)`);
-    if (result.warningCount > 0) parts.push(`${result.warningCount} warning(s)`);
-
-    if (parts.length === 0) {
-      vscode.window.showInformationMessage('Lint: no issues found ✓');
-    } else {
-      const summary = parts.join(', ');
-      if (result.errorCount > 0) {
-        vscode.window.showWarningMessage(`Lint: ${summary}`);
-      } else {
-        vscode.window.showInformationMessage(`Lint: ${summary}`);
-      }
     }
   });
 
@@ -273,10 +306,162 @@ export function registerCommands(
     }
   });
 
-  // ── llmwiki.refresh ──────────────────────────────────────────
+  // ── llmwiki.search ──────────────────────────────────────────
+  reg('llmwiki.search', async () => {
+    if (!(await directoryExists(wikiDir))) {
+      vscode.window.showWarningMessage('Wiki not initialized.');
+      return;
+    }
+
+    const queryStr = await vscode.window.showInputBox({
+      prompt: 'Search entities and concepts',
+      placeHolder: 'Enter search terms…',
+    });
+    if (!queryStr) return;
+
+    let entries: IndexEntry[] = [];
+    try {
+      entries = await readIndex(indexPath);
+    } catch {
+      return;
+    }
+
+    // Filter to entities and concepts only, match by title/summary
+    const q = queryStr.toLowerCase();
+    const matches = entries
+      .filter((e) => e.category === 'Entities' || e.category === 'Concepts')
+      .filter((e) =>
+        e.title.toLowerCase().includes(q) ||
+        e.summary.toLowerCase().includes(q) ||
+        e.tags.some((t) => t.toLowerCase().includes(q)),
+      )
+      .map((e) => ({
+        label: `$(${e.category === 'Entities' ? 'person' : 'lightbulb'}) ${e.title}`,
+        description: e.category,
+        detail: e.summary,
+        path: e.path,
+      }));
+
+    if (matches.length === 0) {
+      vscode.window.showInformationMessage(`No entities or concepts matching "${queryStr}".`);
+      return;
+    }
+
+    const pick = await vscode.window.showQuickPick(matches, {
+      placeHolder: `${matches.length} result(s) for "${queryStr}"`,
+      matchOnDetail: true,
+    });
+    if (pick) {
+      const uri = vscode.Uri.file(join(wikiDir, pick.path));
+      await vscode.commands.executeCommand('vscode.open', uri);
+    }
+  });
+
+  // ── llmwiki.searchRaw ───────────────────────────────────────
+  reg('llmwiki.searchRaw', async () => {
+    const { listSources } = await import('@llmwiki/shared');
+    const sources = await listSources(rawDir);
+
+    if (sources.length === 0) {
+      vscode.window.showInformationMessage('No source files in raw/.');
+      return;
+    }
+
+    const queryStr = await vscode.window.showInputBox({
+      prompt: 'Search source files',
+      placeHolder: 'Enter filename…',
+    });
+    if (!queryStr) return;
+
+    const q = queryStr.toLowerCase();
+    const matches = sources
+      .filter((s) => s.name.toLowerCase().includes(q))
+      .map((s) => ({
+        label: `$(file) ${s.name}`,
+        description: `${s.size} bytes`,
+        path: s.path,
+      }));
+
+    if (matches.length === 0) {
+      vscode.window.showInformationMessage(`No sources matching "${queryStr}".`);
+      return;
+    }
+
+    const pick = await vscode.window.showQuickPick(matches, {
+      placeHolder: `${matches.length} source(s) matching "${queryStr}"`,
+    });
+    if (pick) {
+      const uri = vscode.Uri.file(join(rawDir, pick.path));
+      await vscode.commands.executeCommand('vscode.open', uri);
+    }
+  });
+
+  // ── llmwiki.refresh ─────────────────────────────────────────
   reg('llmwiki.refresh', async () => {
-    providers.wikiPages.refresh();
+    if (!(await directoryExists(wikiDir))) {
+      providers.entities.refresh(); providers.concepts.refresh();
+      providers.rawSources.refresh();
+      return;
+    }
+
+    // Step 1: Delete entity/concept pages whose source no longer exists
+    let cleanedPages = 0;
+    try {
+      const allFiles = await readdir(wikiDir, { recursive: true }) as unknown as string[];
+      const mdPages = allFiles
+        .filter((f) => typeof f === 'string' && extname(f) === '.md')
+        .map((f) => f.replace(/\\/g, '/'))
+        .filter((f) => f.startsWith('entities/') || f.startsWith('concepts/'));
+
+      for (const relPath of mdPages) {
+        try {
+          const page = await readPage(join(wikiDir, relPath));
+          const sources = page.frontmatter.sources as string[] | undefined;
+          if (sources && sources.length > 0) {
+            // Check if all referenced source pages still exist
+            const { stat: fsStat } = await import('node:fs/promises');
+            const allMissing = (await Promise.all(
+              sources.map(async (s) => {
+                try { await fsStat(join(wikiDir, s)); return false; }
+                catch { return true; }
+              }),
+            )).every(Boolean);
+
+            if (allMissing) {
+              await deletePage(wikiDir, relPath);
+              cleanedPages++;
+              outputChannel.appendLine(`[refresh] Cleaned orphaned page: ${relPath}`);
+            }
+          }
+        } catch {
+          // Skip
+        }
+      }
+    } catch {
+      // readdir may fail
+    }
+
+    // Step 2: Run lint-fix to resolve stale entries, missing index, frontmatter
+    const { lintFix } = await import('@llmwiki/shared');
+    const fixResult = await lintFix(workspaceFolder, { fixOrphans: true });
+
+    // Step 3: Check remaining issues
+    const remaining = fixResult.remaining.filter((f) => f.severity === 'error' || f.severity === 'warning');
+
+    providers.entities.refresh(); providers.concepts.refresh();
     providers.rawSources.refresh();
-    vscode.window.showInformationMessage('LLM Wiki: views refreshed.');
+
+    const parts: string[] = [];
+    if (cleanedPages > 0) parts.push(`${cleanedPages} orphaned page(s) removed`);
+    if (fixResult.fixedCount > 0) parts.push(`${fixResult.fixedCount} issue(s) fixed`);
+    if (remaining.length > 0) parts.push(`${remaining.length} issue(s) remaining`);
+
+    if (parts.length === 0) {
+      vscode.window.showInformationMessage('Wiki refreshed — no issues found ✓');
+    } else if (remaining.length === 0) {
+      vscode.window.showInformationMessage(`Wiki refreshed — ${parts.join(', ')} ✓`);
+    } else {
+      vscode.window.showWarningMessage(`Wiki refreshed — ${parts.join(', ')}. Use @wiki /lint for details.`);
+    }
   });
 }

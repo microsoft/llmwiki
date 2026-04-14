@@ -19,8 +19,8 @@ export class StatusBarManager implements vscode.Disposable {
     this._item.command = 'llmwiki.status';
     this._item.show();
 
-    this._wikiWatcher = vscode.workspace.createFileSystemWatcher('**/wiki/**/*.md');
-    this._rawWatcher = vscode.workspace.createFileSystemWatcher('**/raw/**');
+    this._wikiWatcher = vscode.workspace.createFileSystemWatcher('**/.wiki/wiki/**/*.md');
+    this._rawWatcher = vscode.workspace.createFileSystemWatcher('**/.wiki/raw/**');
 
     this._eventDisposables.push(
       this._wikiWatcher.onDidChange(() => this._debouncedRefresh()),

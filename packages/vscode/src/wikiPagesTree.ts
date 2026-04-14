@@ -4,14 +4,12 @@ import { readIndex } from '@llmwiki/shared';
 import type { IndexEntry } from '@llmwiki/shared';
 
 export class WikiTreeItem extends vscode.TreeItem {
-  readonly category?: string;
   readonly pagePath?: string;
 
   constructor(
     label: string,
     collapsibleState: vscode.TreeItemCollapsibleState,
     options?: {
-      category?: string;
       entry?: IndexEntry;
       fullPath?: string;
     },
@@ -19,25 +17,23 @@ export class WikiTreeItem extends vscode.TreeItem {
     super(label, collapsibleState);
 
     if (options?.entry && options.fullPath) {
-      // Page item
       this.contextValue = 'page';
       this.description = options.entry.summary;
-      this.iconPath = new vscode.ThemeIcon('file-text');
       this.pagePath = options.fullPath;
+      this.iconPath = new vscode.ThemeIcon('file-text');
       this.command = {
         command: 'vscode.open',
         title: 'Open Page',
         arguments: [vscode.Uri.file(options.fullPath)],
       };
-    } else if (options?.category) {
-      // Category item
-      this.contextValue = 'category';
-      this.category = options.category;
-      this.iconPath = new vscode.ThemeIcon('folder');
     }
   }
 }
 
+/**
+ * A flat tree provider that shows wiki pages filtered by category.
+ * Used for separate Entities and Concepts sidebar sections.
+ */
 export class WikiPagesTreeDataProvider
   implements vscode.TreeDataProvider<WikiTreeItem>, vscode.Disposable
 {
@@ -48,52 +44,38 @@ export class WikiPagesTreeDataProvider
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private readonly indexPath: string;
+  private readonly category: string;
 
-  constructor(private readonly workspaceFolder: string) {
+  constructor(
+    private readonly workspaceFolder: string,
+    category: string,
+  ) {
     this.indexPath = join(workspaceFolder, 'wiki', 'index.md');
+    this.category = category;
   }
 
   getTreeItem(element: WikiTreeItem): WikiTreeItem {
     return element;
   }
 
-  async getChildren(element?: WikiTreeItem): Promise<WikiTreeItem[]> {
-    if (element === undefined) {
-      const entries = await readIndex(this.indexPath);
-      const seen = new Set<string>();
-      const categories: WikiTreeItem[] = [];
-
-      for (const entry of entries) {
-        if (!seen.has(entry.category)) {
-          seen.add(entry.category);
-          categories.push(
-            new WikiTreeItem(
-              entry.category,
-              vscode.TreeItemCollapsibleState.Collapsed,
-              { category: entry.category },
-            ),
-          );
-        }
-      }
-
-      return categories;
+  async getChildren(): Promise<WikiTreeItem[]> {
+    let entries: IndexEntry[];
+    try {
+      entries = await readIndex(this.indexPath);
+    } catch {
+      return [];
     }
 
-    if (element.contextValue === 'category') {
-      const entries = await readIndex(this.indexPath);
-      return entries
-        .filter((entry) => entry.category === element.category)
-        .map((entry) => {
-          const fullPath = join(this.workspaceFolder, 'wiki', entry.path);
-          return new WikiTreeItem(
-            entry.title,
-            vscode.TreeItemCollapsibleState.None,
-            { entry, fullPath },
-          );
-        });
-    }
-
-    return [];
+    return entries
+      .filter((entry) => entry.category === this.category)
+      .map((entry) => {
+        const fullPath = join(this.workspaceFolder, 'wiki', entry.path);
+        return new WikiTreeItem(
+          entry.title,
+          vscode.TreeItemCollapsibleState.None,
+          { entry, fullPath },
+        );
+      });
   }
 
   refresh(): void {

@@ -88,105 +88,67 @@ const mockEntries = [
 const WORKSPACE = '/test/workspace';
 
 describe('WikiPagesTreeDataProvider', () => {
-  let provider: WikiPagesTreeDataProvider;
+  let entitiesProvider: WikiPagesTreeDataProvider;
+  let conceptsProvider: WikiPagesTreeDataProvider;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    provider = new WikiPagesTreeDataProvider(WORKSPACE);
+    entitiesProvider = new WikiPagesTreeDataProvider(WORKSPACE, 'Entities');
+    conceptsProvider = new WikiPagesTreeDataProvider(WORKSPACE, 'Concepts');
   });
 
-  describe('getChildren (root level — categories)', () => {
-    it('should extract unique categories from index entries', async () => {
+  describe('getChildren — entities', () => {
+    it('should return only entity pages', async () => {
       mockReadIndex.mockResolvedValue(mockEntries);
 
-      const categories = await provider.getChildren();
-
-      expect(categories).toHaveLength(3);
-      expect(categories[0].label).toBe('Entities');
-      expect(categories[1].label).toBe('Concepts');
-      expect(categories[2].label).toBe('Sources');
-    });
-
-    it('should preserve category order of first appearance', async () => {
-      const reorderedEntries = [
-        { ...mockEntries[0], category: 'Entities' },
-        { ...mockEntries[2], category: 'Concepts' },
-        { ...mockEntries[0], category: 'Entities', path: 'entities/dup.md' },
-        { ...mockEntries[3], category: 'Sources' },
-      ];
-      mockReadIndex.mockResolvedValue(reorderedEntries);
-
-      const categories = await provider.getChildren();
-
-      expect(categories).toHaveLength(3);
-      expect(categories[0].label).toBe('Entities');
-      expect(categories[1].label).toBe('Concepts');
-      expect(categories[2].label).toBe('Sources');
-    });
-
-    it('should return empty array for empty index', async () => {
-      mockReadIndex.mockResolvedValue([]);
-
-      const categories = await provider.getChildren();
-
-      expect(categories).toEqual([]);
-    });
-  });
-
-  describe('getChildren (category level — pages)', () => {
-    it('should return pages grouped under the correct category', async () => {
-      mockReadIndex.mockResolvedValue(mockEntries);
-
-      // First get category items
-      const categories = await provider.getChildren();
-      const entitiesCategory = categories[0];
-
-      // Then get pages for Entities category
-      mockReadIndex.mockResolvedValue(mockEntries);
-      const pages = await provider.getChildren(entitiesCategory);
+      const pages = await entitiesProvider.getChildren();
 
       expect(pages).toHaveLength(2);
       expect(pages[0].label).toBe('Alan Turing');
       expect(pages[1].label).toBe('Claude Shannon');
     });
 
-    it('should return empty array for non-category element', async () => {
-      mockReadIndex.mockResolvedValue(mockEntries);
+    it('should return empty array when no entities exist', async () => {
+      mockReadIndex.mockResolvedValue([mockEntries[2], mockEntries[3]]); // only Concepts + Sources
 
-      const categories = await provider.getChildren();
-      const entitiesCategory = categories[0];
+      const pages = await entitiesProvider.getChildren();
 
-      mockReadIndex.mockResolvedValue(mockEntries);
-      const pages = await provider.getChildren(entitiesCategory);
+      expect(pages).toEqual([]);
+    });
 
-      // A page item should return empty children
-      const children = await provider.getChildren(pages[0]);
-      expect(children).toEqual([]);
+    it('should return empty array for empty index', async () => {
+      mockReadIndex.mockResolvedValue([]);
+
+      const pages = await entitiesProvider.getChildren();
+
+      expect(pages).toEqual([]);
+    });
+
+    it('should return empty on readIndex error', async () => {
+      mockReadIndex.mockRejectedValue(new Error('ENOENT'));
+
+      const pages = await entitiesProvider.getChildren();
+
+      expect(pages).toEqual([]);
     });
   });
 
-  describe('WikiTreeItem properties — category items', () => {
-    it('should have correct properties for category items', async () => {
+  describe('getChildren — concepts', () => {
+    it('should return only concept pages', async () => {
       mockReadIndex.mockResolvedValue(mockEntries);
 
-      const categories = await provider.getChildren();
-      const categoryItem = categories[0];
+      const pages = await conceptsProvider.getChildren();
 
-      expect(categoryItem.contextValue).toBe('category');
-      expect(categoryItem.collapsibleState).toBe(1); // Collapsed
-      expect(categoryItem.iconPath).toBeDefined();
-      expect((categoryItem.iconPath as { id: string }).id).toBe('folder');
+      expect(pages).toHaveLength(1);
+      expect(pages[0].label).toBe('Neural Networks');
     });
   });
 
-  describe('WikiTreeItem properties — page items', () => {
+  describe('WikiTreeItem properties', () => {
     it('should have correct properties for page items', async () => {
       mockReadIndex.mockResolvedValue(mockEntries);
 
-      const categories = await provider.getChildren();
-      mockReadIndex.mockResolvedValue(mockEntries);
-      const pages = await provider.getChildren(categories[0]);
-
+      const pages = await entitiesProvider.getChildren();
       const pageItem = pages[0];
 
       expect(pageItem.label).toBe('Alan Turing');
@@ -199,10 +161,7 @@ describe('WikiPagesTreeDataProvider', () => {
     it('should have command that opens the file with correct URI', async () => {
       mockReadIndex.mockResolvedValue(mockEntries);
 
-      const categories = await provider.getChildren();
-      mockReadIndex.mockResolvedValue(mockEntries);
-      const pages = await provider.getChildren(categories[0]);
-
+      const pages = await entitiesProvider.getChildren();
       const pageItem = pages[0];
       const expectedPath = join(WORKSPACE, 'wiki', 'entities/alan-turing.md');
 
@@ -218,10 +177,7 @@ describe('WikiPagesTreeDataProvider', () => {
     it('should store pagePath on page items', async () => {
       mockReadIndex.mockResolvedValue(mockEntries);
 
-      const categories = await provider.getChildren();
-      mockReadIndex.mockResolvedValue(mockEntries);
-      const pages = await provider.getChildren(categories[0]);
-
+      const pages = await entitiesProvider.getChildren();
       const expectedPath = join(WORKSPACE, 'wiki', 'entities/alan-turing.md');
       expect((pages[0] as WikiTreeItem & { pagePath: string }).pagePath).toBe(
         expectedPath,
@@ -233,21 +189,21 @@ describe('WikiPagesTreeDataProvider', () => {
     it('should return the element as-is', async () => {
       mockReadIndex.mockResolvedValue(mockEntries);
 
-      const categories = await provider.getChildren();
-      const item = categories[0];
+      const pages = await entitiesProvider.getChildren();
+      const item = pages[0];
 
-      expect(provider.getTreeItem(item)).toBe(item);
+      expect(entitiesProvider.getTreeItem(item)).toBe(item);
     });
   });
 
   describe('refresh', () => {
     it('should fire onDidChangeTreeData event', () => {
       let fired = false;
-      provider.onDidChangeTreeData(() => {
+      entitiesProvider.onDidChangeTreeData(() => {
         fired = true;
       });
 
-      provider.refresh();
+      entitiesProvider.refresh();
 
       expect(fired).toBe(true);
     });
@@ -255,7 +211,7 @@ describe('WikiPagesTreeDataProvider', () => {
 
   describe('dispose', () => {
     it('should dispose without errors', () => {
-      expect(() => provider.dispose()).not.toThrow();
+      expect(() => entitiesProvider.dispose()).not.toThrow();
     });
   });
 
@@ -263,7 +219,7 @@ describe('WikiPagesTreeDataProvider', () => {
     it('should call readIndex with correct path', async () => {
       mockReadIndex.mockResolvedValue([]);
 
-      await provider.getChildren();
+      await entitiesProvider.getChildren();
 
       expect(mockReadIndex).toHaveBeenCalledWith(
         join(WORKSPACE, 'wiki', 'index.md'),
