@@ -35,6 +35,7 @@ vi.mock('@llmwiki/shared', () => ({
   addEntry: vi.fn(),
   appendEntry: vi.fn(),
   directoryExists: vi.fn(),
+  initWiki: vi.fn(),
   lintWiki: vi.fn(),
   lintFix: vi.fn(),
   ingestSource: vi.fn(),
@@ -81,6 +82,7 @@ const mockShowInputBox = vscode.window.showInputBox as Mock;
 const mockShowQuickPick = vscode.window.showQuickPick as Mock;
 
 const WORKSPACE = '/test/workspace';
+const PROJECT_FOLDER = '/test';
 
 const mockProviders = {
   entities: { refresh: vi.fn() },
@@ -111,6 +113,7 @@ describe('Command handlers', () => {
 
     registerCommands(
       mockContext,
+      PROJECT_FOLDER,
       WORKSPACE,
       mockProviders as never,
       mockOutputChannel as unknown as vscode.OutputChannel,

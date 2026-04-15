@@ -6,18 +6,19 @@ import { writePage } from '../../../packages/shared/src/wiki.js';
 import { writeIndex } from '../../../packages/shared/src/index-ops.js';
 import { readLog } from '../../../packages/shared/src/log.js';
 import { createProgram } from '../../../packages/cli/src/cli.js';
+import { WIKI_DIR_NAME } from '../../../packages/shared/src/constants.js';
 import { queryWiki, slugifyQuery } from '../../../packages/cli/src/commands/query.js';
 
 /**
  * Helper to set up a wiki with index and pages for search testing.
  */
 async function setupTestWiki(root: string): Promise<void> {
-  await mkdir(join(root, 'wiki', 'entities'), { recursive: true });
-  await mkdir(join(root, 'wiki', 'concepts'), { recursive: true });
-  await mkdir(join(root, 'wiki', 'sources'), { recursive: true });
+  await mkdir(join(root, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
+  await mkdir(join(root, WIKI_DIR_NAME, 'wiki', 'concepts'), { recursive: true });
+  await mkdir(join(root, WIKI_DIR_NAME, 'wiki', 'sources'), { recursive: true });
 
   // Page 1: entity about machine learning
-  await writePage(join(root, 'wiki', 'entities', 'neural-network.md'), {
+  await writePage(join(root, WIKI_DIR_NAME, 'wiki', 'entities', 'neural-network.md'), {
     frontmatter: {
       type: 'entity',
       title: 'Neural Network',
@@ -28,7 +29,7 @@ async function setupTestWiki(root: string): Promise<void> {
   });
 
   // Page 2: concept about testing
-  await writePage(join(root, 'wiki', 'concepts', 'unit-testing.md'), {
+  await writePage(join(root, WIKI_DIR_NAME, 'wiki', 'concepts', 'unit-testing.md'), {
     frontmatter: {
       type: 'concept',
       title: 'Unit Testing',
@@ -39,7 +40,7 @@ async function setupTestWiki(root: string): Promise<void> {
   });
 
   // Page 3: source about TypeScript
-  await writePage(join(root, 'wiki', 'sources', 'typescript-guide.md'), {
+  await writePage(join(root, WIKI_DIR_NAME, 'wiki', 'sources', 'typescript-guide.md'), {
     frontmatter: {
       type: 'source',
       title: 'TypeScript Guide',
@@ -50,7 +51,7 @@ async function setupTestWiki(root: string): Promise<void> {
   });
 
   // Write index with all 3 entries
-  await writeIndex(join(root, 'wiki', 'index.md'), [
+  await writeIndex(join(root, WIKI_DIR_NAME, 'wiki', 'index.md'), [
     {
       path: 'entities/neural-network.md',
       title: 'Neural Network',
@@ -88,7 +89,7 @@ describe('queryWiki', () => {
   });
 
   it('should find pages matching a single query term', async () => {
-    const result = await queryWiki('testing', tmpDir);
+    const result = await queryWiki('testing', join(tmpDir, WIKI_DIR_NAME));
 
     expect(result.command).toBe('query');
     expect(result.query).toBe('testing');
@@ -102,7 +103,7 @@ describe('queryWiki', () => {
   it('should rank pages with more matches higher', async () => {
     // "neural" appears in title (x3) and body (x1) of neural-network page
     // Other pages should score lower or zero for "neural"
-    const result = await queryWiki('neural', tmpDir);
+    const result = await queryWiki('neural', join(tmpDir, WIKI_DIR_NAME));
 
     expect(result.matches).toBeGreaterThanOrEqual(1);
     expect(result.results[0].title).toBe('Neural Network');
@@ -111,7 +112,7 @@ describe('queryWiki', () => {
   it('should weight title matches higher than summary matches', async () => {
     // "typescript" appears in title of TypeScript Guide (x3)
     // and in summary and body
-    const result = await queryWiki('typescript', tmpDir);
+    const result = await queryWiki('typescript', join(tmpDir, WIKI_DIR_NAME));
 
     expect(result.matches).toBeGreaterThanOrEqual(1);
     expect(result.results[0].title).toBe('TypeScript Guide');
@@ -120,7 +121,7 @@ describe('queryWiki', () => {
   });
 
   it('should return empty results for non-matching query', async () => {
-    const result = await queryWiki('xylophone', tmpDir);
+    const result = await queryWiki('xylophone', join(tmpDir, WIKI_DIR_NAME));
 
     expect(result.command).toBe('query');
     expect(result.query).toBe('xylophone');
@@ -129,7 +130,7 @@ describe('queryWiki', () => {
   });
 
   it('should handle multi-word queries', async () => {
-    const result = await queryWiki('machine learning', tmpDir);
+    const result = await queryWiki('machine learning', join(tmpDir, WIKI_DIR_NAME));
 
     expect(result.matches).toBeGreaterThan(0);
     // Neural Network page has "machine learning" in summary and body
@@ -139,7 +140,7 @@ describe('queryWiki', () => {
 
   it('should sort results by score descending', async () => {
     // Search for a term that matches multiple pages
-    const result = await queryWiki('testing', tmpDir);
+    const result = await queryWiki('testing', join(tmpDir, WIKI_DIR_NAME));
 
     for (let i = 1; i < result.results.length; i++) {
       expect(result.results[i - 1].score).toBeGreaterThanOrEqual(result.results[i].score);
@@ -147,7 +148,7 @@ describe('queryWiki', () => {
   });
 
   it('should include excerpt from body in results', async () => {
-    const result = await queryWiki('neural', tmpDir);
+    const result = await queryWiki('neural', join(tmpDir, WIKI_DIR_NAME));
 
     expect(result.results[0].excerpt).toBeDefined();
     expect(result.results[0].excerpt.length).toBeGreaterThan(0);
@@ -155,7 +156,7 @@ describe('queryWiki', () => {
   });
 
   it('should include path in results', async () => {
-    const result = await queryWiki('typescript', tmpDir);
+    const result = await queryWiki('typescript', join(tmpDir, WIKI_DIR_NAME));
 
     const tsResult = result.results.find((r) => r.title === 'TypeScript Guide');
     expect(tsResult).toBeDefined();
@@ -165,10 +166,10 @@ describe('queryWiki', () => {
   it('should handle empty wiki index gracefully', async () => {
     const emptyDir = await mkdtemp(join(tmpdir(), 'query-empty-'));
     try {
-      await mkdir(join(emptyDir, 'wiki'), { recursive: true });
-      await writeFile(join(emptyDir, 'wiki', 'index.md'), '# Wiki Index\n');
+      await mkdir(join(emptyDir, WIKI_DIR_NAME, 'wiki'), { recursive: true });
+      await writeFile(join(emptyDir, WIKI_DIR_NAME, 'wiki', 'index.md'), '# Wiki Index\n');
 
-      const result = await queryWiki('anything', emptyDir);
+      const result = await queryWiki('anything', join(emptyDir, WIKI_DIR_NAME));
 
       expect(result.matches).toBe(0);
       expect(result.results).toEqual([]);
@@ -178,7 +179,7 @@ describe('queryWiki', () => {
   });
 
   it('should be case-insensitive in matching', async () => {
-    const result = await queryWiki('NEURAL', tmpDir);
+    const result = await queryWiki('NEURAL', join(tmpDir, WIKI_DIR_NAME));
 
     expect(result.matches).toBeGreaterThan(0);
     expect(result.results[0].title).toBe('Neural Network');
@@ -192,7 +193,7 @@ describe('queryWiki --save', () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'query-save-'));
     await setupTestWiki(tmpDir);
     // Create log.md so appendEntry can append to it
-    await mkdir(join(tmpDir, 'wiki'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki'), { recursive: true });
   });
 
   afterEach(async () => {
@@ -200,12 +201,12 @@ describe('queryWiki --save', () => {
   });
 
   it('should save query results to wiki/queries/ when --save is true', async () => {
-    const result = await queryWiki('neural', tmpDir, true);
+    const result = await queryWiki('neural', join(tmpDir, WIKI_DIR_NAME), true);
 
     expect(result.matches).toBeGreaterThan(0);
 
     // Check the queries directory was created and file exists
-    const queryFile = join(tmpDir, 'wiki', 'queries', 'neural.md');
+    const queryFile = join(tmpDir, WIKI_DIR_NAME, 'wiki', 'queries', 'neural.md');
     const fileStat = await stat(queryFile);
     expect(fileStat.isFile()).toBe(true);
 
@@ -215,20 +216,20 @@ describe('queryWiki --save', () => {
   });
 
   it('should append to log when saving query results', async () => {
-    await queryWiki('neural', tmpDir, true);
+    await queryWiki('neural', join(tmpDir, WIKI_DIR_NAME), true);
 
-    const logEntries = await readLog(join(tmpDir, 'wiki', 'log.md'));
+    const logEntries = await readLog(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'log.md'));
     const queryEntry = logEntries.find((e) => e.verb === 'queried');
     expect(queryEntry).toBeDefined();
     expect(queryEntry!.subject).toContain('neural');
   });
 
   it('should not save when --save is false', async () => {
-    await queryWiki('neural', tmpDir, false);
+    await queryWiki('neural', join(tmpDir, WIKI_DIR_NAME), false);
 
     // queries directory should not exist
     try {
-      await stat(join(tmpDir, 'wiki', 'queries', 'neural.md'));
+      await stat(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'queries', 'neural.md'));
       expect.fail('Query file should not exist');
     } catch {
       // Expected - file should not exist
@@ -420,7 +421,7 @@ describe('query CLI integration', () => {
       ]);
 
       // Verify saved file exists
-      const queryFile = join(tmpDir, 'wiki', 'queries', 'neural.md');
+      const queryFile = join(tmpDir, WIKI_DIR_NAME, 'wiki', 'queries', 'neural.md');
       const fileStat = await stat(queryFile);
       expect(fileStat.isFile()).toBe(true);
     } finally {

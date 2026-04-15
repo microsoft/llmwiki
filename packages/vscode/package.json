@@ -1,9 +1,9 @@
 {
-  "name": "llmwiki-vscode",
+  "name": "llmwiki",
   "displayName": "LLM Wiki",
   "description": "Interactive wiki browsing powered by LLM maintenance",
   "version": "0.1.0",
-  "publisher": "llmwiki",
+  "publisher": "eag-rss",
   "engines": {
     "vscode": "^1.93.0"
   },
@@ -55,7 +55,8 @@
       },
       {
         "command": "llmwiki.ingest",
-        "title": "LLM Wiki: Ingest Source"
+        "title": "LLM Wiki: Add Source",
+        "icon": "$(add)"
       },
       {
         "command": "llmwiki.query",
@@ -138,26 +139,26 @@
           "group": "navigation@1"
         },
         {
-          "command": "llmwiki.fix",
-          "when": "view =~ /^(entities|concepts|rawSources)$/",
+          "command": "llmwiki.ingest",
+          "when": "view == rawSources",
           "group": "navigation@2"
+        },
+        {
+          "command": "llmwiki.fix",
+          "when": "view == rawSources",
+          "group": "navigation@3"
         },
         {
           "command": "llmwiki.refresh",
           "when": "view =~ /^(entities|concepts|rawSources)$/",
-          "group": "navigation@3"
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
         {
-          "command": "llmwiki.ingest",
-          "when": "viewItem == rawSource",
-          "group": "inline@1"
-        },
-        {
           "command": "llmwiki.removeSource",
           "when": "viewItem == rawSource",
-          "group": "inline@2"
+          "group": "inline"
         }
       ]
     },
@@ -177,7 +178,9 @@
     "package": "vsce package --no-dependencies"
   },
   "dependencies": {
-    "@llmwiki/shared": "*"
+    "@llmwiki/shared": "*",
+    "mammoth": "^1.12.0",
+    "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
     "@types/glob": "^9.0.0",

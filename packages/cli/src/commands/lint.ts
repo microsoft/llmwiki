@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { lintWiki, lintFix, type LintResult, type LintFixResult } from '@llmwiki/shared';
+import { resolveWikiRoot } from '../wiki-root.js';
 
 /**
  * Format lint result as human-readable output.
@@ -86,7 +87,7 @@ export function registerLintCommand(wiki: Command): void {
       const jsonMode = cmd.parent?.opts().json ?? false;
 
       if (options.fix) {
-        const result = await lintFix(options.path, {
+        const result = await lintFix(resolveWikiRoot(options.path), {
           fixOrphans: options.fixOrphans,
         });
 
@@ -105,7 +106,7 @@ export function registerLintCommand(wiki: Command): void {
           ? options.category.split(',').map((c) => c.trim())
           : undefined;
 
-        const result = await lintWiki(options.path, categories);
+        const result = await lintWiki(resolveWikiRoot(options.path), categories);
 
         if (jsonMode) {
           console.log(JSON.stringify(result));

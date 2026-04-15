@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { resolve, extname } from 'node:path';
+import { resolve, dirname, extname } from 'node:path';
 import { ingestSource, type IngestResult } from './ingest.js';
 import { queryWiki, type QueryResult } from './query.js';
 import { isNotFoundError, isPermissionError } from './errors.js';
@@ -157,8 +157,8 @@ export async function ingestWithContext(
   // S-7: Prevent path traversal — source must be within project root
   const resolvedSource = resolve(sourcePath);
   const normalizedSource = resolvedSource.replace(/\\/g, '/');
-  const normalizedRoot = resolve(targetPath).replace(/\\/g, '/');
-  if (!normalizedSource.startsWith(normalizedRoot + '/') && normalizedSource !== normalizedRoot) {
+  const projectRoot = dirname(resolve(targetPath)).replace(/\\/g, '/');
+  if (!normalizedSource.startsWith(projectRoot + '/') && normalizedSource !== projectRoot) {
     throw new Error(`Source path escapes project root: ${sourcePath}`);
   }
 

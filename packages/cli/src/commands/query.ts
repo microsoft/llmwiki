@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { queryWiki } from '@llmwiki/shared';
+import { resolveWikiRoot } from '../wiki-root.js';
 export { type QueryResult, type QueryOutput, queryWiki, slugifyQuery } from '@llmwiki/shared';
 
 /**
@@ -14,7 +15,7 @@ export function registerQueryCommand(wiki: Command): void {
     .option('--path <dir>', 'Wiki root directory', '.')
     .action(async (queryStr: string, options: { save: boolean; path: string }, cmd: Command) => {
       const jsonMode = cmd.parent?.opts().json ?? false;
-      const result = await queryWiki(queryStr, options.path, options.save);
+      const result = await queryWiki(queryStr, resolveWikiRoot(options.path), options.save);
 
       if (jsonMode) {
         console.log(JSON.stringify(result));

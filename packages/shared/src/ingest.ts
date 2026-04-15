@@ -1,5 +1,5 @@
 import { readFile, stat, access, constants } from 'node:fs/promises';
-import { join, resolve, basename, extname, relative } from 'node:path';
+import { join, resolve, basename, dirname, extname, relative } from 'node:path';
 import { writePage, directoryExists } from './wiki.js';
 import { addEntry, removeEntry } from './index-ops.js';
 import { appendEntry } from './log.js';
@@ -54,8 +54,8 @@ export async function ingestSource(
   // S-7: Prevent path traversal — source must be within project root
   const resolvedSource = resolve(sourcePath);
   const normalizedSource = resolvedSource.replace(/\\/g, '/');
-  const normalizedRoot = root.replace(/\\/g, '/');
-  if (!normalizedSource.startsWith(normalizedRoot + '/') && normalizedSource !== normalizedRoot) {
+  const projectRoot = dirname(root).replace(/\\/g, '/');
+  if (!normalizedSource.startsWith(projectRoot + '/') && normalizedSource !== projectRoot) {
     return {
       command: 'ingest',
       api_version: API_VERSION,

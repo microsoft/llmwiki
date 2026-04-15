@@ -5,6 +5,7 @@ import {
   readIndex,
   directoryExists,
   appendEntry,
+  initWiki,
   lintWiki,
   queryWiki,
   getWikiStatus,
@@ -47,6 +48,7 @@ interface TreeProviders {
 
 export function registerCommands(
   context: vscode.ExtensionContext,
+  projectFolder: string,
   workspaceFolder: string,
   providers: TreeProviders,
   outputChannel: vscode.OutputChannel,
@@ -72,33 +74,16 @@ export function registerCommands(
 
   // ── llmwiki.init ─────────────────────────────────────────────
   reg('llmwiki.init', async () => {
-    const root = resolve(workspaceFolder);
-
     // Check if already initialized
     if (await directoryExists(wikiDir)) {
       vscode.window.showWarningMessage('Wiki is already initialized (wiki/ directory exists).');
       return;
     }
 
-    const dirs = ['raw', 'wiki', 'wiki/entities', 'wiki/concepts', 'wiki/sources'];
-    for (const dir of dirs) {
-      await mkdir(join(root, dir), { recursive: true });
-    }
-
-    await writeFile(
-      indexPath,
-      '# Wiki Index\n\n## Entities\n\n## Concepts\n\n## Sources\n',
-      'utf-8',
-    );
-
-    await appendEntry(logPath, {
-      verb: 'initialized',
-      subject: 'wiki',
-      details: 'Wiki knowledge base initialized.',
-    });
+    const result = await initWiki(projectFolder);
 
     vscode.window.showInformationMessage(
-      `Wiki initialized in .wiki/: ${dirs.length} directories, 2 files created.`,
+      `Wiki initialized in .wiki/: ${result.created_dirs.length} directories, ${result.created_files.length} files created.`,
     );
     providers.entities.refresh(); providers.concepts.refresh();
   });

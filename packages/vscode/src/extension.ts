@@ -8,7 +8,7 @@ import { createStatusBar } from './statusBar';
 import { registerChatParticipant } from './chatParticipant';
 import { llmIngest } from './llmIngest';
 
-const WIKI_DIR_NAME = '.wiki';
+import { WIKI_DIR_NAME } from '@llmwiki/shared';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -63,7 +63,7 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   const wikiProviders = { entities: entitiesProvider, concepts: conceptsProvider, rawSources: rawSourcesProvider };
-  registerCommands(context, wikiProjectRoot, wikiProviders, outputChannel);
+  registerCommands(context, workspaceFolder, wikiProjectRoot, wikiProviders, outputChannel);
   registerChatParticipant(context, workspaceFolder, outputChannel);
 
   // Fix button opens @wiki /fix in chat

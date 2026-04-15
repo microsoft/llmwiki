@@ -6,6 +6,7 @@ import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createProgram } from '../../../packages/cli/src/cli.js';
+import { WIKI_DIR_NAME } from '../../../packages/shared/src/constants.js';
 
 describe('lintWiki', () => {
   let tmpDir: string;
@@ -19,15 +20,15 @@ describe('lintWiki', () => {
   });
 
   it('should return zero findings for a clean wiki', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
 
     // Create a page that is indexed and has no broken links
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person', tags: ['test'], created: '2026-04-10' },
       body: 'A person page with no links.',
     });
 
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/person.md',
         title: 'Person',
@@ -47,14 +48,14 @@ describe('lintWiki', () => {
   });
 
   it('should detect broken links', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
 
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'See [nonexistent](../concepts/nonexistent.md) for more.',
     });
 
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/person.md',
         title: 'Person',
@@ -64,7 +65,7 @@ describe('lintWiki', () => {
       },
     ]);
 
-    const result = await lintWiki(tmpDir);
+    const result = await lintWiki(join(tmpDir, WIKI_DIR_NAME));
 
     const brokenLinks = result.findings.filter(
       (f) => f.category === 'broken-links',
@@ -76,20 +77,20 @@ describe('lintWiki', () => {
   });
 
   it('should detect orphan pages', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
-    await mkdir(join(tmpDir, 'wiki', 'concepts'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'concepts'), { recursive: true });
 
     // person.md is indexed, orphan.md is NOT indexed and NOT linked
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'A person page.',
     });
-    await writePage(join(tmpDir, 'wiki', 'concepts', 'orphan.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'concepts', 'orphan.md'), {
       frontmatter: { type: 'concept', title: 'Orphan' },
       body: 'Nobody links here.',
     });
 
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/person.md',
         title: 'Person',
@@ -99,7 +100,7 @@ describe('lintWiki', () => {
       },
     ]);
 
-    const result = await lintWiki(tmpDir);
+    const result = await lintWiki(join(tmpDir, WIKI_DIR_NAME));
 
     const orphans = result.findings.filter(
       (f) => f.category === 'orphan-pages',
@@ -111,20 +112,20 @@ describe('lintWiki', () => {
   });
 
   it('should not flag a page as orphan if it is linked from another page', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
-    await mkdir(join(tmpDir, 'wiki', 'concepts'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'concepts'), { recursive: true });
 
     // person.md links to idea.md, idea.md is NOT in index but is linked
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'See [idea](../concepts/idea.md) for more.',
     });
-    await writePage(join(tmpDir, 'wiki', 'concepts', 'idea.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'concepts', 'idea.md'), {
       frontmatter: { type: 'concept', title: 'Idea' },
       body: 'An idea page.',
     });
 
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/person.md',
         title: 'Person',
@@ -134,7 +135,7 @@ describe('lintWiki', () => {
       },
     ]);
 
-    const result = await lintWiki(tmpDir);
+    const result = await lintWiki(join(tmpDir, WIKI_DIR_NAME));
 
     const orphans = result.findings.filter(
       (f) => f.category === 'orphan-pages',
@@ -143,17 +144,17 @@ describe('lintWiki', () => {
   });
 
   it('should detect index-completeness issues', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
 
     // Page exists but is NOT in index
-    await writePage(join(tmpDir, 'wiki', 'entities', 'missing.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'missing.md'), {
       frontmatter: { type: 'entity', title: 'Missing' },
       body: 'Not in index.',
     });
 
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), []);
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), []);
 
-    const result = await lintWiki(tmpDir);
+    const result = await lintWiki(join(tmpDir, WIKI_DIR_NAME));
 
     const completeness = result.findings.filter(
       (f) => f.category === 'index-completeness',
@@ -164,10 +165,10 @@ describe('lintWiki', () => {
   });
 
   it('should detect stale entries', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
 
     // Index references a file that doesn't exist
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/ghost.md',
         title: 'Ghost',
@@ -177,7 +178,7 @@ describe('lintWiki', () => {
       },
     ]);
 
-    const result = await lintWiki(tmpDir);
+    const result = await lintWiki(join(tmpDir, WIKI_DIR_NAME));
 
     const stale = result.findings.filter(
       (f) => f.category === 'stale-entries',
@@ -189,14 +190,14 @@ describe('lintWiki', () => {
   });
 
   it('should detect missing-pages as info findings', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
 
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'See [gone](../concepts/gone.md) and [also gone](../concepts/gone.md).',
     });
 
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/person.md',
         title: 'Person',
@@ -206,7 +207,7 @@ describe('lintWiki', () => {
       },
     ]);
 
-    const result = await lintWiki(tmpDir);
+    const result = await lintWiki(join(tmpDir, WIKI_DIR_NAME));
 
     const missing = result.findings.filter(
       (f) => f.category === 'missing-pages',
@@ -219,15 +220,15 @@ describe('lintWiki', () => {
   });
 
   it('should filter by category when categories are provided', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
 
     // Create a broken link AND a stale entry — but only ask for broken-links
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'See [missing](../concepts/missing.md).',
     });
 
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/person.md',
         title: 'Person',
@@ -244,7 +245,7 @@ describe('lintWiki', () => {
       },
     ]);
 
-    const result = await lintWiki(tmpDir, ['broken-links']);
+    const result = await lintWiki(join(tmpDir, WIKI_DIR_NAME), ['broken-links']);
 
     // Only broken-links findings should be present
     const categories = new Set(result.findings.map((f) => f.category));
@@ -254,7 +255,7 @@ describe('lintWiki', () => {
 
   it('should handle empty/uninitialized wiki gracefully', async () => {
     // tmpDir has no wiki/ directory at all
-    const result = await lintWiki(tmpDir);
+    const result = await lintWiki(join(tmpDir, WIKI_DIR_NAME));
 
     expect(result.command).toBe('lint');
     expect(result.findings).toHaveLength(0);
@@ -264,11 +265,11 @@ describe('lintWiki', () => {
   });
 
   it('should handle wiki with only index.md and log.md', async () => {
-    await mkdir(join(tmpDir, 'wiki'), { recursive: true });
-    await writeFile(join(tmpDir, 'wiki', 'index.md'), '# Wiki Index\n');
-    await writeFile(join(tmpDir, 'wiki', 'log.md'), '');
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki'), { recursive: true });
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), '# Wiki Index\n');
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'log.md'), '');
 
-    const result = await lintWiki(tmpDir);
+    const result = await lintWiki(join(tmpDir, WIKI_DIR_NAME));
 
     expect(result.command).toBe('lint');
     expect(result.findings).toHaveLength(0);
@@ -307,12 +308,12 @@ describe('lint CLI integration', () => {
   });
 
   it('should output JSON when --json flag is set', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'A person.',
     });
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/person.md',
         title: 'Person',
@@ -351,14 +352,14 @@ describe('lint CLI integration', () => {
   });
 
   it('should output human-readable text with severity symbols', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
 
     // Create a broken link to generate an error finding
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'See [missing](../concepts/missing.md).',
     });
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/person.md',
         title: 'Person',
@@ -392,13 +393,13 @@ describe('lint CLI integration', () => {
   });
 
   it('should set process.exitCode = 1 when errors exist', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
 
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'See [missing](../concepts/missing.md).',
     });
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/person.md',
         title: 'Person',
@@ -430,13 +431,13 @@ describe('lint CLI integration', () => {
   });
 
   it('should not set process.exitCode = 1 when no errors exist', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
 
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'A clean page.',
     });
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/person.md',
         title: 'Person',
@@ -468,14 +469,14 @@ describe('lint CLI integration', () => {
   });
 
   it('should support --category filter via CLI', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
 
     // Broken link + stale entry, filter only broken-links
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'See [missing](../concepts/missing.md).',
     });
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/person.md',
         title: 'Person',
@@ -519,8 +520,8 @@ describe('lint CLI integration', () => {
   });
 
   it('should output summary line in human-readable mode', async () => {
-    await mkdir(join(tmpDir, 'wiki'), { recursive: true });
-    await writeFile(join(tmpDir, 'wiki', 'index.md'), '# Wiki Index\n');
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki'), { recursive: true });
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), '# Wiki Index\n');
 
     const logs: string[] = [];
     const origLog = console.log;

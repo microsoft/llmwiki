@@ -7,6 +7,7 @@ import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createProgram } from '../../../packages/cli/src/cli.js';
+import { WIKI_DIR_NAME } from '../../../packages/shared/src/constants.js';
 
 describe('getWikiStatus', () => {
   let tmpDir: string;
@@ -20,7 +21,7 @@ describe('getWikiStatus', () => {
   });
 
   it('should handle uninitialized wiki gracefully', async () => {
-    const result = await getWikiStatus(tmpDir);
+    const result = await getWikiStatus(join(tmpDir, WIKI_DIR_NAME));
 
     expect(result.command).toBe('status');
     expect(result.source_count).toBe(0);
@@ -32,50 +33,50 @@ describe('getWikiStatus', () => {
   });
 
   it('should count sources in raw/', async () => {
-    await mkdir(join(tmpDir, 'raw'), { recursive: true });
-    await mkdir(join(tmpDir, 'wiki'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'raw'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki'), { recursive: true });
 
-    await writeFile(join(tmpDir, 'raw', 'doc1.txt'), 'content');
-    await writeFile(join(tmpDir, 'raw', 'doc2.pdf'), 'content');
-    await writeFile(join(tmpDir, 'raw', 'doc3.md'), 'content');
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'raw', 'doc1.txt'), 'content');
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'raw', 'doc2.pdf'), 'content');
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'raw', 'doc3.md'), 'content');
 
-    const result = await getWikiStatus(tmpDir);
+    const result = await getWikiStatus(join(tmpDir, WIKI_DIR_NAME));
     expect(result.source_count).toBe(3);
   });
 
   it('should count wiki pages excluding index.md and log.md', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
-    await mkdir(join(tmpDir, 'wiki', 'concepts'), { recursive: true });
-    await mkdir(join(tmpDir, 'raw'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'concepts'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'raw'), { recursive: true });
 
     // Create wiki pages
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'A person page.',
     });
-    await writePage(join(tmpDir, 'wiki', 'concepts', 'idea.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'concepts', 'idea.md'), {
       frontmatter: { type: 'concept', title: 'Idea' },
       body: 'An idea page.',
     });
 
     // Create index.md and log.md (should NOT be counted as pages)
-    await writeFile(join(tmpDir, 'wiki', 'index.md'), '# Wiki Index\n');
-    await appendEntry(join(tmpDir, 'wiki', 'log.md'), {
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), '# Wiki Index\n');
+    await appendEntry(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'log.md'), {
       verb: 'initialized',
       subject: 'wiki',
       details: 'Init.',
       date: '2024-01-01',
     });
 
-    const result = await getWikiStatus(tmpDir);
+    const result = await getWikiStatus(join(tmpDir, WIKI_DIR_NAME));
     expect(result.wiki_page_count).toBe(2);
   });
 
   it('should find last ingest date from log', async () => {
-    await mkdir(join(tmpDir, 'wiki'), { recursive: true });
-    await mkdir(join(tmpDir, 'raw'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'raw'), { recursive: true });
 
-    const logPath = join(tmpDir, 'wiki', 'log.md');
+    const logPath = join(tmpDir, WIKI_DIR_NAME, 'wiki', 'log.md');
     await appendEntry(logPath, {
       verb: 'ingested',
       subject: 'doc1.txt',
@@ -95,16 +96,16 @@ describe('getWikiStatus', () => {
       date: '2024-01-15',
     });
 
-    const result = await getWikiStatus(tmpDir);
+    const result = await getWikiStatus(join(tmpDir, WIKI_DIR_NAME));
     expect(result.last_ingest_date).toBe('2024-01-15');
     expect(result.last_lint_date).toBe('2024-01-11');
   });
 
   it('should report null dates when no ingest/lint entries exist', async () => {
-    await mkdir(join(tmpDir, 'wiki'), { recursive: true });
-    await mkdir(join(tmpDir, 'raw'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'raw'), { recursive: true });
 
-    const logPath = join(tmpDir, 'wiki', 'log.md');
+    const logPath = join(tmpDir, WIKI_DIR_NAME, 'wiki', 'log.md');
     await appendEntry(logPath, {
       verb: 'initialized',
       subject: 'wiki',
@@ -112,32 +113,32 @@ describe('getWikiStatus', () => {
       date: '2024-01-01',
     });
 
-    const result = await getWikiStatus(tmpDir);
+    const result = await getWikiStatus(join(tmpDir, WIKI_DIR_NAME));
     expect(result.last_ingest_date).toBeNull();
     expect(result.last_lint_date).toBeNull();
   });
 
   it('should identify orphan pages not in index', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
-    await mkdir(join(tmpDir, 'wiki', 'concepts'), { recursive: true });
-    await mkdir(join(tmpDir, 'raw'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'concepts'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'raw'), { recursive: true });
 
     // Create 3 wiki pages
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'A person.',
     });
-    await writePage(join(tmpDir, 'wiki', 'entities', 'place.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'place.md'), {
       frontmatter: { type: 'entity', title: 'Place' },
       body: 'A place.',
     });
-    await writePage(join(tmpDir, 'wiki', 'concepts', 'idea.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'concepts', 'idea.md'), {
       frontmatter: { type: 'concept', title: 'Idea' },
       body: 'An idea.',
     });
 
     // Index only person.md and idea.md — place.md is orphan
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/person.md',
         title: 'Person',
@@ -154,21 +155,21 @@ describe('getWikiStatus', () => {
       },
     ]);
 
-    const result = await getWikiStatus(tmpDir);
+    const result = await getWikiStatus(join(tmpDir, WIKI_DIR_NAME));
     expect(result.orphan_page_count).toBe(1);
     expect(result.index_coverage_pct).toBe(67); // 2/3 → 66.67% → rounds to 67
   });
 
   it('should calculate 100% coverage when all pages are indexed', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
-    await mkdir(join(tmpDir, 'raw'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'raw'), { recursive: true });
 
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'A person.',
     });
 
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/person.md',
         title: 'Person',
@@ -178,38 +179,38 @@ describe('getWikiStatus', () => {
       },
     ]);
 
-    const result = await getWikiStatus(tmpDir);
+    const result = await getWikiStatus(join(tmpDir, WIKI_DIR_NAME));
     expect(result.orphan_page_count).toBe(0);
     expect(result.index_coverage_pct).toBe(100);
   });
 
   it('should report complete stats with populated wiki', async () => {
     // Set up full wiki structure
-    await mkdir(join(tmpDir, 'raw'), { recursive: true });
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
-    await mkdir(join(tmpDir, 'wiki', 'concepts'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'raw'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'concepts'), { recursive: true });
 
     // 3 raw sources
-    await writeFile(join(tmpDir, 'raw', 'doc1.txt'), 'content');
-    await writeFile(join(tmpDir, 'raw', 'doc2.txt'), 'content');
-    await writeFile(join(tmpDir, 'raw', 'doc3.txt'), 'content');
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'raw', 'doc1.txt'), 'content');
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'raw', 'doc2.txt'), 'content');
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'raw', 'doc3.txt'), 'content');
 
     // 3 wiki pages
-    await writePage(join(tmpDir, 'wiki', 'entities', 'alice.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'alice.md'), {
       frontmatter: { type: 'entity', title: 'Alice' },
       body: 'Alice page.',
     });
-    await writePage(join(tmpDir, 'wiki', 'entities', 'bob.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'bob.md'), {
       frontmatter: { type: 'entity', title: 'Bob' },
       body: 'Bob page.',
     });
-    await writePage(join(tmpDir, 'wiki', 'concepts', 'trust.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'concepts', 'trust.md'), {
       frontmatter: { type: 'concept', title: 'Trust' },
       body: 'Trust page.',
     });
 
     // Index has 2 of 3 pages (bob.md is orphan)
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/alice.md',
         title: 'Alice',
@@ -227,7 +228,7 @@ describe('getWikiStatus', () => {
     ]);
 
     // Log with ingest and lint entries
-    const logPath = join(tmpDir, 'wiki', 'log.md');
+    const logPath = join(tmpDir, WIKI_DIR_NAME, 'wiki', 'log.md');
     await appendEntry(logPath, {
       verb: 'ingested',
       subject: 'doc1.txt',
@@ -247,7 +248,7 @@ describe('getWikiStatus', () => {
       date: '2024-01-13',
     });
 
-    const result = await getWikiStatus(tmpDir);
+    const result = await getWikiStatus(join(tmpDir, WIKI_DIR_NAME));
     expect(result.command).toBe('status');
     expect(result.source_count).toBe(3);
     expect(result.wiki_page_count).toBe(3);
@@ -258,22 +259,22 @@ describe('getWikiStatus', () => {
   });
 
   it('should calculate 0% coverage when no pages are indexed', async () => {
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
-    await mkdir(join(tmpDir, 'raw'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'raw'), { recursive: true });
 
-    await writePage(join(tmpDir, 'wiki', 'entities', 'person.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'person.md'), {
       frontmatter: { type: 'entity', title: 'Person' },
       body: 'A person.',
     });
-    await writePage(join(tmpDir, 'wiki', 'entities', 'place.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'place.md'), {
       frontmatter: { type: 'entity', title: 'Place' },
       body: 'A place.',
     });
 
     // Empty index — no entries
-    await writeFile(join(tmpDir, 'wiki', 'index.md'), '# Wiki Index\n');
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), '# Wiki Index\n');
 
-    const result = await getWikiStatus(tmpDir);
+    const result = await getWikiStatus(join(tmpDir, WIKI_DIR_NAME));
     expect(result.wiki_page_count).toBe(2);
     expect(result.orphan_page_count).toBe(2);
     expect(result.index_coverage_pct).toBe(0);
@@ -307,9 +308,9 @@ describe('status CLI integration', () => {
   });
 
   it('should output JSON when --json flag is set', async () => {
-    await mkdir(join(tmpDir, 'raw'), { recursive: true });
-    await mkdir(join(tmpDir, 'wiki'), { recursive: true });
-    await writeFile(join(tmpDir, 'wiki', 'index.md'), '# Wiki Index\n');
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'raw'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki'), { recursive: true });
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), '# Wiki Index\n');
 
     const logs: string[] = [];
     const origLog = console.log;
@@ -342,8 +343,8 @@ describe('status CLI integration', () => {
   });
 
   it('should output human-readable table by default', async () => {
-    await mkdir(join(tmpDir, 'raw'), { recursive: true });
-    await mkdir(join(tmpDir, 'wiki'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'raw'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki'), { recursive: true });
 
     const logs: string[] = [];
     const origLog = console.log;
@@ -402,15 +403,15 @@ describe('status CLI integration', () => {
   });
 
   it('should output JSON with populated wiki stats', async () => {
-    await mkdir(join(tmpDir, 'raw'), { recursive: true });
-    await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'raw'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
 
-    await writeFile(join(tmpDir, 'raw', 'source.txt'), 'data');
-    await writePage(join(tmpDir, 'wiki', 'entities', 'item.md'), {
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'raw', 'source.txt'), 'data');
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'item.md'), {
       frontmatter: { type: 'entity', title: 'Item' },
       body: 'An item.',
     });
-    await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+    await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
       {
         path: 'entities/item.md',
         title: 'Item',
@@ -419,7 +420,7 @@ describe('status CLI integration', () => {
         tags: [],
       },
     ]);
-    await appendEntry(join(tmpDir, 'wiki', 'log.md'), {
+    await appendEntry(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'log.md'), {
       verb: 'ingested',
       subject: 'source.txt',
       details: 'Done.',

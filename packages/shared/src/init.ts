@@ -1,7 +1,7 @@
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { appendEntry } from './log.js';
-import { API_VERSION } from './constants.js';
+import { API_VERSION, WIKI_DIR_NAME } from './constants.js';
 import { isNotFoundError } from './errors.js';
 
 /**
@@ -139,11 +139,14 @@ Run lint: \`plaid wiki lint\` (supports \`--category\` filter)
 
 /**
  * Initialize a wiki knowledge base at the given path.
- * Creates the directory structure, index, log, and AGENTS.md.
+ * Creates the `.wiki` directory containing the wiki structure.
+ * The `targetPath` is the project/workspace folder; the wiki root
+ * will be `targetPath/.wiki/`.
+ *
  * Returns a structured result describing what was created.
  */
 export async function initWiki(targetPath: string): Promise<InitResult> {
-  const root = resolve(targetPath);
+  const root = resolve(targetPath, WIKI_DIR_NAME);
   const wikiDir = join(root, 'wiki');
 
   // Detect if already initialized

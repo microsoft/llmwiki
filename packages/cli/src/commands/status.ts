@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { getWikiStatus, type StatusResult } from '@llmwiki/shared';
+import { resolveWikiRoot } from '../wiki-root.js';
 
 // Re-export for backward compatibility (tests import from this file)
 export { getWikiStatus, type StatusResult } from '@llmwiki/shared';
@@ -32,7 +33,7 @@ export function registerStatusCommand(wiki: Command): void {
     .option('--path <dir>', 'Target directory', '.')
     .action(async (options: { path: string }, cmd: Command) => {
       const jsonMode = cmd.parent?.opts().json ?? false;
-      const result = await getWikiStatus(options.path);
+      const result = await getWikiStatus(resolveWikiRoot(options.path));
 
       if (jsonMode) {
         console.log(JSON.stringify(result));

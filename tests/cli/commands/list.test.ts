@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { writePage } from '../../../packages/shared/src/wiki.js';
 import { writeIndex } from '../../../packages/shared/src/index-ops.js';
 import { createProgram } from '../../../packages/cli/src/cli.js';
+import { WIKI_DIR_NAME } from '../../../packages/shared/src/constants.js';
 import type { PageInfo, SourceFile, IndexEntry } from '../../../packages/cli/src/commands/list.js';
 
 /* ------------------------------------------------------------------ */
@@ -30,26 +31,26 @@ async function runCli(args: string[]): Promise<string[]> {
 /* ------------------------------------------------------------------ */
 
 async function setupWiki(tmpDir: string): Promise<void> {
-  await mkdir(join(tmpDir, 'raw'), { recursive: true });
-  await mkdir(join(tmpDir, 'wiki', 'entities'), { recursive: true });
-  await mkdir(join(tmpDir, 'wiki', 'concepts'), { recursive: true });
+  await mkdir(join(tmpDir, WIKI_DIR_NAME, 'raw'), { recursive: true });
+  await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities'), { recursive: true });
+  await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'concepts'), { recursive: true });
 
   // Wiki pages
-  await writePage(join(tmpDir, 'wiki', 'entities', 'alice.md'), {
+  await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'entities', 'alice.md'), {
     frontmatter: { type: 'entity', title: 'Alice', tags: ['person', 'main'] },
     body: 'Alice is the protagonist.',
   });
-  await writePage(join(tmpDir, 'wiki', 'concepts', 'trust.md'), {
+  await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'concepts', 'trust.md'), {
     frontmatter: { type: 'concept', title: 'Trust', tags: ['abstract'] },
     body: 'Trust is fundamental.',
   });
 
   // Source files
-  await writeFile(join(tmpDir, 'raw', 'doc1.txt'), 'Source document one');
-  await writeFile(join(tmpDir, 'raw', 'notes.md'), '# Notes\n\nSome notes.');
+  await writeFile(join(tmpDir, WIKI_DIR_NAME, 'raw', 'doc1.txt'), 'Source document one');
+  await writeFile(join(tmpDir, WIKI_DIR_NAME, 'raw', 'notes.md'), '# Notes\n\nSome notes.');
 
   // Index
-  await writeIndex(join(tmpDir, 'wiki', 'index.md'), [
+  await writeIndex(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), [
     {
       path: 'entities/alice.md',
       title: 'Alice',
@@ -321,9 +322,9 @@ describe('list edge cases', () => {
   });
 
   it('should handle pages with missing frontmatter fields', async () => {
-    await mkdir(join(tmpDir, 'wiki'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki'), { recursive: true });
     // Page with no title/type/tags in frontmatter
-    await writePage(join(tmpDir, 'wiki', 'bare.md'), {
+    await writePage(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'bare.md'), {
       frontmatter: {},
       body: 'Minimal page.',
     });
@@ -338,8 +339,8 @@ describe('list edge cases', () => {
   });
 
   it('should handle empty index file', async () => {
-    await mkdir(join(tmpDir, 'wiki'), { recursive: true });
-    await writeFile(join(tmpDir, 'wiki', 'index.md'), '# Wiki Index\n');
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki'), { recursive: true });
+    await writeFile(join(tmpDir, WIKI_DIR_NAME, 'wiki', 'index.md'), '# Wiki Index\n');
 
     const logs = await runCli(['wiki', '--json', 'list', 'entries', '--path', tmpDir]);
     const entries: IndexEntry[] = JSON.parse(logs[0]);
@@ -347,7 +348,7 @@ describe('list edge cases', () => {
   });
 
   it('should handle empty raw directory', async () => {
-    await mkdir(join(tmpDir, 'raw'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'raw'), { recursive: true });
 
     const logs = await runCli(['wiki', '--json', 'list', 'sources', '--path', tmpDir]);
     const sources: SourceFile[] = JSON.parse(logs[0]);

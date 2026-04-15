@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { join } from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { extractText } from './extractText';
 import {
   ingestSource,
   readIndex,
@@ -57,8 +57,8 @@ export async function llmIngest(
   pagesUpdated.push(...ingestResult.pages_updated);
 
   // ── Step 2: Read source content + existing wiki context ──────
-  progress.report({ message: 'Reading source and wiki context…' });
-  const sourceContent = await readFile(sourcePath, 'utf-8');
+  progress.report({ message: 'Extracting text from source…' });
+  const sourceContent = await extractText(sourcePath);
 
   let existingEntries: IndexEntry[] = [];
   try {

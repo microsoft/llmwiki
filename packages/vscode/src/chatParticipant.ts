@@ -13,7 +13,7 @@ import {
   type IndexEntry,
 } from '@llmwiki/shared';
 
-const WIKI_DIR_NAME = '.wiki';
+import { WIKI_DIR_NAME } from '@llmwiki/shared';
 
 /**
  * Get the preferred LLM model — claude-opus-4.6 if available, otherwise the request's model.

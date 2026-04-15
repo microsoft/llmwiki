@@ -8,7 +8,7 @@ const buildOptions = {
   bundle: true,
   platform: 'node',
   target: 'node20',
-  external: ['vscode'],
+  external: ['vscode', 'pdfjs-dist'],
   format: 'cjs',
   outfile: 'out/extension.js',
   sourcemap: true,

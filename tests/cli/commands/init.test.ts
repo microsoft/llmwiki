@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { WIKI_DIR_NAME } from '../../../packages/shared/src/constants.js';
 import { initWiki } from '../../../packages/shared/src/init.js';
 import { readLog } from '../../../packages/shared/src/log.js';
 import { readIndex } from '../../../packages/shared/src/index-ops.js';
@@ -9,9 +10,11 @@ import { createProgram } from '../../../packages/cli/src/cli.js';
 
 describe('initWiki', () => {
   let tmpDir: string;
+  let wikiRoot: string;
 
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'init-test-'));
+    wikiRoot = join(tmpDir, WIKI_DIR_NAME);
   });
 
   afterEach(async () => {
@@ -30,7 +33,7 @@ describe('initWiki', () => {
     ];
 
     for (const dir of expectedDirs) {
-      const dirStat = await stat(join(tmpDir, dir));
+      const dirStat = await stat(join(wikiRoot, dir));
       expect(dirStat.isDirectory(), `${dir} should be a directory`).toBe(true);
     }
   });
@@ -39,7 +42,7 @@ describe('initWiki', () => {
     await initWiki(tmpDir);
 
     const indexContent = await readFile(
-      join(tmpDir, 'wiki', 'index.md'),
+      join(wikiRoot, 'wiki', 'index.md'),
       'utf-8',
     );
 
@@ -52,7 +55,7 @@ describe('initWiki', () => {
   it('should create wiki/index.md parseable by readIndex', async () => {
     await initWiki(tmpDir);
 
-    const entries = await readIndex(join(tmpDir, 'wiki', 'index.md'));
+    const entries = await readIndex(join(wikiRoot, 'wiki', 'index.md'));
     // Index should be empty but valid (no entries, just category headers)
     expect(entries).toEqual([]);
   });
@@ -60,7 +63,7 @@ describe('initWiki', () => {
   it('should create wiki/log.md with initialization entry', async () => {
     await initWiki(tmpDir);
 
-    const logEntries = await readLog(join(tmpDir, 'wiki', 'log.md'));
+    const logEntries = await readLog(join(wikiRoot, 'wiki', 'log.md'));
     expect(logEntries).toHaveLength(1);
     expect(logEntries[0].verb).toBe('initialized');
     expect(logEntries[0].subject).toBe('wiki');
@@ -72,7 +75,7 @@ describe('initWiki', () => {
     await initWiki(tmpDir);
 
     const agentsContent = await readFile(
-      join(tmpDir, 'AGENTS.md'),
+      join(wikiRoot, 'AGENTS.md'),
       'utf-8',
     );
 
@@ -125,16 +128,17 @@ describe('initWiki', () => {
 
   it('should work with a nested target path', async () => {
     const nestedPath = join(tmpDir, 'sub', 'project');
+    const nestedWikiRoot = join(nestedPath, WIKI_DIR_NAME);
 
     const result = await initWiki(nestedPath);
 
     expect(result.status).toBe('created');
 
-    const dirStat = await stat(join(nestedPath, 'wiki', 'entities'));
+    const dirStat = await stat(join(nestedWikiRoot, 'wiki', 'entities'));
     expect(dirStat.isDirectory()).toBe(true);
 
     const indexContent = await readFile(
-      join(nestedPath, 'wiki', 'index.md'),
+      join(nestedWikiRoot, 'wiki', 'index.md'),
       'utf-8',
     );
     expect(indexContent).toContain('# Wiki Index');
@@ -197,7 +201,7 @@ describe('init CLI integration', () => {
 
   it('should output JSON with warning when already initialized', async () => {
     // Pre-create wiki dir to trigger "already initialized"
-    await mkdir(join(tmpDir, 'wiki'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki'), { recursive: true });
 
     const logs: string[] = [];
     const origLog = console.log;
@@ -248,7 +252,7 @@ describe('init CLI integration', () => {
   });
 
   it('should output warning text when already initialized', async () => {
-    await mkdir(join(tmpDir, 'wiki'), { recursive: true });
+    await mkdir(join(tmpDir, WIKI_DIR_NAME, 'wiki'), { recursive: true });
 
     const logs: string[] = [];
     const origLog = console.log;

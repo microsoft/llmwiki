@@ -9,6 +9,7 @@ import {
   type SourceFile,
   type IndexEntry,
 } from '@llmwiki/shared';
+import { resolveWikiRoot } from '../wiki-root.js';
 
 /* ------------------------------------------------------------------ */
 /*  JSON result interfaces                                            */
@@ -145,7 +146,7 @@ export function registerListCommand(wiki: Command): void {
 
   list.action(async (type: string, options: { path: string }, cmd: Command) => {
     const jsonMode = cmd.parent?.opts().json ?? false;
-    const root = resolve(options.path);
+    const root = resolveWikiRoot(options.path);
     const wikiDir = join(root, 'wiki');
     const rawDir = join(root, 'raw');
     const indexPath = join(wikiDir, 'index.md');

@@ -1,6 +1,7 @@
 src/**
 tests/**
 node_modules/**
+!node_modules/pdfjs-dist/**
 *.ts
 !out/**/*.js
 !out/**/*.js.map

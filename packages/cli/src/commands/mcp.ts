@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { createMcpServer } from '@llmwiki/shared';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { resolveWikiRoot } from '../wiki-root.js';
 
 /**
  * Register the `mcp` subcommand on the wiki command group.
@@ -14,7 +15,7 @@ export function registerMcpCommand(wiki: Command): void {
     .description('Start MCP server for LLM agent integration')
     .option('--path <path>', 'Wiki root directory', '.')
     .action(async (opts: { path: string }) => {
-      const server = createMcpServer(opts.path);
+      const server = createMcpServer(resolveWikiRoot(opts.path));
       const transport = new StdioServerTransport();
       await server.connect(transport);
       // Server is now running, communicating over stdin/stdout.
