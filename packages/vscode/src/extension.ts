@@ -140,6 +140,10 @@ async function autoIngest(
   outputChannel: vscode.OutputChannel,
   providers: { entities: WikiPagesTreeDataProvider; concepts: WikiPagesTreeDataProvider; rawSources: RawSourcesTreeDataProvider },
 ): Promise<void> {
+  // Skip directories — file watchers fire for both files and folders
+  const fileStat = await vscode.workspace.fs.stat(uri);
+  if (fileStat.type === vscode.FileType.Directory) return;
+
   const filePath = uri.fsPath;
 
   // Deduplicate — file watchers can fire multiple times

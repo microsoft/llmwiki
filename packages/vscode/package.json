@@ -16,6 +16,7 @@
     "directory": "packages/vscode"
   },
   "main": "./out/extension.js",
+  "icon": "icon.png",
   "activationEvents": [
     "workspaceContains:.wiki/wiki/index.md",
     "onCommand:llmwiki.init",
