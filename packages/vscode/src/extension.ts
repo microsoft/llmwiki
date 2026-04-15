@@ -8,7 +8,7 @@ import { createStatusBar } from './statusBar';
 import { registerChatParticipant } from './chatParticipant';
 import { llmIngest } from './llmIngest';
 
-import { WIKI_DIR_NAME } from '@llmwiki/shared';
+import { WIKI_DIR_NAME, directoryExists } from '@llmwiki/shared';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -16,18 +16,66 @@ export function activate(context: vscode.ExtensionContext): void {
   outputChannel = vscode.window.createOutputChannel('LLM Wiki');
   outputChannel.appendLine('LLM Wiki extension activated');
 
-  vscode.commands.executeCommand('setContext', 'llmwiki.isWikiWorkspace', true);
-
   context.subscriptions.push(outputChannel);
 
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!workspaceFolder) {
-    outputChannel.appendLine('No workspace folder found — skipping tree view registration');
+    outputChannel.appendLine('No workspace folder found — showing open-folder prompt');
+    vscode.commands.executeCommand('setContext', 'llmwiki.noFolder', true);
+    vscode.commands.executeCommand('setContext', 'llmwiki.isWikiWorkspace', false);
+    return;
+  }
+  vscode.commands.executeCommand('setContext', 'llmwiki.noFolder', false);
+
+  const wikiProjectRoot = join(workspaceFolder, WIKI_DIR_NAME);
+  const wikiDir = join(wikiProjectRoot, 'wiki');
+
+  // Bootstrap: check if wiki exists, then set up views accordingly
+  bootstrapViews(context, workspaceFolder, wikiProjectRoot, wikiDir);
+}
+
+async function bootstrapViews(
+  context: vscode.ExtensionContext,
+  workspaceFolder: string,
+  wikiProjectRoot: string,
+  wikiDir: string,
+): Promise<void> {
+  const wikiExists = await directoryExists(wikiDir);
+  vscode.commands.executeCommand('setContext', 'llmwiki.isWikiWorkspace', wikiExists);
+
+  if (!wikiExists) {
+    // Register only the init command so the welcome view button works
+    const initDisposable = vscode.commands.registerCommand('llmwiki.init', async () => {
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Initializing LLM Wiki…', cancellable: false },
+        async () => {
+          const { initWiki } = await import('@llmwiki/shared');
+          const result = await initWiki(workspaceFolder);
+          vscode.window.showInformationMessage(
+            `Wiki initialized in .wiki/: ${result.created_dirs.length} directories, ${result.created_files.length} files created.`,
+          );
+          // Dispose this temporary registration so registerCommands can re-register it
+          initDisposable.dispose();
+          // Now that the wiki exists, set context and register full views
+          vscode.commands.executeCommand('setContext', 'llmwiki.isWikiWorkspace', true);
+          registerFullViews(context, workspaceFolder, wikiProjectRoot);
+        },
+      );
+    });
+    context.subscriptions.push(initDisposable);
+    outputChannel.appendLine('No wiki found — showing initialization welcome view');
     return;
   }
 
+  registerFullViews(context, workspaceFolder, wikiProjectRoot);
+}
+
+function registerFullViews(
+  context: vscode.ExtensionContext,
+  workspaceFolder: string,
+  wikiProjectRoot: string,
+): void {
   // .wiki is the project root passed to all shared functions
-  const wikiProjectRoot = join(workspaceFolder, WIKI_DIR_NAME);
 
   const entitiesProvider = new WikiPagesTreeDataProvider(wikiProjectRoot, 'Entities');
   const entitiesRegistration = vscode.window.registerTreeDataProvider('entities', entitiesProvider);

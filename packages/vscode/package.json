@@ -18,7 +18,11 @@
   "main": "./out/extension.js",
   "activationEvents": [
     "workspaceContains:.wiki/wiki/index.md",
-    "onCommand:llmwiki.init"
+    "onCommand:llmwiki.init",
+    "onView:entities",
+    "onView:concepts",
+    "onView:rawSources",
+    "onView:backlinks"
   ],
   "contributes": {
     "chatParticipants": [
@@ -130,27 +134,27 @@
       "view/title": [
         {
           "command": "llmwiki.search",
-          "when": "view =~ /^(entities|concepts)$/",
+          "when": "view =~ /^(entities|concepts)$/ && llmwiki.isWikiWorkspace",
           "group": "navigation@1"
         },
         {
           "command": "llmwiki.searchRaw",
-          "when": "view == rawSources",
+          "when": "view == rawSources && llmwiki.isWikiWorkspace",
           "group": "navigation@1"
         },
         {
           "command": "llmwiki.ingest",
-          "when": "view == rawSources",
+          "when": "view == rawSources && llmwiki.isWikiWorkspace",
           "group": "navigation@2"
         },
         {
           "command": "llmwiki.fix",
-          "when": "view == rawSources",
+          "when": "view == rawSources && llmwiki.isWikiWorkspace",
           "group": "navigation@3"
         },
         {
           "command": "llmwiki.refresh",
-          "when": "view =~ /^(entities|concepts|rawSources)$/",
+          "when": "view =~ /^(entities|concepts|rawSources)$/ && llmwiki.isWikiWorkspace",
           "group": "navigation@4"
         }
       ],
@@ -165,7 +169,18 @@
     "viewsWelcome": [
       {
         "view": "rawSources",
-        "contents": "No sources yet.\n[Add Source Files](command:llmwiki.ingest)"
+        "contents": "Please open a folder to use LLM Wiki.",
+        "when": "llmwiki.noFolder"
+      },
+      {
+        "view": "rawSources",
+        "contents": "No wiki found in this workspace.\n[Initialize LLM Wiki](command:llmwiki.init)",
+        "when": "!llmwiki.noFolder && !llmwiki.isWikiWorkspace"
+      },
+      {
+        "view": "rawSources",
+        "contents": "No sources yet.\n[Add Source Files](command:llmwiki.ingest)",
+        "when": "llmwiki.isWikiWorkspace"
       }
     ]
   },

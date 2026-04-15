@@ -104,31 +104,53 @@ export function registerCommands(
     const selected = await vscode.window.showOpenDialog({
       canSelectFiles: true,
       canSelectFolders: false,
-      canSelectMany: false,
+      canSelectMany: true,
       defaultUri: rawUri,
       openLabel: 'Ingest',
-      title: 'Select a source file to ingest',
+      title: 'Select source file(s) to ingest',
     });
     if (!selected || selected.length === 0) return;
 
-    const sourcePath = await ensureInRaw(selected[0].fsPath, rawDir, workspaceFolder);
+    let totalCreated = 0;
+    let totalUpdated = 0;
+    let succeeded = 0;
+    let failed = 0;
 
-    const result = await vscode.window.withProgress(
+    await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: 'Ingesting with LLM…',
+        title: 'Ingesting files…',
         cancellable: true,
       },
       async (progress, cancelToken) => {
-        return llmIngest(sourcePath, workspaceFolder, false, outputChannel, progress, cancelToken);
+        const total = selected.length;
+        for (let i = 0; i < total; i++) {
+          if (cancelToken.isCancellationRequested) break;
+
+          const uri = selected[i];
+          const fileName = uri.fsPath.split(/[\\/]/).pop() ?? 'file';
+          progress.report({ message: `(${i + 1}/${total}) ${fileName}`, increment: (100 / total) });
+
+          try {
+            const sourcePath = await ensureInRaw(uri.fsPath, rawDir, workspaceFolder);
+            const result = await llmIngest(sourcePath, workspaceFolder, false, outputChannel, progress, cancelToken);
+            totalCreated += result.pagesCreated.length;
+            totalUpdated += result.pagesUpdated.length;
+            succeeded++;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            outputChannel.appendLine(`[ingest] Failed ${fileName}: ${msg}`);
+            failed++;
+          }
+        }
       },
     );
 
-    const totalCreated = result.pagesCreated.length;
-    const totalUpdated = result.pagesUpdated.length;
-    vscode.window.showInformationMessage(
-      `Ingest complete — ${totalCreated} pages created, ${totalUpdated} pages updated`,
-    );
+    const parts = [`${succeeded} file(s) ingested`];
+    if (totalCreated > 0) parts.push(`${totalCreated} pages created`);
+    if (totalUpdated > 0) parts.push(`${totalUpdated} pages updated`);
+    if (failed > 0) parts.push(`${failed} failed`);
+    vscode.window.showInformationMessage(`Ingest complete — ${parts.join(', ')}`);
     providers.entities.refresh(); providers.concepts.refresh();
     providers.rawSources.refresh();
   });

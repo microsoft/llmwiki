@@ -1,5 +1,5 @@
 import { join, resolve, basename } from 'node:path';
-import { stat, readFile, copyFile, mkdir } from 'node:fs/promises';
+import { stat, readFile, copyFile, mkdir, readdir } from 'node:fs/promises';
 import { Command } from 'commander';
 import {
   ingestSource,
@@ -34,16 +34,16 @@ export function registerIngestCommand(wiki: Command): void {
   wiki
     .command('ingest')
     .description('Ingest source file(s) into the wiki knowledge base')
-    .argument('[source]', 'Path to source file or directory (omit with --all for raw/)')
+    .argument('[sources...]', 'Path(s) to source files or a directory (omit with --all for raw/)')
     .option('--all', 'Ingest all files from the raw/ directory', false)
     .option('--path <dir>', 'Target directory', '.')
     .option('--dry-run', 'Preview changes without writing files', false)
     .option('--force', 'Re-ingest even if source was already ingested', false)
-    .action(async (source: string | undefined, options: { all: boolean; path: string; dryRun: boolean; force: boolean }, cmd: Command) => {
+    .action(async (sources: string[], options: { all: boolean; path: string; dryRun: boolean; force: boolean }, cmd: Command) => {
       const jsonMode = cmd.parent?.opts().json ?? false;
 
       try {
-        await _ingestAction(source, options, jsonMode);
+        await _ingestAction(sources, options, jsonMode);
       } catch (err) {
         if (err instanceof CopilotCliError) {
           if (jsonMode) {
@@ -60,61 +60,140 @@ export function registerIngestCommand(wiki: Command): void {
 }
 
 async function _ingestAction(
-  source: string | undefined,
+  sources: string[],
   options: { all: boolean; path: string; dryRun: boolean; force: boolean },
   jsonMode: boolean,
 ): Promise<void> {
   const wikiRoot = resolveWikiRoot(options.path);
 
-  // Determine if this is a bulk operation
-  if (options.all || (source && await isDirectory(source))) {
-    const rawDir = options.all
-      ? join(wikiRoot, 'raw')
-      : source!;
+  // Determine if this is a bulk operation (--all or a single directory argument)
+  if (options.all || (sources.length === 1 && await isDirectory(sources[0]))) {
+    if (options.all) {
+      // --all: use bulkIngest which recursively scans raw/
+      const rawDir = join(wikiRoot, 'raw');
 
-    const result = await bulkIngest(rawDir, wikiRoot, {
-      dryRun: options.dryRun,
-      force: options.force,
-      onProgress: jsonMode ? undefined : (current, total, file) => {
-        console.log(`Ingesting ${current}/${total}: ${file}`);
-      },
-    });
+      const result = await bulkIngest(rawDir, wikiRoot, {
+        dryRun: options.dryRun,
+        force: options.force,
+        onProgress: jsonMode ? undefined : (current, total, file) => {
+          console.log(`Ingesting ${current}/${total}: ${file}`);
+        },
+      });
 
-    if (jsonMode) {
-      console.log(JSON.stringify(result));
-    } else if (result.total === 0) {
-      console.log('No source files found.');
-    } else if (options.dryRun) {
-      console.log(`Dry run — ${result.total} file(s) scanned`);
-      console.log(`  Would ingest: ${result.ingested}`);
-      console.log(`  Skipped: ${result.skipped}`);
-    } else {
-      console.log(`✓ Bulk ingest complete`);
-      console.log(`  Ingested: ${result.ingested}, Skipped: ${result.skipped}, Failed: ${result.failed}`);
-      if (result.failed > 0) {
-        for (const f of result.files.filter(f => f.status === 'failed')) {
-          console.error(`  ✗ ${f.file}: ${f.error}`);
+      if (jsonMode) {
+        console.log(JSON.stringify(result));
+      } else if (result.total === 0) {
+        console.log('No source files found.');
+      } else if (options.dryRun) {
+        console.log(`Dry run — ${result.total} file(s) scanned`);
+        console.log(`  Would ingest: ${result.ingested}`);
+        console.log(`  Skipped: ${result.skipped}`);
+      } else {
+        console.log(`✓ Bulk ingest complete`);
+        console.log(`  Ingested: ${result.ingested}, Skipped: ${result.skipped}, Failed: ${result.failed}`);
+        if (result.failed > 0) {
+          for (const f of result.files.filter(f => f.status === 'failed')) {
+            console.error(`  ✗ ${f.file}: ${f.error}`);
+          }
+          process.exitCode = 1;
         }
-        process.exitCode = 1;
       }
+
+      // LLM enrichment for each ingested file
+      if (!options.dryRun && result.ingested > 0) {
+        for (const f of result.files.filter(f => f.status === 'ingested')) {
+          if (!jsonMode) console.log(`  Enriching: ${f.file}…`);
+          await enrichWithCopilotCli(join(rawDir, f.file), wikiRoot, jsonMode);
+        }
+      }
+      return;
     }
 
-    // LLM enrichment for each ingested file
-    if (!options.dryRun && result.ingested > 0) {
-      for (const f of result.files.filter(f => f.status === 'ingested')) {
-        if (!jsonMode) console.log(`  Enriching: ${f.file}…`);
-        await enrichWithCopilotCli(join(rawDir, f.file), wikiRoot, jsonMode);
+    // Directory argument: list top-level files only (non-recursive)
+    const dir = resolve(sources[0]);
+    const entries = await readdir(dir, { withFileTypes: true });
+    const files = entries
+      .filter(e => e.isFile())
+      .map(e => join(dir, e.name));
+
+    if (files.length === 0) {
+      if (jsonMode) {
+        console.log(JSON.stringify({ command: 'ingest', total: 0, ingested: 0 }));
+      } else {
+        console.log('No source files found in directory.');
+      }
+      return;
+    }
+
+    let ingested = 0;
+    let failed = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const label = `[${i + 1}/${files.length}]`;
+      try {
+        if (!jsonMode) console.log(`${label} Ingesting: ${basename(file)}…`);
+        await _ingestSingleFile(file, wikiRoot, options, jsonMode, label);
+        ingested++;
+      } catch {
+        failed++;
       }
     }
+    if (!jsonMode) {
+      console.log(`\n✓ Directory ingest complete — ${ingested} ingested, ${failed} failed`);
+    }
+    if (failed > 0) process.exitCode = 1;
     return;
   }
 
-  // Single file ingest — source is required
-  if (!source) {
-    console.error('✗ Please provide a source file path or use --all for bulk ingest.');
+  // File ingest — at least one source is required
+  if (sources.length === 0) {
+    console.error('✗ Please provide source file path(s) or use --all for bulk ingest.');
     process.exitCode = 1;
     return;
   }
+
+  // Multiple files — ingest one by one with per-file reporting
+  if (sources.length > 1) {
+    let ingested = 0;
+    let failed = 0;
+    for (let i = 0; i < sources.length; i++) {
+      const file = sources[i];
+      const label = `[${i + 1}/${sources.length}]`;
+      try {
+        if (!jsonMode) console.log(`${label} Ingesting: ${basename(file)}…`);
+        await _ingestSingleFile(file, wikiRoot, options, jsonMode, label);
+        ingested++;
+      } catch {
+        failed++;
+      }
+    }
+    if (!jsonMode) {
+      console.log(`\n✓ Multi-file ingest complete — ${ingested} ingested, ${failed} failed`);
+    }
+    if (failed > 0) process.exitCode = 1;
+    return;
+  }
+
+  // Single file
+  const source = sources[0];
+
+  try {
+    await _ingestSingleFile(source, wikiRoot, options, jsonMode);
+  } catch (err) {
+    // Re-throw CopilotCliError so the top-level handler can format it
+    if (err instanceof CopilotCliError) throw err;
+    process.exitCode = 1;
+  }
+}
+
+async function _ingestSingleFile(
+  source: string,
+  wikiRoot: string,
+  options: { dryRun: boolean; force: boolean },
+  jsonMode: boolean,
+  label?: string,
+): Promise<void> {
+  const prefix = label ? `${label} ` : '';
 
   // Copy source to .wiki/raw/ if not already there (matches extension behavior)
   const rawDir = join(wikiRoot, 'raw');
@@ -129,7 +208,7 @@ async function _ingestAction(
     if (!options.dryRun) {
       await mkdir(rawDir, { recursive: true });
       await copyFile(resolvedSource, rawDest);
-      if (!jsonMode) console.log(`✓ Copied ${basename(resolvedSource)} → raw/`);
+      if (!jsonMode) console.log(`${prefix}✓ Copied ${basename(resolvedSource)} → raw/`);
     }
     ingestPath = rawDest;
     // User explicitly asked to ingest this file — always overwrite
@@ -142,30 +221,30 @@ async function _ingestAction(
     if (jsonMode) {
       console.log(JSON.stringify(result));
     } else {
-      console.error(`✗ ${result.error}`);
+      console.error(`${prefix}✗ ${result.error}`);
     }
-    process.exitCode = 1;
+    throw new Error(result.error);
   } else if (result.status === 'skipped') {
     if (jsonMode) {
       console.log(JSON.stringify(result));
     } else {
-      console.log(`⊘ ${result.message}`);
+      console.log(`${prefix}⊘ ${result.message}`);
     }
   } else if (result.dry_run) {
     if (jsonMode) {
       console.log(JSON.stringify(result));
     } else {
-      console.log('Dry run — no files written');
+      console.log(`${prefix}Dry run — no files written`);
       console.log(`  Would create: ${result.pages_created.join(', ')}`);
       console.log(`  Would update: ${result.pages_updated.join(', ')}`);
     }
   } else {
     if (!jsonMode) {
-      console.log(`✓ Indexed: ${result.pages_created.join(', ')}`);
+      console.log(`${prefix}✓ Indexed: ${result.pages_created.join(', ')}`);
     }
 
     // LLM enrichment via Copilot CLI
-    if (!jsonMode) console.log('  Analysing with LLM…');
+    if (!jsonMode) console.log(`${prefix}  Analysing with LLM…`);
     const enrichResult = await enrichWithCopilotCli(ingestPath, wikiRoot, jsonMode);
     if (jsonMode) {
       console.log(JSON.stringify({
@@ -176,7 +255,7 @@ async function _ingestAction(
         crosslinks: enrichResult?.crosslinks.length ?? 0,
       }));
     } else if (enrichResult) {
-      console.log(`✓ LLM enrichment complete — ${enrichResult.entities.length} entities, ${enrichResult.concepts.length} concepts, ${enrichResult.crosslinks.length} crosslinks`);
+      console.log(`${prefix}✓ LLM enrichment complete — ${enrichResult.entities.length} entities, ${enrichResult.concepts.length} concepts, ${enrichResult.crosslinks.length} crosslinks`);
     }
   }
 }
