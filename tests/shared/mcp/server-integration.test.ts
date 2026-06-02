@@ -745,79 +745,11 @@ describe('MCP Server — Error Cases', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test Suite: E2E subprocess test
 // ---------------------------------------------------------------------------
-
-describe('MCP Server — E2E subprocess', () => {
-  let wikiRootE2e: string;
-
-  beforeEach(async () => {
-    wikiRootE2e = await mkdtemp(join(tmpdir(), 'mcp-e2e-'));
-    const wDir = join(wikiRootE2e, 'wiki');
-    await mkdir(wDir, { recursive: true });
-    await writeFile(join(wDir, 'log.md'), '');
-    await writeIndex(join(wDir, 'index.md'), []);
-  });
-
-  afterEach(async () => {
-    await rm(wikiRootE2e, { recursive: true, force: true });
-  });
-
-  it('should list tools and call wiki_status via stdio subprocess', async () => {
-    const { StdioClientTransport } = await import(
-      '@modelcontextprotocol/sdk/client/stdio.js'
-    );
-    const { resolve } = await import('node:path');
-
-    const cliPath = resolve(
-      process.cwd(),
-      'packages',
-      'cli',
-      'src',
-      'cli.ts',
-    );
-
-    const transport = new StdioClientTransport({
-      command: 'npx',
-      args: ['tsx', cliPath, 'wiki', 'mcp', '--path', wikiRootE2e],
-      cwd: process.cwd(),
-      stderr: 'pipe',
-    });
-
-    const e2eClient = new Client({ name: 'test-e2e', version: '1.0.0' });
-
-    try {
-      await e2eClient.connect(transport);
-
-      // Verify tools listing works over real stdio
-      const { tools } = await e2eClient.listTools();
-      const names = tools.map((t) => t.name);
-
-      expect(names).toContain('wiki_status');
-      expect(names).toContain('wiki_query');
-      expect(names).toContain('wiki_lint');
-      expect(names).toContain('wiki_list_pages');
-      expect(names).toContain('wiki_list_sources');
-      expect(names).toContain('wiki_read_page');
-      expect(names).toContain('wiki_read_index');
-      expect(names).toContain('wiki_write_page');
-
-      // Actually call a tool over the subprocess transport
-      const statusResult = await e2eClient.callTool({
-        name: 'wiki_status',
-        arguments: {},
-      });
-      const content = statusResult.content as Array<{ type: string; text: string }>;
-      const status = JSON.parse(content[0].text);
-
-      expect(status.command).toBe('status');
-      expect(status.api_version).toBeDefined();
-      expect(typeof status.source_count).toBe('number');
-    } finally {
-      await e2eClient.close();
-    }
-  }, 30000); // 30s timeout for subprocess startup
-});
+// E2E subprocess test removed: the MCP server was previously exercised through
+// the @llmwiki/cli `wiki mcp` subcommand, which has been removed. All MCP
+// behaviour is still covered by the InMemoryTransport suites above.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Test Suite: Advanced Integration Scenarios

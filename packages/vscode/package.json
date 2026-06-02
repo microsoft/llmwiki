@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "publisher": "eag-rss",
   "engines": {
-    "vscode": "^1.93.0"
+    "vscode": "^1.101.0"
   },
   "categories": [
     "Other"
@@ -26,6 +26,12 @@
     "onView:backlinks"
   ],
   "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "llmwiki",
+        "label": "LLM Wiki"
+      }
+    ],
     "chatParticipants": [
       {
         "id": "llmwiki.wiki",
@@ -60,7 +66,7 @@
       },
       {
         "command": "llmwiki.ingest",
-        "title": "LLM Wiki: Add Source",
+        "title": "LLM Wiki: Ingest Files or Folder",
         "icon": "$(add)"
       },
       {
@@ -99,6 +105,16 @@
         "command": "llmwiki.removeSource",
         "title": "LLM Wiki: Remove Source",
         "icon": "$(trash)"
+      },
+      {
+        "command": "llmwiki.selectModel",
+        "title": "LLM Wiki: Select Model",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "llmwiki.scanRaw",
+        "title": "LLM Wiki: Scan Sources for New Files",
+        "icon": "$(refresh)"
       }
     ],
     "viewsContainers": {
@@ -165,6 +181,13 @@
           "when": "viewItem == rawSource",
           "group": "inline"
         }
+      ],
+      "explorer/context": [
+        {
+          "command": "llmwiki.ingest",
+          "when": "llmwiki.isWikiWorkspace",
+          "group": "7_modification@1"
+        }
       ]
     },
     "viewsWelcome": [
@@ -177,13 +200,18 @@
         "view": "rawSources",
         "contents": "No wiki found in this workspace.\n[Initialize LLM Wiki](command:llmwiki.init)",
         "when": "!llmwiki.noFolder && !llmwiki.isWikiWorkspace"
-      },
-      {
-        "view": "rawSources",
-        "contents": "No sources yet.\n[Add Source Files](command:llmwiki.ingest)",
-        "when": "llmwiki.isWikiWorkspace"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "LLM Wiki",
+      "properties": {
+        "llmwiki.modelFamily": {
+          "type": "string",
+          "default": "claude-opus-4.6",
+          "description": "Preferred GitHub Copilot model family for ingestion enrichment and the @wiki chat participant. Run \"LLM Wiki: Select Model\" from the Command Palette to pick from installed Copilot models. Falls back to any available Copilot model when the requested family is unavailable. Leave blank to always use the first available Copilot model."
+        }
+      }
+    }
   },
   "scripts": {
     "build": "node esbuild.config.mjs",

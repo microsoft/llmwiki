@@ -47,7 +47,7 @@ export async function ingestSource(
       pages_created: [],
       pages_updated: [],
       dry_run: dryRun,
-      error: 'Wiki is not initialized. Run "plaid wiki init" first.',
+      error: 'Wiki is not initialized. Run the "LLM Wiki: Initialize Wiki" command first.',
     };
   }
 

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { join } from 'node:path';
-import { directoryExists, getWikiStatus } from '@llmwiki/shared';
+import { directoryExists, getWikiStatus, WIKI_DIR_NAME } from '@llmwiki/shared';
 
 const DEBOUNCE_MS = 300;
 
@@ -19,8 +19,15 @@ export class StatusBarManager implements vscode.Disposable {
     this._item.command = 'llmwiki.status';
     this._item.show();
 
-    this._wikiWatcher = vscode.workspace.createFileSystemWatcher('**/.wiki/wiki/**/*.md');
-    this._rawWatcher = vscode.workspace.createFileSystemWatcher('**/.wiki/raw/**');
+    // Scope watchers to this workspace folder so opening files from other
+    // wikis doesn't trigger spurious refreshes.
+    const workspaceUri = vscode.Uri.file(workspaceFolder);
+    this._wikiWatcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(workspaceUri, `${WIKI_DIR_NAME}/wiki/**/*.md`),
+    );
+    this._rawWatcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(workspaceUri, `${WIKI_DIR_NAME}/raw/**`),
+    );
 
     this._eventDisposables.push(
       this._wikiWatcher.onDidChange(() => this._debouncedRefresh()),

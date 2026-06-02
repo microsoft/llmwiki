@@ -46,7 +46,7 @@ const AGENTS_CONTENT = `# AGENTS.md
 - **concept** — An idea, theory, or abstract topic
 - **source** — A reference to raw material
 - **summary** — An auto-generated summary of an ingested source
-- **query** — A saved query result page, created by \`plaid wiki query --save\`
+- **query** — A saved query result page
 
 ### Directory Structure
 
@@ -87,7 +87,7 @@ results_count: number     # query pages only — number of results
 
 ### Query Page Frontmatter
 
-Query pages are created by \`plaid wiki query --save\` and use the following frontmatter:
+Query pages use the following frontmatter:
 
 \`\`\`yaml
 type: query
@@ -112,11 +112,10 @@ results_count: <number of results>
 
 ### Ingest Workflow
 
-1. Place raw file in \`raw/\` directory
-2. Run \`plaid wiki ingest <source>\` (supports \`--dry-run\`)
-3. A summary page is created in \`wiki/sources/\`
-4. \`wiki/index.md\` is updated with the new entry
-5. \`wiki/log.md\` records the ingestion event
+1. Place a raw file in the \`raw/\` directory (or run **LLM Wiki: Add Source** from the Command Palette).
+2. The extension automatically ingests new sources and writes a summary page in \`wiki/sources/\`.
+3. \`wiki/index.md\` is updated with the new entry.
+4. \`wiki/log.md\` records the ingestion event.
 
 ### Lint Rules
 
@@ -126,7 +125,7 @@ results_count: <number of results>
 - **stale-entries** (error) — Index entries pointing to deleted files
 - **missing-pages** (info) — Referenced pages that do not exist yet
 
-Run lint: \`plaid wiki lint\` (supports \`--category\` filter)
+Run lint via the **LLM Wiki** chat participant: \`@wiki /lint\`.
 
 ### Cross-Referencing Guidelines
 

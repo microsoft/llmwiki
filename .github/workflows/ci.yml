@@ -28,17 +28,11 @@ jobs:
       - name: Build shared
         run: npm run build --workspace=packages/shared
 
-      - name: Build CLI
-        run: npm run build --workspace=packages/cli
-
       - name: Build VS Code extension
         run: npm run build --workspace=packages/vscode
 
       - name: Lint shared
         run: npm run lint --workspace=packages/shared
-
-      - name: Lint CLI
-        run: npm run lint --workspace=packages/cli
 
       - name: Lint VS Code extension
         run: npm run lint --workspace=packages/vscode

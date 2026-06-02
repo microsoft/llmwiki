@@ -19,11 +19,25 @@ vi.mock('vscode', () => ({
     showInputBox: vi.fn(),
     showOpenDialog: vi.fn(),
     showQuickPick: vi.fn(),
+    withProgress: vi.fn(async (_opts: unknown, task: (progress: unknown, token: unknown) => Promise<unknown>) => {
+      return task({ report: vi.fn() }, { isCancellationRequested: false });
+    }),
   },
   Uri: {
     file: (path: string) => ({ fsPath: path, scheme: 'file' }),
+    joinPath: (base: { fsPath: string }, ...segments: string[]) => ({
+      fsPath: [base.fsPath, ...segments].join('/'),
+      scheme: 'file',
+    }),
   },
-  workspace: {},
+  FileType: { File: 1, Directory: 2, SymbolicLink: 64, Unknown: 0 },
+  ProgressLocation: { Notification: 15, Window: 10, SourceControl: 1 },
+  workspace: {
+    fs: {
+      stat: vi.fn(),
+      readDirectory: vi.fn(),
+    },
+  },
 }));
 
 vi.mock('@llmwiki/shared', () => ({
@@ -51,6 +65,14 @@ vi.mock('node:fs/promises', () => ({
   readdir: vi.fn().mockResolvedValue([]),
   mkdir: vi.fn(),
   stat: vi.fn(),
+  copyFile: vi.fn(),
+  unlink: vi.fn(),
+}));
+
+// llmIngest pulls in vscode.lm and the full enrichment pipeline; stub it
+// out so the bulk-ingest tests can drive the command without side effects.
+vi.mock('../../packages/vscode/src/llmIngest', () => ({
+  llmIngest: vi.fn().mockResolvedValue({ pagesCreated: [], pagesUpdated: [] }),
 }));
 
 import { registerCommands } from '../../packages/vscode/src/commands';
@@ -156,6 +178,97 @@ describe('Command handlers', () => {
       await commandHandlers['llmwiki.ingest']();
 
       expect(vscode.commands.executeCommand).toHaveBeenCalledWith('llmwiki.init');
+    });
+
+    it('should default to the open dialog when no args are supplied', async () => {
+      mockDirectoryExists.mockResolvedValue(true);
+      mockShowQuickPick.mockResolvedValue({ value: 'files' });
+      (vscode.window.showOpenDialog as Mock).mockResolvedValue(undefined);
+
+      await commandHandlers['llmwiki.ingest']();
+
+      // First prompts the user to choose Files vs Folder, then opens the dialog.
+      expect(mockShowQuickPick).toHaveBeenCalled();
+      expect(vscode.window.showOpenDialog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          canSelectFiles: true,
+          canSelectFolders: false,
+          canSelectMany: true,
+        }),
+      );
+    });
+
+    it('should accept a single Uri argument from the explorer context menu', async () => {
+      mockDirectoryExists.mockResolvedValue(true);
+      const fileUri = { fsPath: '/test/raw/note.md', scheme: 'file' };
+      (vscode.workspace.fs.stat as Mock).mockResolvedValue({ type: 1 /* File */ });
+      const { llmIngest } = await import('../../packages/vscode/src/llmIngest');
+
+      await commandHandlers['llmwiki.ingest'](fileUri);
+
+      expect(vscode.window.showOpenDialog).not.toHaveBeenCalled();
+      expect(llmIngest).toHaveBeenCalledTimes(1);
+    });
+
+    it('should accept a multi-selection array from the explorer context menu', async () => {
+      mockDirectoryExists.mockResolvedValue(true);
+      const uris = [
+        { fsPath: '/test/raw/a.md', scheme: 'file' },
+        { fsPath: '/test/raw/b.md', scheme: 'file' },
+      ];
+      (vscode.workspace.fs.stat as Mock).mockResolvedValue({ type: 1 /* File */ });
+      const { llmIngest } = await import('../../packages/vscode/src/llmIngest');
+
+      await commandHandlers['llmwiki.ingest'](uris[0], uris);
+
+      expect(vscode.window.showOpenDialog).not.toHaveBeenCalled();
+      expect(llmIngest).toHaveBeenCalledTimes(2);
+    });
+
+    it('should walk a folder selection and ingest every contained file', async () => {
+      mockDirectoryExists.mockResolvedValue(true);
+      const folderUri = { fsPath: '/test/raw/notes', scheme: 'file' };
+      (vscode.workspace.fs.stat as Mock).mockImplementation(async (u: { fsPath: string }) => {
+        if (u.fsPath === '/test/raw/notes') return { type: 2 /* Directory */ };
+        return { type: 1 /* File */ };
+      });
+      (vscode.workspace.fs.readDirectory as Mock).mockImplementation(async (u: { fsPath: string }) => {
+        if (u.fsPath === '/test/raw/notes') {
+          return [
+            ['a.md', 1 /* File */],
+            ['sub', 2 /* Directory */],
+            ['.hidden', 1 /* File */],       // filtered: dot-prefixed
+            ['node_modules', 2 /* Directory */], // filtered: skip-dir
+          ];
+        }
+        if (u.fsPath === '/test/raw/notes/sub') {
+          return [['b.md', 1 /* File */]];
+        }
+        return [];
+      });
+      const { llmIngest } = await import('../../packages/vscode/src/llmIngest');
+
+      await commandHandlers['llmwiki.ingest'](folderUri);
+
+      // Two real files (a.md + sub/b.md); hidden + node_modules skipped.
+      expect(llmIngest).toHaveBeenCalledTimes(2);
+    });
+
+    it('should show "No files found" when a folder contains no usable files', async () => {
+      mockDirectoryExists.mockResolvedValue(true);
+      const folderUri = { fsPath: '/test/raw/empty', scheme: 'file' };
+      (vscode.workspace.fs.stat as Mock).mockResolvedValue({ type: 2 /* Directory */ });
+      (vscode.workspace.fs.readDirectory as Mock).mockResolvedValue([
+        ['.git', 2 /* Directory */],
+      ]);
+      const { llmIngest } = await import('../../packages/vscode/src/llmIngest');
+
+      await commandHandlers['llmwiki.ingest'](folderUri);
+
+      expect(llmIngest).not.toHaveBeenCalled();
+      expect(mockShowInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('No files found'),
+      );
     });
   });
 

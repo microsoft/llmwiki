@@ -16,6 +16,7 @@ import {
   type IndexEntry,
 } from '@llmwiki/shared';
 import { llmIngest } from './llmIngest';
+import { selectModelInteractively } from './modelSelection';
 import type { WikiPagesTreeDataProvider } from './wikiPagesTree';
 import type { RawSourcesTreeDataProvider } from './rawSourcesTree';
 
@@ -40,6 +41,77 @@ async function ensureInRaw(
   return dest;
 }
 
+/** Directories we never want to walk into during folder ingest. */
+const SKIP_DIRS = new Set(['node_modules', 'out', 'dist', 'build', '.wiki']);
+
+/** True if `value` looks like a vscode.Uri. */
+function isUri(value: unknown): value is vscode.Uri {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'fsPath' in value &&
+    typeof (value as { fsPath: unknown }).fsPath === 'string' &&
+    'scheme' in value
+  );
+}
+
+/**
+ * Recursively walk a folder and return every regular file inside it.
+ * Skips hidden entries (names starting with `.`) and common build/output dirs.
+ */
+async function walkFolder(folder: vscode.Uri): Promise<vscode.Uri[]> {
+  const files: vscode.Uri[] = [];
+  const stack: vscode.Uri[] = [folder];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    let entries: [string, vscode.FileType][];
+    try {
+      entries = await vscode.workspace.fs.readDirectory(current);
+    } catch {
+      continue;
+    }
+    for (const [name, type] of entries) {
+      if (name.startsWith('.') || SKIP_DIRS.has(name)) continue;
+      const child = vscode.Uri.joinPath(current, name);
+      if (type === vscode.FileType.Directory) {
+        stack.push(child);
+      } else if (type === vscode.FileType.File) {
+        files.push(child);
+      }
+    }
+  }
+  return files;
+}
+
+/**
+ * Expand a list of selected URIs into a flat list of files. Folders are
+ * walked recursively; single files are passed through unchanged.
+ */
+async function expandSelectionToFiles(uris: vscode.Uri[]): Promise<vscode.Uri[]> {
+  const files: vscode.Uri[] = [];
+  for (const uri of uris) {
+    let stat: vscode.FileStat;
+    try {
+      stat = await vscode.workspace.fs.stat(uri);
+    } catch {
+      continue;
+    }
+    if (stat.type === vscode.FileType.Directory) {
+      files.push(...(await walkFolder(uri)));
+    } else if (stat.type === vscode.FileType.File) {
+      files.push(uri);
+    }
+  }
+  // Deduplicate by fsPath (e.g. user picked both a folder and a file inside it)
+  const seen = new Set<string>();
+  return files.filter((u) => {
+    const key = resolve(u.fsPath);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 interface TreeProviders {
   entities: WikiPagesTreeDataProvider;
   concepts: WikiPagesTreeDataProvider;
@@ -53,11 +125,11 @@ export function registerCommands(
   providers: TreeProviders,
   outputChannel: vscode.OutputChannel,
 ): void {
-  const reg = (id: string, handler: () => Promise<void>) => {
+  const reg = (id: string, handler: (...args: unknown[]) => Promise<void>) => {
     context.subscriptions.push(
-      vscode.commands.registerCommand(id, async () => {
+      vscode.commands.registerCommand(id, async (...args: unknown[]) => {
         try {
-          await handler();
+          await handler(...args);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           outputChannel.appendLine(`[${id}] Error: ${msg}`);
@@ -89,7 +161,13 @@ export function registerCommands(
   });
 
   // ── llmwiki.ingest ───────────────────────────────────────────
-  reg('llmwiki.ingest', async () => {
+  // Supports three invocation modes:
+  //   1. Command Palette  → no args, opens a file/folder picker (multi-select).
+  //   2. Explorer context → (resource, [resource, …]) — VS Code passes the
+  //      right-clicked resource plus the full multi-selection.
+  //   3. Programmatic     → caller can pass either a single Uri or Uri[].
+  // Folder selections are walked recursively (skipping hidden & build dirs).
+  reg('llmwiki.ingest', async (...args: unknown[]) => {
     if (!(await directoryExists(wikiDir))) {
       const choice = await vscode.window.showWarningMessage(
         'Wiki not initialized.', 'Initialize Now',
@@ -100,16 +178,62 @@ export function registerCommands(
       return;
     }
 
-    const rawUri = vscode.Uri.file(rawDir);
-    const selected = await vscode.window.showOpenDialog({
-      canSelectFiles: true,
-      canSelectFolders: false,
-      canSelectMany: true,
-      defaultUri: rawUri,
-      openLabel: 'Ingest',
-      title: 'Select source file(s) to ingest',
-    });
-    if (!selected || selected.length === 0) return;
+    // Resolve the initial selection from the command arguments.
+    let initialSelection: vscode.Uri[] = [];
+    const [first, second] = args;
+    if (Array.isArray(second) && second.every(isUri)) {
+      initialSelection = second;
+    } else if (Array.isArray(first) && first.every(isUri)) {
+      initialSelection = first;
+    } else if (isUri(first)) {
+      initialSelection = [first];
+    }
+
+    // No selection from the caller → prompt the user.
+    if (initialSelection.length === 0) {
+      // Windows native dialogs cannot select both files AND folders in one
+      // pass — when both flags are true, the OS picker falls back to
+      // folder-only mode. Ask the user which mode they want first.
+      const mode = await vscode.window.showQuickPick(
+        [
+          { label: '$(file) Files', description: 'Pick one or more files to ingest', value: 'files' as const },
+          { label: '$(file-directory) Folder', description: 'Pick a folder (walked recursively)', value: 'folder' as const },
+        ],
+        { title: 'Ingest sources', placeHolder: 'What do you want to ingest?' },
+      );
+      if (!mode) return;
+
+      const rawUri = vscode.Uri.file(rawDir);
+      const picked = await vscode.window.showOpenDialog({
+        canSelectFiles: mode.value === 'files',
+        canSelectFolders: mode.value === 'folder',
+        canSelectMany: true,
+        defaultUri: rawUri,
+        openLabel: 'Ingest',
+        title: mode.value === 'files'
+          ? 'Select source files to ingest'
+          : 'Select folder(s) to ingest',
+      });
+      if (!picked || picked.length === 0) return;
+      initialSelection = picked;
+    }
+
+    // Expand folders to files.
+    const files = await expandSelectionToFiles(initialSelection);
+    if (files.length === 0) {
+      vscode.window.showInformationMessage('No files found in the selection.');
+      return;
+    }
+
+    // Confirm before launching a very large batch.
+    if (files.length > 20) {
+      const confirm = await vscode.window.showWarningMessage(
+        `You are about to ingest ${files.length} files. Continue?`,
+        { modal: true },
+        'Ingest All',
+      );
+      if (confirm !== 'Ingest All') return;
+    }
 
     let totalCreated = 0;
     let totalUpdated = 0;
@@ -119,15 +243,15 @@ export function registerCommands(
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: 'Ingesting files…',
+        title: `Ingesting ${files.length} file${files.length === 1 ? '' : 's'}…`,
         cancellable: true,
       },
       async (progress, cancelToken) => {
-        const total = selected.length;
+        const total = files.length;
         for (let i = 0; i < total; i++) {
           if (cancelToken.isCancellationRequested) break;
 
-          const uri = selected[i];
+          const uri = files[i];
           const fileName = uri.fsPath.split(/[\\/]/).pop() ?? 'file';
           progress.report({ message: `(${i + 1}/${total}) ${fileName}`, increment: (100 / total) });
 
@@ -470,5 +594,10 @@ export function registerCommands(
     } else {
       vscode.window.showWarningMessage(`Wiki refreshed — ${parts.join(', ')}. Use @wiki /lint for details.`);
     }
+  });
+
+  // ── llmwiki.selectModel ─────────────────────────────────────
+  reg('llmwiki.selectModel', async () => {
+    await selectModelInteractively(outputChannel);
   });
 }

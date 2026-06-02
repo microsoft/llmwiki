@@ -7,8 +7,9 @@ import { registerCommands } from './commands';
 import { createStatusBar } from './statusBar';
 import { registerChatParticipant } from './chatParticipant';
 import { llmIngest } from './llmIngest';
+import { registerMcpServerProvider } from './mcpProvider';
 
-import { WIKI_DIR_NAME, directoryExists } from '@llmwiki/shared';
+import { WIKI_DIR_NAME, directoryExists, slugify } from '@llmwiki/shared';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -86,7 +87,9 @@ function registerFullViews(
   const backlinksProvider = new BacklinksTreeDataProvider(wikiProjectRoot);
   const backlinksRegistration = vscode.window.registerTreeDataProvider('backlinks', backlinksProvider);
 
-  const watcher = vscode.workspace.createFileSystemWatcher(`**/${WIKI_DIR_NAME}/wiki/**/*.md`);
+  const watcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(workspaceFolder, `${WIKI_DIR_NAME}/wiki/**/*.md`),
+  );
   watcher.onDidChange(() => { entitiesProvider.refresh(); conceptsProvider.refresh(); backlinksProvider.refresh(); });
   watcher.onDidCreate(() => { entitiesProvider.refresh(); conceptsProvider.refresh(); backlinksProvider.refresh(); });
   watcher.onDidDelete(() => { entitiesProvider.refresh(); conceptsProvider.refresh(); backlinksProvider.refresh(); });
@@ -97,14 +100,28 @@ function registerFullViews(
     dragAndDropController: rawSourcesProvider,
   });
 
-  const rawWatcher = vscode.workspace.createFileSystemWatcher(`**/${WIKI_DIR_NAME}/raw/**`);
-  rawWatcher.onDidChange(() => rawSourcesProvider.refresh());
+  // Use RelativePattern with absolute workspace root — bare-string globs through
+  // dot-prefixed directories (`.wiki/`) are unreliable on Windows because the
+  // underlying file watcher often honours `files.watcherExclude` defaults that
+  // skip hidden directories.
+  const rawWatcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(workspaceFolder, `${WIKI_DIR_NAME}/raw/**`),
+  );
+  outputChannel.appendLine(
+    `[watcher] Watching ${join(workspaceFolder, WIKI_DIR_NAME, 'raw')} for new sources`,
+  );
+  rawWatcher.onDidChange((uri) => {
+    outputChannel.appendLine(`[watcher] onDidChange: ${uri.fsPath}`);
+    rawSourcesProvider.refresh();
+  });
   rawWatcher.onDidCreate((uri) => {
+    outputChannel.appendLine(`[watcher] onDidCreate: ${uri.fsPath}`);
     rawSourcesProvider.refresh();
     // Auto-ingest new files with LLM
     autoIngest(uri, wikiProjectRoot, outputChannel, wikiProviders);
   });
   rawWatcher.onDidDelete((uri) => {
+    outputChannel.appendLine(`[watcher] onDidDelete: ${uri.fsPath}`);
     rawSourcesProvider.refresh();
     // Auto-cleanup wiki pages created from this source
     autoCleanup(uri, wikiProjectRoot, outputChannel, wikiProviders);
@@ -113,6 +130,7 @@ function registerFullViews(
   const wikiProviders = { entities: entitiesProvider, concepts: conceptsProvider, rawSources: rawSourcesProvider };
   registerCommands(context, workspaceFolder, wikiProjectRoot, wikiProviders, outputChannel);
   registerChatParticipant(context, workspaceFolder, outputChannel);
+  registerMcpServerProvider(context, workspaceFolder, outputChannel);
 
   // Fix button opens @wiki /fix in chat
   context.subscriptions.push(
@@ -124,10 +142,130 @@ function registerFullViews(
   const statusBar = createStatusBar(context, wikiProjectRoot);
 
   context.subscriptions.push(entitiesRegistration, conceptsRegistration, watcher, entitiesProvider, conceptsProvider, rawSourcesRegistration, rawWatcher, rawSourcesProvider, backlinksRegistration, backlinksProvider, statusBar);
+
+  // Manual scan command — also resilient backup if the watcher misses an event.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('llmwiki.scanRaw', () =>
+      scanRawForUningested(wikiProjectRoot, outputChannel, wikiProviders, true),
+    ),
+  );
+
+  // Startup scan — picks up any files added to raw/ while the extension
+  // wasn't running, or that the watcher silently missed.
+  void scanRawForUningested(wikiProjectRoot, outputChannel, wikiProviders, false);
 }
 
 export function deactivate(): void {
   // Resources disposed via context.subscriptions
+}
+
+// ── Scan raw/ for files without a matching wiki/sources/{slug}-summary.md ──
+
+async function scanRawForUningested(
+  wikiProjectRoot: string,
+  outputChannel: vscode.OutputChannel,
+  providers: { entities: WikiPagesTreeDataProvider; concepts: WikiPagesTreeDataProvider; rawSources: RawSourcesTreeDataProvider },
+  interactive: boolean,
+): Promise<void> {
+  const rawDir = join(wikiProjectRoot, 'raw');
+  const sourcesDir = join(wikiProjectRoot, 'wiki', 'sources');
+
+  try {
+    const { readdir, stat } = await import('node:fs/promises');
+    const { extname } = await import('node:path');
+
+    // Walk raw/ recursively, collect every regular file
+    const rawFiles: string[] = [];
+    async function walk(dir: string): Promise<void> {
+      const entries = await readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue;
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) await walk(full);
+        else if (entry.isFile()) rawFiles.push(full);
+      }
+    }
+    try {
+      await walk(rawDir);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      outputChannel.appendLine(`[scan] Could not read raw/: ${msg}`);
+      if (interactive) {
+        vscode.window.showWarningMessage(`LLM Wiki: ${msg}`);
+      }
+      return;
+    }
+
+    // Snapshot existing summary pages so we can dedupe O(1)
+    const existingSummaries = new Set<string>();
+    try {
+      const summaryFiles = (await readdir(sourcesDir)) as string[];
+      for (const f of summaryFiles) {
+        if (extname(f) === '.md') existingSummaries.add(f);
+      }
+    } catch {
+      // sources/ may not exist yet — treat as empty
+    }
+
+    const orphans = rawFiles.filter((filePath) => {
+      const slug = slugify(basename(filePath));
+      return !existingSummaries.has(`${slug}-summary.md`);
+    });
+
+    outputChannel.appendLine(
+      `[scan] ${rawFiles.length} file(s) in raw/, ${orphans.length} not yet ingested`,
+    );
+
+    if (orphans.length === 0) {
+      if (interactive) {
+        vscode.window.showInformationMessage('LLM Wiki: All sources are already ingested.');
+      }
+      return;
+    }
+
+    if (interactive && orphans.length > 5) {
+      const choice = await vscode.window.showInformationMessage(
+        `LLM Wiki: Found ${orphans.length} un-ingested source(s). Ingest now?`,
+        { modal: true },
+        'Ingest All',
+      );
+      if (choice !== 'Ingest All') return;
+    }
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Ingesting ${orphans.length} un-ingested source(s)…`,
+        cancellable: true,
+      },
+      async (progress, token) => {
+        for (let i = 0; i < orphans.length; i++) {
+          if (token.isCancellationRequested) break;
+          const filePath = orphans[i];
+          progress.report({
+            message: `${i + 1}/${orphans.length}: ${basename(filePath)}`,
+            increment: 100 / orphans.length,
+          });
+          try {
+            await llmIngest(filePath, wikiProjectRoot, false, outputChannel, progress, token);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            outputChannel.appendLine(`[scan] Failed for ${filePath}: ${msg}`);
+          }
+        }
+      },
+    );
+
+    providers.entities.refresh();
+    providers.concepts.refresh();
+    providers.rawSources.refresh();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    outputChannel.appendLine(`[scan] Error: ${msg}`);
+    if (interactive) {
+      vscode.window.showErrorMessage(`LLM Wiki: scan failed — ${msg}`);
+    }
+  }
 }
 
 // ── Auto-ingest on raw file creation ─────────────────────────────

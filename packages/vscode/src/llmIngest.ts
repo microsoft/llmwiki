@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { join } from 'node:path';
 import { extractText } from './extractText';
+import { selectPreferredModel } from './modelSelection';
 import {
   ingestSource,
   readIndex,
@@ -161,18 +162,10 @@ async function callLlm(
   outputChannel: vscode.OutputChannel,
   token: vscode.CancellationToken,
 ): Promise<LlmAnalysis | null> {
-  let model: vscode.LanguageModelChat;
-  const preferredModels = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'claude-opus-4.6' });
-  if (preferredModels.length > 0) {
-    model = preferredModels[0];
-  } else {
-    outputChannel.appendLine('[llmIngest] claude-opus-4.6 not available — falling back to any Copilot model');
-    const fallback = await vscode.lm.selectChatModels({ vendor: 'copilot' });
-    if (fallback.length === 0) {
-      outputChannel.appendLine('[llmIngest] No Copilot model available — falling back to mechanical ingest');
-      return null;
-    }
-    model = fallback[0];
+  const model = await selectPreferredModel(outputChannel);
+  if (!model) {
+    outputChannel.appendLine('[llmIngest] No Copilot model available — falling back to mechanical ingest');
+    return null;
   }
 
   outputChannel.appendLine(`[llmIngest] Using model: ${model.family}`);

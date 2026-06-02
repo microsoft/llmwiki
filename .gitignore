@@ -1,7 +1,13 @@
 node_modules/
 dist/
+out/
 coverage/
 *.tsbuildinfo
+*.vsix
+.vscode-test/
+
+# Local dev wiki used while building the extension
+.wiki/
 
 # Harness-managed (local only, not committed)
 .harness-state-prompt.md
@@ -9,3 +15,12 @@ coverage/
 .github/skills/
 .github/instructions/
 .github/hooks/
+logs/
+docs/state.json
+docs/activity-log.md
+docs/plan/
+docs/cycle-*.md
+
+# OS / editor noise
+.DS_Store
+Thumbs.db

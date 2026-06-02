@@ -4,32 +4,40 @@
   "description": "A personal knowledge base where the LLM does all the maintenance",
   "type": "module",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/microsoft/llmwiki.git"
+  },
+  "bugs": {
+    "url": "https://github.com/microsoft/llmwiki/issues"
+  },
+  "homepage": "https://github.com/microsoft/llmwiki#readme",
   "workspaces": [
     "packages/shared",
-    "packages/cli",
     "packages/vscode"
   ],
   "scripts": {
-    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/cli && npm run build --workspace=packages/vscode",
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/vscode",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
-    "lint": "npm run lint --workspace=packages/shared && npm run lint --workspace=packages/cli && npm run lint --workspace=packages/vscode",
+    "lint": "npm run lint --workspace=packages/shared && npm run lint --workspace=packages/vscode",
     "dev": "vitest watch"
   },
   "keywords": [
     "wiki",
     "knowledge-base",
-    "cli",
-    "llm"
+    "vscode-extension",
+    "llm",
+    "mcp",
+    "markdown"
   ],
-  "license": "MIT",
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@vitest/coverage-v8": "^3.2.4",
-    "tsup": "^8.0.0",
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"
   }

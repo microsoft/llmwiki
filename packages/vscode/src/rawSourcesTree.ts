@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { join, dirname, basename } from 'node:path';
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, stat, readdir } from 'node:fs/promises';
 import { listSources } from '@llmwiki/shared';
 import type { SourceFile } from '@llmwiki/shared';
 
@@ -27,12 +27,26 @@ export class RawSourceTreeItem extends vscode.TreeItem {
       sourceFile?: SourceFile;
       fullPath?: string;
       directory?: string;
+      placeholder?: boolean;
     },
   ) {
     super(label, collapsibleState);
     this.isDirectory = !!options?.directory;
 
-    if (options?.sourceFile && options.fullPath) {
+    if (options?.placeholder) {
+      // Empty-state placeholder. Keeping a real TreeItem here (instead of a
+      // `viewsWelcome` markdown panel) ensures the tree's drag-and-drop
+      // controller is active so users can drop files even when raw/ is empty.
+      this.contextValue = 'rawSourcePlaceholder';
+      this.iconPath = new vscode.ThemeIcon('cloud-upload');
+      this.description = 'Drop files or folders here, or click to pick…';
+      this.tooltip =
+        'No sources yet. Drag files or folders from your OS or the VS Code Explorer onto this view, or click to open the picker.';
+      this.command = {
+        command: 'llmwiki.ingest',
+        title: 'Ingest Files or Folder',
+      };
+    } else if (options?.sourceFile && options.fullPath) {
       this.contextValue = 'rawSource';
       this.filePath = options.fullPath;
       this.description = `${formatSize(options.sourceFile.size)} • ${formatDate(options.sourceFile.modified)}`;
@@ -59,7 +73,14 @@ export class RawSourcesTreeDataProvider
 
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  readonly dropMimeTypes = ['text/uri-list'];
+  // ── Drag & Drop ────────────────────────────────────────────────
+  //
+  // We accept both `text/uri-list` (used by external OS drags on most
+  // platforms) and `application/vnd.code.uri-list` (used by VS Code's
+  // internal drags from the Explorer or other tree views). Declaring both
+  // is what makes VS Code highlight the entire Raw Sources view as a valid
+  // drop target while the user hovers a file or folder over it.
+  readonly dropMimeTypes = ['text/uri-list', 'application/vnd.code.uri-list'];
   readonly dragMimeTypes: string[] = [];
 
   private readonly rawDir: string;
@@ -68,7 +89,7 @@ export class RawSourcesTreeDataProvider
     this.rawDir = join(workspaceFolder, 'raw');
   }
 
-  // ── Drag & Drop ────────────────────────────────────────────────
+  // ── Drag handlers ──────────────────────────────────────────────
 
   handleDrag(): void {
     // We don't support dragging items out of this tree
@@ -79,36 +100,66 @@ export class RawSourcesTreeDataProvider
     dataTransfer: vscode.DataTransfer,
     _token: vscode.CancellationToken,
   ): Promise<void> {
-    const uriListItem = dataTransfer.get('text/uri-list');
+    // Both MIME variants carry the same payload format — try each in order.
+    const uriListItem =
+      dataTransfer.get('text/uri-list') ??
+      dataTransfer.get('application/vnd.code.uri-list');
     if (!uriListItem) return;
 
     const raw = await uriListItem.asString();
     const uris = raw
       .split(/\r?\n/)
+      .map((line) => line.trim())
       .filter((line) => line.length > 0 && !line.startsWith('#'))
-      .map((line) => vscode.Uri.parse(line.trim()));
+      .map((line) => vscode.Uri.parse(line));
 
     if (uris.length === 0) return;
 
-    // Ensure raw/ directory exists
     await mkdir(this.rawDir, { recursive: true });
 
-    let copied = 0;
+    let copiedFiles = 0;
+    let copiedFolders = 0;
+    const failures: string[] = [];
+
     for (const uri of uris) {
       if (uri.scheme !== 'file') continue;
-      const dest = join(this.rawDir, basename(uri.fsPath));
+      const sourcePath = uri.fsPath;
       try {
-        await copyFile(uri.fsPath, dest);
-        copied++;
+        const info = await stat(sourcePath);
+        if (info.isDirectory()) {
+          // Recursively copy the entire folder into raw/, preserving its
+          // top-level name so dropped folders remain grouped.
+          const folderName = basename(sourcePath);
+          const destRoot = join(this.rawDir, folderName);
+          const filesCopied = await copyDirectoryRecursive(sourcePath, destRoot);
+          if (filesCopied > 0) {
+            copiedFolders++;
+            copiedFiles += filesCopied;
+          }
+        } else if (info.isFile()) {
+          const dest = join(this.rawDir, basename(sourcePath));
+          await copyFile(sourcePath, dest);
+          copiedFiles++;
+        }
       } catch (err) {
-        vscode.window.showWarningMessage(`Failed to copy ${basename(uri.fsPath)}: ${err}`);
+        const msg = err instanceof Error ? err.message : String(err);
+        failures.push(`${basename(sourcePath)}: ${msg}`);
       }
     }
 
-    if (copied > 0) {
+    if (copiedFiles > 0) {
       this.refresh();
+      const folderSuffix = copiedFolders > 0 ? ` from ${copiedFolders} folder(s)` : '';
       vscode.window.showInformationMessage(
-        `Copied ${copied} file(s) to raw/. Use "LLM Wiki: Ingest Source" to process them.`,
+        `Copied ${copiedFiles} file(s)${folderSuffix} to raw/. Ingestion will start automatically.`,
+      );
+    } else if (failures.length === 0) {
+      vscode.window.showInformationMessage('No files were copied — folders were empty or contained only hidden files.');
+    }
+
+    if (failures.length > 0) {
+      vscode.window.showWarningMessage(
+        `Failed to copy ${failures.length} item(s). See output channel for details.`,
       );
     }
   }
@@ -121,6 +172,19 @@ export class RawSourcesTreeDataProvider
     const sources = await listSources(this.rawDir);
 
     if (element === undefined) {
+      // Empty raw/ → show a drop-zone placeholder so the drag-and-drop
+      // controller stays active. Returning [] here would cause VS Code to
+      // fall back to a `viewsWelcome` panel that cannot receive drops.
+      if (sources.length === 0) {
+        return [
+          new RawSourceTreeItem(
+            'No sources yet',
+            vscode.TreeItemCollapsibleState.None,
+            { placeholder: true },
+          ),
+        ];
+      }
+
       const dirSet = new Set<string>();
       for (const source of sources) {
         const dir = dirname(source.path);
@@ -201,4 +265,29 @@ export class RawSourcesTreeDataProvider
   dispose(): void {
     this._onDidChangeTreeData.dispose();
   }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────
+
+/**
+ * Recursively copy every regular file under `src` into `dest`, preserving
+ * the relative directory structure. Hidden files / dirs (those starting
+ * with `.`) are skipped. Returns the number of files copied.
+ */
+async function copyDirectoryRecursive(src: string, dest: string): Promise<number> {
+  let count = 0;
+  await mkdir(dest, { recursive: true });
+  const entries = await readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    const srcPath = join(src, entry.name);
+    const destPath = join(dest, entry.name);
+    if (entry.isDirectory()) {
+      count += await copyDirectoryRecursive(srcPath, destPath);
+    } else if (entry.isFile()) {
+      await copyFile(srcPath, destPath);
+      count++;
+    }
+  }
+  return count;
 }

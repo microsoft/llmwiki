@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-extension",
+      "type": "npm",
+      "script": "build",
+      "path": "packages/vscode",
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "watch-extension",
+      "type": "npm",
+      "script": "watch",
+      "path": "packages/vscode",
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}

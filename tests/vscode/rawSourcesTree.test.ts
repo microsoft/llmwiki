@@ -110,12 +110,15 @@ describe('RawSourcesTreeDataProvider', () => {
       expect(items[2].label).toBe('notes.txt');
     });
 
-    it('should return empty array when no sources exist', async () => {
+    it('should return a placeholder drop-zone item when no sources exist', async () => {
       mockListSources.mockResolvedValue([]);
 
       const items = await provider.getChildren();
 
-      expect(items).toEqual([]);
+      expect(items).toHaveLength(1);
+      expect(items[0].contextValue).toBe('rawSourcePlaceholder');
+      expect(items[0].label).toBe('No sources yet');
+      expect(items[0].command?.command).toBe('llmwiki.ingest');
     });
 
     it('should return only root files when no subdirs exist', async () => {

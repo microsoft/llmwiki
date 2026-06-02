@@ -1,10 +1,11 @@
-# LLM Wiki
+
+# LLM Wiki
 
 > A personal knowledge base where the LLM does all the maintenance.
 
 ## What is this?
 
-LLM Wiki is a pattern — and a toolset — for building personal knowledge bases that compound over time with zero bookkeeping burden. Instead of retrieving from raw documents at query time (like RAG), the LLM **incrementally builds and maintains a persistent wiki**: a structured, interlinked collection of markdown files that sits between you and your raw sources.
+LLM Wiki is a pattern — and a VS Code extension — for building personal knowledge bases that compound over time with zero bookkeeping burden. Instead of retrieving from raw documents at query time (like RAG), the LLM **incrementally builds and maintains a persistent wiki**: a structured, interlinked collection of markdown files that sits between you and your raw sources.
 
 When you add a new source, the LLM reads it, extracts key information, and integrates it into the existing wiki — updating entity pages, revising topic summaries, noting contradictions, and strengthening the evolving synthesis. The knowledge is compiled once and kept current, not re-derived on every query.
 
@@ -18,28 +19,28 @@ The system has three layers:
 |-------|-------|---------|
 | **Raw Sources** | Human | Immutable source documents — articles, papers, notes. The LLM reads but never modifies these. |
 | **Wiki** | LLM | Generated markdown files — summaries, entity pages, concept pages, cross-references. The LLM owns this layer entirely. |
-| **Schema** | Human + LLM | Conventions document (AGENTS.md) defining wiki structure, workflows, and rules. Co-evolved over time. |
+| **Schema** | Human + LLM | Conventions document (`AGENTS.md`) defining wiki structure, workflows, and rules. Co-evolved over time. |
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for full technical design and data-flow diagrams.
 
 ## Packages
 
-The project is an npm workspaces monorepo with three packages:
+The project is an npm workspaces monorepo with two packages:
 
 | Package | npm name | Description |
 |---------|----------|-------------|
-| [`packages/shared`](./packages/shared) | `@llmwiki/shared` | Core wiki operations + MCP server — page I/O, index parsing, log management, lint checks, MCP tool server, `listSources`, `getBacklinks`, `ingestSource`, `queryWiki`, `getWikiStatus`, `slugify`, `excerpt`, `countOccurrences`, `bulkIngest` |
-| [`packages/cli`](./packages/cli) | `@llmwiki/cli` | Commander.js CLI (`plaid wiki` commands) |
-| [`packages/vscode`](./packages/vscode) | `llmwiki-vscode` | VS Code extension — tree views, command palette, status bar |
+| [packages/shared](packages/shared) | `@llmwiki/shared` | Core wiki operations + MCP server — page I/O, index parsing, log management, lint checks, MCP tool server, ingest pipeline, bulk ingest, search, status. |
+| [packages/vscode](packages/vscode) | `llmwiki` | VS Code extension — tree views, command palette, status bar, `@wiki` chat participant, bulk ingest of files and folders. |
 
 ```
-@llmwiki/cli ──depends-on──▶ @llmwiki/shared
-llmwiki-vscode ──depends-on──▶ @llmwiki/shared
+llmwiki (VS Code extension) ──depends-on──▶ @llmwiki/shared
 ```
 
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) v20 or later
+- [VS Code](https://code.visualstudio.com/) 1.93 or later
+- A GitHub Copilot subscription (the extension uses VS Code's Language Model API for ingestion enrichment)
 
 ## Installation
 
@@ -51,157 +52,102 @@ cd llmwiki
 # Install all workspace dependencies
 npm ci
 
-# Build all packages (shared → cli → vscode)
+# Build all packages (shared → vscode)
 npm run build
 
-# Link the CLI globally (optional — makes `plaid` available everywhere)
-npm link --workspace=packages/cli
+# Package the extension into a .vsix
+npm run package --workspace=packages/vscode
 ```
 
-After building, the CLI is available at `packages/cli/dist/cli.js` or, if linked, as the `plaid` command.
+After packaging, install the generated `packages/vscode/llmwiki-0.1.0.vsix` via **Extensions: Install from VSIX…** in the VS Code Command Palette.
 
-## CLI Tool (`plaid wiki`)
+## VS Code Extension
 
-The primary interface is a TypeScript/Node.js CLI invoked as `plaid wiki <command>`. All subcommands inherit a `--json` flag from the `wiki` group for machine-readable output.
+Open the **LLM Wiki** icon in the Activity Bar to access:
+
+- **Entities** — Browse entity pages (people, products, places, organizations).
+- **Concepts** — Browse concept pages (ideas, techniques, patterns).
+- **Raw Sources** — See every file in `raw/` with size & date; right-click to remove.
+- **Backlinks** — See pages that link to the page you currently have open.
 
 ### Commands
 
-| Command | Description |
-|---------|-------------|
-| `plaid wiki init` | Initialize a new wiki knowledge base with directory structure and schema |
-| `plaid wiki ingest <source>` | Ingest a source file — creates a summary page, updates index and log |
-| `plaid wiki query <query>` | Search wiki pages by keyword with scored results |
-| `plaid wiki lint` | Run health checks — broken links, orphan pages, index completeness |
-| `plaid wiki status` | Show wiki statistics — source count, page count, last activity |
-| `plaid wiki list <type>` | List wiki pages, source files, or index entries |
-| `plaid wiki mcp` | Start MCP server for external LLM agent integration |
+| Command | Title | Description |
+|---------|-------|-------------|
+| `llmwiki.init` | LLM Wiki: Initialize Wiki | Scaffold the `.wiki/` directory structure (raw, wiki, index, log, `AGENTS.md`). |
+| `llmwiki.ingest` | LLM Wiki: Ingest Files or Folder | Bulk-ingest one or many files, or every supported file inside a folder (walked recursively). |
+| `llmwiki.query` | LLM Wiki: Query Wiki | Weighted full-text search across index titles, summaries, and page bodies. |
+| `llmwiki.status` | LLM Wiki: Show Status | Show page count, source count, coverage %, last ingest date. |
+| `llmwiki.openPage` | LLM Wiki: Open Page | Quick-open any wiki page by title. |
+| `llmwiki.search` | LLM Wiki: Search Wiki | Filter entities/concepts by title, summary, or tag. |
+| `llmwiki.searchRaw` | LLM Wiki: Search Sources | Find a raw source file by name. |
+| `llmwiki.refresh` | LLM Wiki: Refresh | Run lint-fix, prune orphaned pages, and refresh all views. |
+| `llmwiki.fix` | LLM Wiki: Fix Issues | Open the `@wiki /fix` chat to interactively resolve lint findings. |
+| `llmwiki.removeSource` | LLM Wiki: Remove Source | Delete a raw source plus the wiki pages derived from it. |
 
-### `plaid wiki init`
+### Bulk Ingest
 
-Creates the directory structure and starter files for a new wiki.
+The **LLM Wiki: Ingest Files or Folder** command supports four invocation modes:
 
-```bash
-plaid wiki init [--path <dir>]
-```
+1. **Command Palette** — opens a picker that lets you select multiple files **and/or** folders at once.
+2. **Explorer context menu** — right-click any file or folder anywhere in the Explorer and choose **LLM Wiki: Ingest Files or Folder**. Multi-selections (Ctrl/Shift-click) are honoured.
+3. **Welcome view** — when the raw source list is empty, click **Ingest Files or Folder** from the welcome message.
+4. **Drag-and-drop into `raw/`** — files dropped into the Raw Sources view are auto-ingested by the file watcher.
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--path <dir>` | `.` | Target directory for the wiki |
+When a folder is selected the extension walks it recursively, skipping `.`-prefixed entries and common build directories (`node_modules`, `dist`, `out`, `build`, `.wiki`). External files are copied into `<workspace>/.wiki/raw/` first, then sent through the per-file ingestion pipeline. Selecting more than 20 files triggers a confirmation prompt so you don't kick off a huge batch by accident.
 
-Creates: `raw/`, `wiki/entities/`, `wiki/concepts/`, `wiki/sources/`, `wiki/index.md`, `wiki/log.md`, and `AGENTS.md` with a starter schema template.
+### `@wiki` Chat Participant
 
-### `plaid wiki ingest <source>`
+Open the Chat view and type `@wiki` to converse with the wiki via GitHub Copilot:
 
-Reads a source file, creates a summary page in `wiki/sources/`, updates `wiki/index.md`, and appends to `wiki/log.md`.
-
-```bash
-plaid wiki ingest <source> [--path <dir>] [--dry-run] [--force] [--all]
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--path <dir>` | `.` | Wiki root directory |
-| `--dry-run` | `false` | Preview changes without writing files |
-| `--force` | `false` | Re-ingest even if source was already ingested |
-| `--all` | `false` | Ingest all files from the `raw/` directory |
-
-The source filename is slugified for the output path. Example: `raw/My Report (2024).pdf` produces `wiki/sources/my-report-2024-summary.md`.
-
-### `plaid wiki query <query>`
-
-Searches wiki pages by keyword. Terms are matched against index titles (3× weight), summaries (2× weight), and page bodies (1× weight). Results are returned sorted by score.
-
-```bash
-plaid wiki query <query> [--path <dir>] [--save]
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--path <dir>` | `.` | Wiki root directory |
-| `--save` | `false` | Save query results as a wiki page under `wiki/queries/` |
-
-### `plaid wiki lint`
-
-Runs health checks on the wiki and reports findings by severity.
-
-```bash
-plaid wiki lint [--path <dir>] [--category <categories>]
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--path <dir>` | `.` | Wiki root directory |
-| `--category <categories>` | all | Comma-separated list of check categories to run |
-
-**Lint categories:**
-
-| Category | Severity | Description |
-|----------|----------|-------------|
-| `broken-links` | error | Internal links pointing to non-existent `.md` files |
-| `orphan-pages` | warning | Pages with no inbound links and not listed in the index |
-| `index-completeness` | warning | Wiki pages not listed in `wiki/index.md` |
-| `stale-entries` | error | Index entries pointing to deleted files |
-| `missing-pages` | info | Referenced pages that do not exist yet |
-| `frontmatter-validation` | error/warning/info | Validates page frontmatter: missing type (error), missing title (error), invalid type (warning), missing tags (info), missing created (info) |
-
-Exits with code 1 if any errors are found.
-
-### `plaid wiki status`
-
-Displays a summary of wiki health and activity.
-
-```bash
-plaid wiki status [--path <dir>]
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--path <dir>` | `.` | Wiki root directory |
-
-Reports: source count (`raw/`), wiki page count (`wiki/`), last ingest date, last lint date, orphan page count, and index coverage percentage.
-
-### JSON output
-
-Pass `--json` to the `wiki` group to get structured JSON from any subcommand:
-
-```bash
-plaid wiki --json init
-plaid wiki --json ingest raw/notes.md
-plaid wiki --json lint --category broken-links,stale-entries
-```
-
-Example output from `plaid wiki --json ingest raw/notes.md`:
-
-```json
-{
-  "command": "ingest",
-  "api_version": "1",
-  "status": "success",
-  "pages_created": ["sources/notes-summary.md"],
-  "pages_updated": ["index.md", "log.md"],
-  "dry_run": false
-}
-```
+- `@wiki /status` — show wiki statistics.
+- `@wiki /save` — save the previous answer as a wiki page.
+- `@wiki /lint` — run health checks and get fix suggestions.
+- `@wiki /fix` — auto-fix lint issues using the LLM.
 
 ## MCP Server
 
-The MCP (Model Context Protocol) server exposes all wiki operations to external LLM agents — Claude Desktop, Cursor, VS Code Copilot, and any MCP-compatible client. This enables agents to read, search, create, and maintain wiki content programmatically.
+The `@llmwiki/shared` package also exposes a Model Context Protocol server so external agents (Claude Desktop, Cursor, VS Code Copilot via MCP, etc.) can read, write, and maintain wiki content programmatically.
 
-### Starting the Server
+### Connecting from VS Code (automatic)
 
-```bash
-plaid wiki mcp [--path <dir>]
+If you have the LLM Wiki VS Code extension installed, the MCP server registers itself automatically through VS Code's `mcpServerDefinitionProviders` contribution. No JSON to edit — just initialize a wiki (`LLM Wiki: Initialize`) and the `LLM Wiki` server will appear in the Copilot MCP server list. The launcher is started on demand using the editor's bundled Node.
+
+### Connecting from Claude Desktop / Cursor / other MCP clients
+
+The shared package ships an `llmwiki-mcp` stdio launcher. Add it to your client's MCP configuration:
+
+```jsonc
+// Claude Desktop: claude_desktop_config.json
+// Cursor:        ~/.cursor/mcp.json
+{
+  "mcpServers": {
+    "llmwiki": {
+      "command": "npx",
+      "args": ["-y", "-p", "@llmwiki/shared", "llmwiki-mcp", "/absolute/path/to/your-project/.wiki"]
+    }
+  }
+}
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--path <dir>` | `.` | Wiki root directory |
+If you've installed `@llmwiki/shared` globally (`npm i -g @llmwiki/shared`), you can use `llmwiki-mcp` directly as the command instead of going through `npx`. The wiki-root argument is optional; when omitted the launcher defaults to `<cwd>/.wiki`.
 
-The server communicates over stdio using JSON-RPC. Diagnostic messages go to stderr.
+### Manual JSON config in VS Code
+
+If you'd rather pin the server in a workspace, add a `.vscode/mcp.json`:
+
+```jsonc
+{
+  "servers": {
+    "llmwiki": {
+      "command": "npx",
+      "args": ["-y", "-p", "@llmwiki/shared", "llmwiki-mcp", "${workspaceFolder}/.wiki"]
+    }
+  }
+}
+```
 
 ### Available Tools
-
-The server exposes 14 tools — 7 read-only and 7 write:
 
 **Read tools:**
 
@@ -227,82 +173,17 @@ The server exposes 14 tools — 7 read-only and 7 write:
 | `wiki_update_index` | Update index entry metadata |
 | `wiki_ingest_with_context` | Ingest source with context-rich response |
 
-### Example: MCP Client Configuration
-
-To connect Claude Desktop (or any MCP client):
-
-```json
-{
-  "mcpServers": {
-    "llmwiki": {
-      "command": "plaid",
-      "args": ["wiki", "mcp", "--path", "/path/to/your/wiki"]
-    }
-  }
-}
-```
-
-### Example Tool Invocations
-
-Check wiki health:
-```json
-{ "tool": "wiki_status", "arguments": {} }
-→ { "sourceCount": 12, "wikiPageCount": 8, "indexCoveragePct": 100 }
-```
-
-Search for a topic:
-```json
-{ "tool": "wiki_query", "arguments": { "query": "machine learning" } }
-→ [{ "title": "ML Overview", "path": "concepts/ml-overview.md", "score": 9 }]
-```
-
-Create a new concept page:
-```json
-{ "tool": "wiki_create_concept", "arguments": { "name": "Neural Networks", "content": "# Neural Networks\n\nArtificial neural networks are..." } }
-→ { "status": "created", "path": "concepts/neural-networks.md" }
-```
-
-See [docs/mcp-tools.md](./docs/mcp-tools.md) for the full tool reference with schemas and workflows.
-
-## VS Code Extension
-
-The `llmwiki-vscode` extension (`packages/vscode`) provides an interactive wiki experience inside VS Code.
-
-**Activity Bar views:**
-
-| View | Description |
-|------|-------------|
-| Wiki Pages | Browse pages by index category (Entities, Concepts, Sources) |
-| Raw Sources | Browse files in `raw/` with size and date metadata |
-| Backlinks | Shows pages that link to the currently open wiki page |
-| Lint Findings | Displays lint results grouped by severity |
-
-**Command Palette commands** (prefix `LLM Wiki:`):
-
-`Initialize Wiki` · `Ingest Source` · `Query Wiki` · `Lint Wiki` · `Show Status` · `Open Page` · `Refresh`
-
-**Status bar:** Displays live page count, source count, coverage %, and last ingest date. Updates automatically when wiki or source files change.
-
-**Install from VSIX:**
-
-```bash
-cd packages/vscode
-npm run package          # produces llmwiki-vscode-0.1.0.vsix
-code --install-extension llmwiki-vscode-0.1.0.vsix
-```
+See [docs/mcp-tools.md](docs/mcp-tools.md) for the full tool reference with schemas and workflows.
 
 ## GitHub Actions
 
-Two workflows are included in `.github/workflows/`:
-
-- **`ci.yml`** — Runs on push and PR to `main`. Lints (`tsc --noEmit`), builds, and tests (`vitest`) across all workspaces.
-- **`ingest.yml`** — Triggers on pushes that modify `raw/**` or via manual `workflow_dispatch`. Detects changed files, runs `plaid wiki ingest` on each, and auto-commits wiki updates.
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on push and PR to `main`. It installs dependencies, builds `@llmwiki/shared` and the VS Code extension, type-checks both packages, runs the full test suite with coverage, and writes a coverage summary to the run.
 
 ## Development
 
 ```bash
 npm ci            # Install all workspace dependencies
-npm run build     # Build all packages (shared → cli → vscode)
+npm run build     # Build all packages (shared → vscode)
 npm test          # Run tests (vitest)
 npm run lint      # Type-check all packages (tsc --noEmit)
 npm run dev       # Watch mode (vitest watch)
@@ -313,10 +194,11 @@ npm run coverage  # Run tests with coverage reporting (@vitest/coverage-v8)
 
 ```bash
 npm run build --workspace=packages/shared    # Build shared library
-npm run build --workspace=packages/cli       # Build CLI
 npm run build --workspace=packages/vscode    # Build VS Code extension
+npm run watch --workspace=packages/vscode    # Rebuild extension on change
+npm run package --workspace=packages/vscode  # Produce a .vsix
 ```
 
 ## License
 
-[MIT](./LICENSE) — Copyright (c) Microsoft Corporation.
+[MIT](LICENSE) — Copyright (c) Microsoft Corporation.

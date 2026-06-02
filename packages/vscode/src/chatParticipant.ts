@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
+import { selectPreferredModel } from './modelSelection';
 import {
   queryWiki,
   readIndex,
@@ -16,20 +17,17 @@ import {
 import { WIKI_DIR_NAME } from '@llmwiki/shared';
 
 /**
- * Get the preferred LLM model — claude-opus-4.6 if available, otherwise the request's model.
+ * Get the preferred LLM model — honours the `llmwiki.modelFamily` setting,
+ * falls back to any available Copilot model, and finally to the request's
+ * own model if Copilot exposes nothing else.
  */
 async function getModel(
   requestModel: vscode.LanguageModelChat,
   outputChannel: vscode.OutputChannel,
 ): Promise<vscode.LanguageModelChat> {
-  try {
-    const preferred = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'claude-opus-4.6' });
-    if (preferred.length > 0) {
-      outputChannel.appendLine(`[wiki chat] Using model: ${preferred[0].family}`);
-      return preferred[0];
-    }
-  } catch {
-    // fall through
+  const preferred = await selectPreferredModel(outputChannel);
+  if (preferred) {
+    return preferred;
   }
   outputChannel.appendLine(`[wiki chat] Using request model: ${requestModel.family}`);
   return requestModel;

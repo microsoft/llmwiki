@@ -36,9 +36,29 @@ The `llmwiki` MCP server exposes wiki operations over the [Model Context Protoco
 | **Server name** | `llmwiki` |
 | **Version** | `0.1.0` |
 | **Protocol** | MCP over stdio |
-| **Start command** | `plaid wiki mcp [--path <dir>]` |
+| **Launcher** | `llmwiki-mcp [wiki-root]` (bin from `@llmwiki/shared`) |
+| **VS Code** | Auto-registered by the LLM Wiki extension via `mcpServerDefinitionProviders` |
 | **Response format** | JSON text content |
 | **Error shape** | `{ isError: true }` with an error message string |
+
+### Connecting
+
+**VS Code (Copilot Chat)** — install the LLM Wiki extension and initialize a wiki (`LLM Wiki: Initialize`). The server appears in the Copilot MCP picker automatically; no `.vscode/mcp.json` editing required.
+
+**Claude Desktop / Cursor / standalone clients** — register the stdio launcher in your client's MCP config:
+
+```jsonc
+{
+  "mcpServers": {
+    "llmwiki": {
+      "command": "npx",
+      "args": ["-y", "-p", "@llmwiki/shared", "llmwiki-mcp", "/abs/path/to/your-project/.wiki"]
+    }
+  }
+}
+```
+
+The wiki-root argument is optional; when omitted the launcher defaults to `<cwd>/.wiki`. Install `@llmwiki/shared` globally (`npm i -g @llmwiki/shared`) to skip the `npx` indirection.
 
 The server provides **7 read tools** for querying and inspecting the wiki, and **7 write tools** for creating, updating, and maintaining content. All tools accept a single JSON object as input and return a single JSON object as output.
 

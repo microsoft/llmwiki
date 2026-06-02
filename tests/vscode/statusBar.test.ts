@@ -48,6 +48,17 @@ const mockWatchers: ReturnType<typeof createMockWatcher>[] = [];
 
 vi.mock('vscode', () => ({
   StatusBarAlignment: { Left: 1, Right: 2 },
+  Uri: {
+    file: (fsPath: string) => ({ fsPath, scheme: 'file' }),
+  },
+  RelativePattern: class {
+    base: unknown;
+    pattern: string;
+    constructor(base: unknown, pattern: string) {
+      this.base = base;
+      this.pattern = pattern;
+    }
+  },
   window: {
     createStatusBarItem: vi.fn(() => mockStatusBarItem),
   },
@@ -67,6 +78,7 @@ vi.mock('@llmwiki/shared', () => ({
   readLog: vi.fn(),
   directoryExists: vi.fn(),
   getWikiStatus: vi.fn(),
+  WIKI_DIR_NAME: '.wiki',
 }));
 
 // ── node:fs/promises mock ──────────────────────────────────────
@@ -179,8 +191,10 @@ describe('StatusBarManager', () => {
       manager = createStatusBar(mockContext, WORKSPACE);
 
       expect(mockCreateFileSystemWatcher).toHaveBeenCalledTimes(2);
-      expect(mockCreateFileSystemWatcher).toHaveBeenCalledWith('**/.wiki/wiki/**/*.md');
-      expect(mockCreateFileSystemWatcher).toHaveBeenCalledWith('**/.wiki/raw/**');
+      // Watchers are now scoped to the workspace folder via RelativePattern.
+      const calls = mockCreateFileSystemWatcher.mock.calls.map((c: unknown[]) => c[0]);
+      expect(calls.some((p: any) => p?.pattern === '.wiki/wiki/**/*.md')).toBe(true);
+      expect(calls.some((p: any) => p?.pattern === '.wiki/raw/**')).toBe(true);
     });
   });
 
