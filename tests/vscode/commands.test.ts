@@ -40,7 +40,7 @@ vi.mock('vscode', () => ({
   },
 }));
 
-vi.mock('@llmwiki/shared', () => ({
+vi.mock('@llmwiki/core', () => ({
   readIndex: vi.fn(),
   readPage: vi.fn(),
   writePage: vi.fn(),
@@ -85,7 +85,7 @@ import {
   ingestSource,
   queryWiki,
   getWikiStatus,
-} from '@llmwiki/shared';
+} from '@llmwiki/core';
 import { readdir } from 'node:fs/promises';
 import * as vscode from 'vscode';
 
@@ -372,7 +372,7 @@ describe('Command handlers', () => {
   describe('llmwiki.refresh', () => {
     it('should refresh all providers and run lint-fix', async () => {
       mockDirectoryExists.mockResolvedValue(true);
-      const { lintFix } = await import('@llmwiki/shared');
+      const { lintFix } = await import('@llmwiki/core');
       (lintFix as Mock).mockResolvedValue({
         fixed: [],
         remaining: [],

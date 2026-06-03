@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { readLog, appendEntry, getRecentEntries } from '../../packages/shared/src/log.js';
-import type { LogEntry } from '../../packages/shared/src/log.js';
+import { readLog, appendEntry, getRecentEntries } from '../../packages/core/src/log.js';
+import type { LogEntry } from '../../packages/core/src/log.js';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

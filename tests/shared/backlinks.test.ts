@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { getBacklinks } from '../../packages/shared/src/backlinks.js';
-import { writePage } from '../../packages/shared/src/wiki.js';
+import { getBacklinks } from '../../packages/core/src/backlinks.js';
+import { writePage } from '../../packages/core/src/wiki.js';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

@@ -1,4 +1,4 @@
-# @llmwiki/shared
+# @llmwiki/core
 
 Core wiki operations and Model Context Protocol (MCP) server for [LLM Wiki](https://github.com/microsoft/llmwiki).
 
@@ -7,7 +7,7 @@ This package powers the [`llmwiki` VS Code extension](https://github.com/microso
 ## Install
 
 ```bash
-npm install @llmwiki/shared
+npm install @llmwiki/core
 ```
 
 ## Use as a library
@@ -19,7 +19,7 @@ import {
   queryWiki,
   lintWiki,
   createMcpServer,
-} from '@llmwiki/shared';
+} from '@llmwiki/core';
 ```
 
 See the [main README](https://github.com/microsoft/llmwiki#readme) for the full API surface.
@@ -35,7 +35,7 @@ npx llmwiki-mcp ./.wiki
 # Or from any MCP client config (Claude Desktop, Cursor, .vscode/mcp.json):
 {
   "command": "npx",
-  "args": ["-y", "@llmwiki/shared", "llmwiki-mcp", "./.wiki"]
+  "args": ["-y", "@llmwiki/core", "llmwiki-mcp", "./.wiki"]
 }
 ```
 

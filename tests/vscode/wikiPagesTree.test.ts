@@ -41,7 +41,7 @@ vi.mock('vscode', () => ({
   },
 }));
 
-vi.mock('@llmwiki/shared', () => ({
+vi.mock('@llmwiki/core', () => ({
   readIndex: vi.fn(),
 }));
 
@@ -49,7 +49,7 @@ import {
   WikiPagesTreeDataProvider,
   WikiTreeItem,
 } from '../../packages/vscode/src/wikiPagesTree';
-import { readIndex } from '@llmwiki/shared';
+import { readIndex } from '@llmwiki/core';
 import { join } from 'node:path';
 
 const mockReadIndex = readIndex as Mock;

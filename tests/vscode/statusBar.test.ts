@@ -72,7 +72,7 @@ vi.mock('vscode', () => ({
 }));
 
 // ── shared mock ────────────────────────────────────────────────
-vi.mock('@llmwiki/shared', () => ({
+vi.mock('@llmwiki/core', () => ({
   readIndex: vi.fn(),
   listPages: vi.fn(),
   readLog: vi.fn(),
@@ -87,7 +87,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 import { createStatusBar, StatusBarManager } from '../../packages/vscode/src/statusBar';
-import { readIndex, listPages, readLog, directoryExists, getWikiStatus } from '@llmwiki/shared';
+import { readIndex, listPages, readLog, directoryExists, getWikiStatus } from '@llmwiki/core';
 import { readdir } from 'node:fs/promises';
 import * as vscode from 'vscode';
 import { join } from 'node:path';

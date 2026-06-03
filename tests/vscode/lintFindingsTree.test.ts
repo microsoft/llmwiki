@@ -44,7 +44,7 @@ import {
   LintFindingsTreeDataProvider,
   LintFindingTreeItem,
 } from '../../packages/vscode/src/lintFindingsTree';
-import type { LintFinding } from '@llmwiki/shared';
+import type { LintFinding } from '@llmwiki/core';
 import { join } from 'node:path';
 
 const WORKSPACE = '/test/workspace';

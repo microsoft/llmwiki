@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { lintFix } from '../../packages/shared/src/lint.js';
-import { lintWiki } from '../../packages/shared/src/lint.js';
-import { writeIndex, readIndex } from '../../packages/shared/src/index-ops.js';
-import { writePage, readPage } from '../../packages/shared/src/wiki.js';
+import { lintFix } from '../../packages/core/src/lint.js';
+import { lintWiki } from '../../packages/core/src/lint.js';
+import { writeIndex, readIndex } from '../../packages/core/src/index-ops.js';
+import { writePage, readPage } from '../../packages/core/src/wiki.js';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

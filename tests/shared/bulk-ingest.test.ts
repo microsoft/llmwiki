@@ -7,7 +7,7 @@ import {
   bulkIngest,
   type BulkIngestOptions,
   type BulkIngestResult,
-} from '../../packages/shared/src/bulk-ingest.js';
+} from '../../packages/core/src/bulk-ingest.js';
 
 describe('bulkIngest', () => {
   let tmpDir: string;
@@ -228,7 +228,7 @@ describe('bulkIngest', () => {
 
     // Ingest only the first file
     const { ingestSource } = await import(
-      '../../packages/shared/src/ingest.js'
+      '../../packages/core/src/ingest.js'
     );
     await ingestSource(join(rawDir, 'existing.txt'), tmpDir, false);
 

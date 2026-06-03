@@ -25,14 +25,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build shared
-        run: npm run build --workspace=packages/shared
+      - name: Build core
+        run: npm run build --workspace=packages/core
 
       - name: Build VS Code extension
         run: npm run build --workspace=packages/vscode
 
-      - name: Lint shared
-        run: npm run lint --workspace=packages/shared
+      - name: Lint core
+        run: npm run lint --workspace=packages/core
 
       - name: Lint VS Code extension
         run: npm run lint --workspace=packages/vscode

@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { handleWriteToolCall } from '../../../packages/shared/src/mcp/write-tools.js';
-import { readPage, writePage } from '../../../packages/shared/src/wiki.js';
-import { readIndex, addEntry } from '../../../packages/shared/src/index-ops.js';
-import { addCrosslinks } from '../../../packages/shared/src/wiki.js';
-import { updateIndexEntry } from '../../../packages/shared/src/index-ops.js';
+import { handleWriteToolCall } from '../../../packages/core/src/mcp/write-tools.js';
+import { readPage, writePage } from '../../../packages/core/src/wiki.js';
+import { readIndex, addEntry } from '../../../packages/core/src/index-ops.js';
+import { addCrosslinks } from '../../../packages/core/src/wiki.js';
+import { updateIndexEntry } from '../../../packages/core/src/index-ops.js';
 
 let wikiRoot: string;
 let wikiDir: string;

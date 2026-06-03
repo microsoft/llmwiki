@@ -1,13 +1,14 @@
 import * as vscode from 'vscode';
 import { join } from 'node:path';
-import { WIKI_DIR_NAME } from '@llmwiki/shared';
+import { existsSync } from 'node:fs';
+import { WIKI_DIR_NAME } from '@llmwiki/core';
 
 /**
  * Registers an `McpServerDefinitionProvider` that exposes the `llmwiki` MCP
  * server to Copilot Chat (and any other MCP-aware consumer in VS Code).
  *
  * The provider points at the `llmwiki-mcp` launcher shipped by the
- * `@llmwiki/shared` package — we resolve it through `createRequire` so that
+ * `@llmwiki/core` package — we resolve it through `createRequire` so that
  * the path stays correct whether the extension is installed from the VS
  * Marketplace or run from a development checkout.
  *
@@ -33,18 +34,24 @@ export function registerMcpServerProvider(
 
   const wikiRoot = join(workspaceFolder, WIKI_DIR_NAME);
 
-  // Resolve the launcher script via Node's resolution algorithm so it works
-  // both in development (`node_modules/@llmwiki/shared/dist/...`) and when
-  // bundled into the .vsix (where `node_modules` may be flattened).
-  let launcherPath: string;
-  try {
-    // `require` is provided by esbuild's CJS output; we don't import it from
-    // 'node:module' because that would require ESM in the host bundle.
-    launcherPath = require.resolve('@llmwiki/shared/mcp-bin');
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    outputChannel.appendLine(`[mcp] Could not locate llmwiki-mcp launcher: ${msg}`);
-    return undefined;
+  // Locate the MCP launcher. The build step bundles a self-contained copy at
+  // `out/mcp-server.cjs` (so it works in the packaged VSIX, which ships no
+  // node_modules). Fall back to resolving the `@llmwiki/core` launcher when
+  // running from a dev checkout where the bundle may be absent.
+  let launcherPath: string | undefined;
+  const bundled = context.asAbsolutePath(join('out', 'mcp-server.cjs'));
+  if (existsSync(bundled)) {
+    launcherPath = bundled;
+  } else {
+    try {
+      // `require` is provided by esbuild's CJS output; we don't import it from
+      // 'node:module' because that would require ESM in the host bundle.
+      launcherPath = require.resolve('@llmwiki/core/mcp-bin');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      outputChannel.appendLine(`[mcp] Could not locate llmwiki-mcp launcher: ${msg}`);
+      return undefined;
+    }
   }
 
   const emitter = new vscode.EventEmitter<void>();

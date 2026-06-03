@@ -11,6 +11,12 @@ When you add a new source, the LLM reads it, extracts key information, and integ
 
 You never write the wiki yourself. You curate sources, ask questions, and think. The LLM handles summarizing, cross-referencing, filing, and every other piece of maintenance that makes a knowledge base actually useful over time.
 
+## Example interface
+
+![LLM Wiki running in VS Code — tree views for entities, concepts, raw sources, and backlinks on the left, a wiki page in the editor, and the @wiki chat participant answering a cross-document question on the right.](docs/images/interface.png)
+
+The LLM Wiki sidebar surfaces **Entities**, **Concepts**, **Raw Sources**, and **Backlinks** tree views. The generated wiki pages open in the editor, and the `@wiki` chat participant answers questions that synthesize across multiple sources.
+
 ## Architecture
 
 The system has three layers:
@@ -29,11 +35,11 @@ The project is an npm workspaces monorepo with two packages:
 
 | Package | npm name | Description |
 |---------|----------|-------------|
-| [packages/shared](packages/shared) | `@llmwiki/shared` | Core wiki operations + MCP server — page I/O, index parsing, log management, lint checks, MCP tool server, ingest pipeline, bulk ingest, search, status. |
+| [packages/core](packages/core) | `@llmwiki/core` | Core wiki operations + MCP server — page I/O, index parsing, log management, lint checks, MCP tool server, ingest pipeline, bulk ingest, search, status. |
 | [packages/vscode](packages/vscode) | `llmwiki` | VS Code extension — tree views, command palette, status bar, `@wiki` chat participant, bulk ingest of files and folders. |
 
 ```
-llmwiki (VS Code extension) ──depends-on──▶ @llmwiki/shared
+llmwiki (VS Code extension) ──depends-on──▶ @llmwiki/core
 ```
 
 ## Prerequisites
@@ -59,7 +65,7 @@ npm run build
 npm run package --workspace=packages/vscode
 ```
 
-After packaging, install the generated `packages/vscode/llmwiki-0.1.0.vsix` via **Extensions: Install from VSIX…** in the VS Code Command Palette.
+After packaging, install the generated `packages/vscode/llmwiki-0.1.2.vsix` via **Extensions: Install from VSIX…** in the VS Code Command Palette.
 
 ## VS Code Extension
 
@@ -107,7 +113,7 @@ Open the Chat view and type `@wiki` to converse with the wiki via GitHub Copilot
 
 ## MCP Server
 
-The `@llmwiki/shared` package also exposes a Model Context Protocol server so external agents (Claude Desktop, Cursor, VS Code Copilot via MCP, etc.) can read, write, and maintain wiki content programmatically.
+The `@llmwiki/core` package also exposes a Model Context Protocol server so external agents (Claude Desktop, Cursor, VS Code Copilot via MCP, etc.) can read, write, and maintain wiki content programmatically.
 
 ### Connecting from VS Code (automatic)
 
@@ -124,13 +130,13 @@ The shared package ships an `llmwiki-mcp` stdio launcher. Add it to your client'
   "mcpServers": {
     "llmwiki": {
       "command": "npx",
-      "args": ["-y", "-p", "@llmwiki/shared", "llmwiki-mcp", "/absolute/path/to/your-project/.wiki"]
+      "args": ["-y", "-p", "@llmwiki/core", "llmwiki-mcp", "/absolute/path/to/your-project/.wiki"]
     }
   }
 }
 ```
 
-If you've installed `@llmwiki/shared` globally (`npm i -g @llmwiki/shared`), you can use `llmwiki-mcp` directly as the command instead of going through `npx`. The wiki-root argument is optional; when omitted the launcher defaults to `<cwd>/.wiki`.
+If you've installed `@llmwiki/core` globally (`npm i -g @llmwiki/core`), you can use `llmwiki-mcp` directly as the command instead of going through `npx`. The wiki-root argument is optional; when omitted the launcher defaults to `<cwd>/.wiki`.
 
 ### Manual JSON config in VS Code
 
@@ -141,7 +147,7 @@ If you'd rather pin the server in a workspace, add a `.vscode/mcp.json`:
   "servers": {
     "llmwiki": {
       "command": "npx",
-      "args": ["-y", "-p", "@llmwiki/shared", "llmwiki-mcp", "${workspaceFolder}/.wiki"]
+      "args": ["-y", "-p", "@llmwiki/core", "llmwiki-mcp", "${workspaceFolder}/.wiki"]
     }
   }
 }
@@ -177,7 +183,7 @@ See [docs/mcp-tools.md](docs/mcp-tools.md) for the full tool reference with sche
 
 ## GitHub Actions
 
-[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on push and PR to `main`. It installs dependencies, builds `@llmwiki/shared` and the VS Code extension, type-checks both packages, runs the full test suite with coverage, and writes a coverage summary to the run.
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on push and PR to `main`. It installs dependencies, builds `@llmwiki/core` and the VS Code extension, type-checks both packages, runs the full test suite with coverage, and writes a coverage summary to the run.
 
 ## Development
 
@@ -193,7 +199,7 @@ npm run coverage  # Run tests with coverage reporting (@vitest/coverage-v8)
 **Per-package commands:**
 
 ```bash
-npm run build --workspace=packages/shared    # Build shared library
+npm run build --workspace=packages/core    # Build core library
 npm run build --workspace=packages/vscode    # Build VS Code extension
 npm run watch --workspace=packages/vscode    # Rebuild extension on change
 npm run package --workspace=packages/vscode  # Produce a .vsix

@@ -4,7 +4,7 @@
     "rootDir": ".",
     "outDir": "dist",
     "paths": {
-      "@llmwiki/shared": ["./packages/shared/src/index.ts"]
+      "@llmwiki/core": ["./packages/core/src/index.ts"]
     }
   },
   "include": ["packages/*/src"],

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { renamePage, writePage, readPage, getPageLinks } from '../../packages/shared/src/wiki.js';
-import { addEntry, readIndex } from '../../packages/shared/src/index-ops.js';
+import { renamePage, writePage, readPage, getPageLinks } from '../../packages/core/src/wiki.js';
+import { addEntry, readIndex } from '../../packages/core/src/index-ops.js';
 import { mkdtemp, rm, writeFile, stat, readFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

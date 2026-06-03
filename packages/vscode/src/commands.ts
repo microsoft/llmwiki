@@ -14,7 +14,7 @@ import {
   readPage,
   slugify,
   type IndexEntry,
-} from '@llmwiki/shared';
+} from '@llmwiki/core';
 import { llmIngest } from './llmIngest';
 import { selectModelInteractively } from './modelSelection';
 import type { WikiPagesTreeDataProvider } from './wikiPagesTree';
@@ -490,7 +490,7 @@ export function registerCommands(
 
   // ── llmwiki.searchRaw ───────────────────────────────────────
   reg('llmwiki.searchRaw', async () => {
-    const { listSources } = await import('@llmwiki/shared');
+    const { listSources } = await import('@llmwiki/core');
     const sources = await listSources(rawDir);
 
     if (sources.length === 0) {
@@ -573,7 +573,7 @@ export function registerCommands(
     }
 
     // Step 2: Run lint-fix to resolve stale entries, missing index, frontmatter
-    const { lintFix } = await import('@llmwiki/shared');
+    const { lintFix } = await import('@llmwiki/core');
     const fixResult = await lintFix(workspaceFolder, { fixOrphans: true });
 
     // Step 3: Check remaining issues

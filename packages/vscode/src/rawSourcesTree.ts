@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import { join, dirname, basename } from 'node:path';
 import { copyFile, mkdir, stat, readdir } from 'node:fs/promises';
-import { listSources } from '@llmwiki/shared';
-import type { SourceFile } from '@llmwiki/shared';
+import { listSources } from '@llmwiki/core';
+import type { SourceFile } from '@llmwiki/core';
 
 export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

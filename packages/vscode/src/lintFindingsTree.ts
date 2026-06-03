@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { join } from 'node:path';
-import type { LintFinding } from '@llmwiki/shared';
+import type { LintFinding } from '@llmwiki/core';
 
 function severityIcon(severity: 'error' | 'warning' | 'info'): vscode.ThemeIcon {
   return new vscode.ThemeIcon(severity);

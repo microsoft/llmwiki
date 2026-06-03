@@ -70,8 +70,8 @@ The conventions document that tells the LLM how the wiki is structured and what 
 - **Language:** TypeScript (ES2022 target, NodeNext modules, strict mode)
 - **Build tools:** [esbuild](https://esbuild.github.io/) for the VS Code extension, `tsc` for the shared library
 - **Test framework:** [Vitest](https://vitest.dev/) (single config at the repo root)
-- **Frontmatter parsing:** [gray-matter](https://github.com/jonschlinkert/gray-matter) (in `@llmwiki/shared`)
-- **MCP SDK:** [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) (in `@llmwiki/shared`)
+- **Frontmatter parsing:** [gray-matter](https://github.com/jonschlinkert/gray-matter) (in `@llmwiki/core`)
+- **MCP SDK:** [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) (in `@llmwiki/core`)
 - **Monorepo:** npm workspaces with build order `shared → vscode`
 - **Distribution:** `npm run package --workspace=packages/vscode` produces a `.vsix`
 
@@ -82,7 +82,7 @@ The project is an npm workspaces monorepo with two packages:
 ```
 llmwiki/
 ├── packages/
-│   ├── shared/                     # @llmwiki/shared — core wiki operations + MCP server
+│   ├── core/                       # @llmwiki/core — core wiki operations + MCP server
 │   │   ├── src/
 │   │   │   ├── index.ts            # Barrel export
 │   │   │   ├── constants.ts        # API_VERSION
@@ -110,7 +110,7 @@ llmwiki/
 │   │   │       ├── read-tools.ts   # 7 read-only tools
 │   │   │       ├── write-tools.ts  # 7 write tools
 │   │   │       └── bin.ts          # llmwiki-mcp stdio launcher (shebang + StdioServerTransport)
-│   │   ├── package.json            # @llmwiki/shared (bin: llmwiki-mcp)
+│   │   ├── package.json            # @llmwiki/core (bin: llmwiki-mcp)
 │   │   └── tsconfig.json
 │   │
 │   └── vscode/                     # llmwiki — VS Code extension
@@ -136,7 +136,7 @@ llmwiki/
 │   └── workflows/
 │       └── ci.yml                  # CI — lint, build, test on push/PR to main
 ├── package.json                    # Workspace root — workspaces:
-│                                   #   [packages/shared, packages/vscode]
+│                                   #   [packages/core, packages/vscode]
 ├── tsconfig.base.json              # Shared TypeScript config
 ├── tsconfig.json                   # Root references
 ├── vitest.config.ts                # Single test config
@@ -206,7 +206,7 @@ tags: []
 
 ## VS Code Extension Architecture
 
-The extension (`packages/vscode`) is the primary UI. It never duplicates wiki logic — every operation delegates to `@llmwiki/shared`.
+The extension (`packages/vscode`) is the primary UI. It never duplicates wiki logic — every operation delegates to `@llmwiki/core`.
 
 ### Activation
 
@@ -310,17 +310,17 @@ The extension contributes a chat participant for GitHub Copilot Chat:
 
 ### Bundling
 
-The extension uses esbuild (CJS format) with `vscode` as an external. Packaging via `vsce package --no-dependencies` produces a `.vsix` file with `@llmwiki/shared` bundled inline.
+The extension uses esbuild (CJS format) with `vscode` as an external. Packaging via `vsce package --no-dependencies` produces a `.vsix` file with `@llmwiki/core` bundled inline.
 
 ## MCP Server Architecture
 
-The MCP server lives in `@llmwiki/shared` and exposes wiki operations via the [Model Context Protocol](https://modelcontextprotocol.io/), enabling external LLM agents (Claude Desktop, Cursor, VS Code Copilot, etc.) to read and write wiki content programmatically. The shared library exports `createMcpServer` plus per-tool handlers, and ships a stdio launcher binary (`llmwiki-mcp`) so any MCP-compatible client can spawn a server pointed at a `.wiki/` directory.
+The MCP server lives in `@llmwiki/core` and exposes wiki operations via the [Model Context Protocol](https://modelcontextprotocol.io/), enabling external LLM agents (Claude Desktop, Cursor, VS Code Copilot, etc.) to read and write wiki content programmatically. The shared library exports `createMcpServer` plus per-tool handlers, and ships a stdio launcher binary (`llmwiki-mcp`) so any MCP-compatible client can spawn a server pointed at a `.wiki/` directory.
 
 ### Launcher (`llmwiki-mcp`)
 
-`packages/shared/src/mcp/bin.ts` is the executable entry point declared in the package `bin` field. It accepts a single argument — the path to a wiki root (defaulting to `./.wiki`) — validates the directory exists, builds a server via `createMcpServer({ wikiRoot })`, and connects it to a `StdioServerTransport`. The CJS bundle output is `dist/mcp/bin.js` with a Node shebang preserved by tsc.
+`packages/core/src/mcp/bin.ts` is the executable entry point declared in the package `bin` field. It accepts a single argument — the path to a wiki root (defaulting to `./.wiki`) — validates the directory exists, builds a server via `createMcpServer({ wikiRoot })`, and connects it to a `StdioServerTransport`. The CJS bundle output is `dist/mcp/bin.js` with a Node shebang preserved by tsc.
 
-Once `@llmwiki/shared` is installed, the launcher is invoked as:
+Once `@llmwiki/core` is installed, the launcher is invoked as:
 
 ```bash
 npx llmwiki-mcp ./.wiki
@@ -330,7 +330,7 @@ This is what `mcp.json` entries (Claude Desktop, Cursor, `.vscode/mcp.json`) poi
 
 ### VS Code Auto-Registration
 
-`packages/vscode/src/mcpProvider.ts` calls `vscode.lm.registerMcpServerDefinitionProvider` (stable API, requires VS Code ≥ 1.101) to advertise the launcher to Copilot automatically when a `.wiki` workspace is detected. The provider resolves `@llmwiki/shared/mcp-bin` via `require.resolve`, builds a `vscode.McpStdioServerDefinition` pointing at `process.execPath <launcher> <wikiRoot>`, and exposes it under the id `llmwiki`. No `mcp.json` is required for the VS Code path.
+`packages/vscode/src/mcpProvider.ts` calls `vscode.lm.registerMcpServerDefinitionProvider` (stable API, requires VS Code ≥ 1.101) to advertise the launcher to Copilot automatically when a `.wiki` workspace is detected. The provider resolves `@llmwiki/core/mcp-bin` via `require.resolve`, builds a `vscode.McpStdioServerDefinition` pointing at `process.execPath <launcher> <wikiRoot>`, and exposes it under the id `llmwiki`. No `mcp.json` is required for the VS Code path.
 
 ### Tool Inventory
 
@@ -370,7 +370,7 @@ External LLM Agent
      │         │
      ▼         ▼
 ┌─────────────────────┐
-│ @llmwiki/shared     │
+│ @llmwiki/core       │
 │ (core operations)   │
 └────────┬────────────┘
          │
@@ -481,7 +481,7 @@ llmwiki.lint or @wiki /lint
 
 ### CI (`ci.yml`)
 
-Runs on every push and pull request to `main`. Executes lint (`tsc --noEmit`), build, and test (`vitest run` with coverage) for `@llmwiki/shared` and the VS Code extension on Node.js 20.
+Runs on every push and pull request to `main`. Executes lint (`tsc --noEmit`), build, and test (`vitest run` with coverage) for `@llmwiki/core` and the VS Code extension on Node.js 20.
 
 ## Module Dependencies
 
@@ -497,7 +497,7 @@ Runs on every push and pull request to `main`. Executes lint (`tsc --noEmit`), b
                         │
                         ▼
             ┌─────────────────────┐
-            │   @llmwiki/shared   │
+            │   @llmwiki/core     │
             │   (core + MCP)      │
             └─────────────────────┘
 ```
@@ -506,17 +506,17 @@ Runs on every push and pull request to `main`. Executes lint (`tsc --noEmit`), b
 
 ```
 extension.ts
-  └─► commands.ts ──► @llmwiki/shared (readIndex, directoryExists, lintWiki,
+  └─► commands.ts ──► @llmwiki/core (readIndex, directoryExists, lintWiki,
   │                    appendEntry, ingestSource, queryWiki, getWikiStatus)
   │                  └─► llmIngest.ts (LM API enrichment)
-  └─► wikiPagesTree.ts ──► @llmwiki/shared (readIndex)
-  └─► rawSourcesTree.ts ──► @llmwiki/shared (listSources)
-  └─► backlinksTree.ts ──► @llmwiki/shared (getBacklinks)
-  └─► lintFindingsTree.ts ──► @llmwiki/shared (LintFinding type)
-  └─► statusBar.ts ──► @llmwiki/shared (directoryExists, getWikiStatus)
-  └─► chatParticipant.ts ──► @llmwiki/shared (queryWiki, lintWiki, writePage, …)
+  └─► wikiPagesTree.ts ──► @llmwiki/core (readIndex)
+  └─► rawSourcesTree.ts ──► @llmwiki/core (listSources)
+  └─► backlinksTree.ts ──► @llmwiki/core (getBacklinks)
+  └─► lintFindingsTree.ts ──► @llmwiki/core (LintFinding type)
+  └─► statusBar.ts ──► @llmwiki/core (directoryExists, getWikiStatus)
+  └─► chatParticipant.ts ──► @llmwiki/core (queryWiki, lintWiki, writePage, …)
   └─► mcpProvider.ts ──► vscode.lm.registerMcpServerDefinitionProvider
-                         (spawns `@llmwiki/shared/mcp-bin` over stdio)
+                         (spawns `@llmwiki/core/mcp-bin` over stdio)
 ```
 
 ### Shared Library Modules
@@ -560,7 +560,7 @@ extension.ts
 
 ### Why a shared library + MCP server?
 
-- **Single source of behaviour.** `@llmwiki/shared` implements every wiki operation. The extension and the MCP server both consume it — there is no behaviour duplication.
+- **Single source of behaviour.** `@llmwiki/core` implements every wiki operation. The extension and the MCP server both consume it — there is no behaviour duplication.
 - **Agent interop via MCP.** External LLM agents (Claude Desktop, Cursor, …) can read and write the same wiki the extension uses, with strict path-traversal and frontmatter safety checks built in.
 - **Testable.** The library is plain TypeScript with no UI dependencies, so the vast majority of behaviour is unit-tested against fixture wikis.
 
@@ -584,6 +584,6 @@ extension.ts
 
 ### Why a monorepo with npm workspaces?
 
-- **Shared logic, multiple consumers.** The core wiki operations live in `@llmwiki/shared` and are consumed by both the extension and the MCP server without duplication.
+- **Shared logic, multiple consumers.** The core wiki operations live in `@llmwiki/core` and are consumed by both the extension and the MCP server without duplication.
 - **Atomic changes.** A single PR can update the shared library and the extension together, avoiding version drift.
 - **Simple tooling.** npm workspaces require no additional monorepo tools — `npm ci` at the root resolves all cross-package dependencies via symlinks.

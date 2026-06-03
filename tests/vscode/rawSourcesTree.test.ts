@@ -41,7 +41,7 @@ vi.mock('vscode', () => ({
   },
 }));
 
-vi.mock('@llmwiki/shared', () => ({
+vi.mock('@llmwiki/core', () => ({
   listSources: vi.fn(),
 }));
 
@@ -49,7 +49,7 @@ import {
   RawSourcesTreeDataProvider,
   RawSourceTreeItem,
 } from '../../packages/vscode/src/rawSourcesTree';
-import { listSources } from '@llmwiki/shared';
+import { listSources } from '@llmwiki/core';
 import { join } from 'node:path';
 
 const mockListSources = listSources as Mock;

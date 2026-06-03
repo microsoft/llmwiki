@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { join } from 'node:path';
-import { readIndex } from '@llmwiki/shared';
-import type { IndexEntry } from '@llmwiki/shared';
+import { readIndex } from '@llmwiki/core';
+import type { IndexEntry } from '@llmwiki/core';
 
 export class WikiTreeItem extends vscode.TreeItem {
   readonly pagePath?: string;

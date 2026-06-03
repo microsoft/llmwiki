@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "llmwiki": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/packages/core/dist/mcp/bin.js",
+        "${workspaceFolder}/.wiki"
+      ],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}

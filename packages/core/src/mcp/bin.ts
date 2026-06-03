@@ -4,7 +4,7 @@
  *
  * Usage:
  *   llmwiki-mcp [wiki-root]
- *   npx -p @llmwiki/shared llmwiki-mcp [wiki-root]
+ *   npx -p @llmwiki/core llmwiki-mcp [wiki-root]
  *
  * If `wiki-root` is omitted it defaults to `<cwd>/.wiki`, matching the
  * directory created by `LLM Wiki: Initialize` in the VS Code extension.

@@ -7,8 +7,8 @@ import {
   detectContentType,
   countWords,
   extractKeywords,
-} from '../../packages/shared/src/ingest-context.js';
-import { handleWriteToolCall } from '../../packages/shared/src/mcp/write-tools.js';
+} from '../../packages/core/src/ingest-context.js';
+import { handleWriteToolCall } from '../../packages/core/src/mcp/write-tools.js';
 
 // ---------------------------------------------------------------------------
 // detectContentType

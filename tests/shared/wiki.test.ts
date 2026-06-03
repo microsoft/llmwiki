@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { readPage, writePage, listPages, getPageLinks } from '../../packages/shared/src/wiki.js';
+import { readPage, writePage, listPages, getPageLinks } from '../../packages/core/src/wiki.js';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

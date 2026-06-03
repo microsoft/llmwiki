@@ -16,10 +16,10 @@ The agent doesn't just dump raw content into pages — it performs a structured 
 6. **Enrich** existing pages with knowledge from the new source.
 7. **Verify** wiki health to catch broken links, missing metadata, or orphan pages.
 
-This workflow uses the `llmwiki` MCP server — 14 tools over stdio transport. Launch it via the `llmwiki-mcp` bin shipped by `@llmwiki/shared`:
+This workflow uses the `llmwiki` MCP server — 14 tools over stdio transport. Launch it via the `llmwiki-mcp` bin shipped by `@llmwiki/core`:
 
 ```bash
-npx -p @llmwiki/shared llmwiki-mcp /abs/path/to/your-project/.wiki
+npx -p @llmwiki/core llmwiki-mcp /abs/path/to/your-project/.wiki
 ```
 
 In VS Code, the LLM Wiki extension auto-registers this server with Copilot Chat — no manual launch needed.
@@ -30,7 +30,7 @@ In VS Code, the LLM Wiki extension auto-registers this server with Copilot Chat 
 
 | Requirement | Details |
 |-------------|---------|
-| **MCP server running** | `npx -p @llmwiki/shared llmwiki-mcp <wiki-root>` (or auto-launched by the VS Code extension / your Copilot host) |
+| **MCP server running** | `npx -p @llmwiki/core llmwiki-mcp <wiki-root>` (or auto-launched by the VS Code extension / your Copilot host) |
 | **Wiki initialized** | Run `LLM Wiki: Initialize` from the VS Code command palette at least once |
 | **Source file available** | A markdown, text, PDF, or DOCX file in the `.wiki/raw/` directory |
 | **Existing wiki content** | Optional, but enables richer context matching and crosslinking |

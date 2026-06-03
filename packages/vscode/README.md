@@ -95,20 +95,20 @@ The extension activates automatically when a workspace contains a wiki at `.wiki
 
 ## Architecture
 
-The extension uses `@llmwiki/shared` exclusively for wiki logic — no operations are duplicated in extension code. Commands delegate to shared functions like `ingestSource`, `queryWiki`, `getWikiStatus`, `lintWiki`, and `getBacklinks`, keeping the extension a thin UI layer.
+The extension uses `@llmwiki/core` exclusively for wiki logic — no operations are duplicated in extension code. Commands delegate to shared functions like `ingestSource`, `queryWiki`, `getWikiStatus`, `lintWiki`, and `getBacklinks`, keeping the extension a thin UI layer.
 
 ## MCP Server
 
 The extension automatically registers an MCP (Model Context Protocol) server named **LLM Wiki** with Copilot Chat (via the `mcpServerDefinitionProviders` contribution) — no configuration required. Open the Chat view's MCP server picker and you'll see it listed; tools are available to any chat session that opts in.
 
-The same server can be used from Claude Desktop, Cursor, or any other MCP-compatible client via the `llmwiki-mcp` stdio launcher shipped by `@llmwiki/shared`:
+The same server can be used from Claude Desktop, Cursor, or any other MCP-compatible client via the `llmwiki-mcp` stdio launcher shipped by `@llmwiki/core`:
 
 ```jsonc
 {
   "mcpServers": {
     "llmwiki": {
       "command": "npx",
-      "args": ["-y", "-p", "@llmwiki/shared", "llmwiki-mcp", "/abs/path/to/your-project/.wiki"]
+      "args": ["-y", "-p", "@llmwiki/core", "llmwiki-mcp", "/abs/path/to/your-project/.wiki"]
     }
   }
 }

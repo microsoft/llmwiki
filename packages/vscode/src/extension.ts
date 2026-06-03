@@ -9,7 +9,7 @@ import { registerChatParticipant } from './chatParticipant';
 import { llmIngest } from './llmIngest';
 import { registerMcpServerProvider } from './mcpProvider';
 
-import { WIKI_DIR_NAME, directoryExists, slugify } from '@llmwiki/shared';
+import { WIKI_DIR_NAME, directoryExists, slugify } from '@llmwiki/core';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -50,7 +50,7 @@ async function bootstrapViews(
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: 'Initializing LLM Wiki…', cancellable: false },
         async () => {
-          const { initWiki } = await import('@llmwiki/shared');
+          const { initWiki } = await import('@llmwiki/core');
           const result = await initWiki(workspaceFolder);
           vscode.window.showInformationMessage(
             `Wiki initialized in .wiki/: ${result.created_dirs.length} directories, ${result.created_files.length} files created.`,
@@ -329,7 +329,7 @@ async function autoCleanup(
   outputChannel: vscode.OutputChannel,
   providers: { entities: WikiPagesTreeDataProvider; concepts: WikiPagesTreeDataProvider; rawSources: RawSourcesTreeDataProvider },
 ): Promise<void> {
-  const { slugify, deletePage, readPage, appendEntry } = await import('@llmwiki/shared');
+  const { slugify, deletePage, readPage, appendEntry } = await import('@llmwiki/core');
   const { readdir } = await import('node:fs/promises');
   const { extname } = await import('node:path');
   const wikiDir = join(wikiProjectRoot, 'wiki');

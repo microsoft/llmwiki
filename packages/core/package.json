@@ -1,13 +1,13 @@
 {
-  "name": "@llmwiki/shared",
-  "version": "0.1.0",
+  "name": "@llmwiki/core",
+  "version": "0.1.2",
   "description": "Core wiki operations and MCP server (stdio launcher: llmwiki-mcp) for LLM Wiki",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/microsoft/llmwiki.git",
-    "directory": "packages/shared"
+    "directory": "packages/core"
   },
   "bugs": {
     "url": "https://github.com/microsoft/llmwiki/issues"

@@ -12,7 +12,7 @@ import {
   addCrosslinks,
   appendEntry,
   type IndexEntry,
-} from '@llmwiki/shared';
+} from '@llmwiki/core';
 
 /** Structured output the LLM returns after analysing a source. */
 interface LlmAnalysis {
@@ -28,7 +28,7 @@ interface LlmAnalysis {
  * 1. Mechanical ingest (creates stub summary page, updates index/log)
  * 2. Send source content + existing wiki index to VS Code Copilot LLM
  * 3. LLM returns structured analysis: summary, entities, concepts, crosslinks
- * 4. Write the LLM-generated pages using @llmwiki/shared functions
+ * 4. Write the LLM-generated pages using @llmwiki/core functions
  */
 export async function llmIngest(
   sourcePath: string,
@@ -85,7 +85,7 @@ export async function llmIngest(
   if (analysis.summary && ingestResult.pages_created.length > 0) {
     progress.report({ message: 'Writing LLM summary…' });
     const summaryPath = join(wikiDir, ingestResult.pages_created[0]);
-    const { readPage, writePage } = await import('@llmwiki/shared');
+    const { readPage, writePage } = await import('@llmwiki/core');
     try {
       const page = await readPage(summaryPath);
       page.body = analysis.summary;

@@ -12,9 +12,9 @@ import {
   lintFix,
   deletePage,
   type IndexEntry,
-} from '@llmwiki/shared';
+} from '@llmwiki/core';
 
-import { WIKI_DIR_NAME } from '@llmwiki/shared';
+import { WIKI_DIR_NAME } from '@llmwiki/core';
 
 /**
  * Get the preferred LLM model — honours the `llmwiki.modelFamily` setting,
@@ -238,7 +238,7 @@ async function handleStatus(
   wikiRoot: string,
   stream: vscode.ChatResponseStream,
 ): Promise<void> {
-  const { getWikiStatus } = await import('@llmwiki/shared');
+  const { getWikiStatus } = await import('@llmwiki/core');
   const status = await getWikiStatus(wikiRoot);
 
   stream.markdown(`## Wiki Status\n\n`);

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { join } from 'node:path';
-import { directoryExists, getWikiStatus, WIKI_DIR_NAME } from '@llmwiki/shared';
+import { directoryExists, getWikiStatus, WIKI_DIR_NAME } from '@llmwiki/core';
 
 const DEBOUNCE_MS = 300;
 

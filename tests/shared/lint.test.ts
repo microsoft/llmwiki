@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { lintWiki } from '../../packages/shared/src/lint.js';
-import { writeIndex } from '../../packages/shared/src/index-ops.js';
-import { writePage } from '../../packages/shared/src/wiki.js';
+import { lintWiki } from '../../packages/core/src/lint.js';
+import { writeIndex } from '../../packages/core/src/index-ops.js';
+import { writePage } from '../../packages/core/src/wiki.js';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

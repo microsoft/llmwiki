@@ -11,10 +11,10 @@ import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createMcpServer } from '../../../packages/shared/src/mcp/server.js';
-import { writePage, readPage } from '../../../packages/shared/src/wiki.js';
-import { writeIndex, readIndex, addEntry } from '../../../packages/shared/src/index-ops.js';
-import type { IndexEntry } from '../../../packages/shared/src/index-ops.js';
+import { createMcpServer } from '../../../packages/core/src/mcp/server.js';
+import { writePage, readPage } from '../../../packages/core/src/wiki.js';
+import { writeIndex, readIndex, addEntry } from '../../../packages/core/src/index-ops.js';
+import type { IndexEntry } from '../../../packages/core/src/index-ops.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

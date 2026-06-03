@@ -3,8 +3,8 @@ import {
   readIndex,
   writeIndex,
   updateIndexEntry,
-} from '../../packages/shared/src/index-ops.js';
-import type { IndexEntry } from '../../packages/shared/src/index-ops.js';
+} from '../../packages/core/src/index-ops.js';
+import type { IndexEntry } from '../../packages/core/src/index-ops.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

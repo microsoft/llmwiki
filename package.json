@@ -1,6 +1,6 @@
 {
   "name": "llmwiki",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "A personal knowledge base where the LLM does all the maintenance",
   "type": "module",
   "private": true,
@@ -14,14 +14,14 @@
   },
   "homepage": "https://github.com/microsoft/llmwiki#readme",
   "workspaces": [
-    "packages/shared",
+    "packages/core",
     "packages/vscode"
   ],
   "scripts": {
-    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/vscode",
+    "build": "npm run build --workspace=packages/core && npm run build --workspace=packages/vscode",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
-    "lint": "npm run lint --workspace=packages/shared && npm run lint --workspace=packages/vscode",
+    "lint": "npm run lint --workspace=packages/core && npm run lint --workspace=packages/vscode",
     "dev": "vitest watch"
   },
   "keywords": [

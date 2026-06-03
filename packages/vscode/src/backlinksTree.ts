@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { join, relative } from 'node:path';
-import { getBacklinks } from '@llmwiki/shared';
-import type { BacklinkResult } from '@llmwiki/shared';
+import { getBacklinks } from '@llmwiki/core';
+import type { BacklinkResult } from '@llmwiki/core';
 
 export class BacklinkTreeItem extends vscode.TreeItem {
   constructor(

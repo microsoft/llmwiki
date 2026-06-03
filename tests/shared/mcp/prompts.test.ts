@@ -15,7 +15,7 @@ import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createMcpServer } from '../../../packages/shared/src/mcp/server.js';
+import { createMcpServer } from '../../../packages/core/src/mcp/server.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

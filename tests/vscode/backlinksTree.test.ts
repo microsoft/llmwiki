@@ -51,7 +51,7 @@ vi.mock('vscode', () => ({
   },
 }));
 
-vi.mock('@llmwiki/shared', () => ({
+vi.mock('@llmwiki/core', () => ({
   getBacklinks: vi.fn(),
 }));
 
@@ -59,7 +59,7 @@ import {
   BacklinksTreeDataProvider,
   BacklinkTreeItem,
 } from '../../packages/vscode/src/backlinksTree';
-import { getBacklinks } from '@llmwiki/shared';
+import { getBacklinks } from '@llmwiki/core';
 import * as vscode from 'vscode';
 import { join } from 'node:path';
 
