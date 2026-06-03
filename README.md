@@ -5,7 +5,7 @@
 
 ## What is this?
 
-LLM Wiki is a pattern — and a VS Code extension — for building personal knowledge bases that compound over time with zero bookkeeping burden. Instead of retrieving from raw documents at query time (like RAG), the LLM **incrementally builds and maintains a persistent wiki**: a structured, interlinked collection of markdown files that sits between you and your raw sources.
+LLM Wiki is a VS Code extension for building personal knowledge bases that compound over time with zero bookkeeping burden. Instead of retrieving from raw documents at query time (like RAG), the LLM **incrementally builds and maintains a persistent wiki**: a structured, interlinked collection of markdown files that sits between you and your raw sources.
 
 When you add a new source, the LLM reads it, extracts key information, and integrates it into the existing wiki — updating entity pages, revising topic summaries, noting contradictions, and strengthening the evolving synthesis. The knowledge is compiled once and kept current, not re-derived on every query.
 
@@ -39,7 +39,7 @@ llmwiki (VS Code extension) ──depends-on──▶ @llmwiki/shared
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) v20 or later
-- [VS Code](https://code.visualstudio.com/) 1.93 or later
+- [VS Code](https://code.visualstudio.com/) 1.101 or later
 - A GitHub Copilot subscription (the extension uses VS Code's Language Model API for ingestion enrichment)
 
 ## Installation
@@ -111,7 +111,7 @@ The `@llmwiki/shared` package also exposes a Model Context Protocol server so ex
 
 ### Connecting from VS Code (automatic)
 
-If you have the LLM Wiki VS Code extension installed, the MCP server registers itself automatically through VS Code's `mcpServerDefinitionProviders` contribution. No JSON to edit — just initialize a wiki (`LLM Wiki: Initialize`) and the `LLM Wiki` server will appear in the Copilot MCP server list. The launcher is started on demand using the editor's bundled Node.
+If you have the LLM Wiki VS Code extension installed, the MCP server registers itself automatically through VS Code's `mcpServerDefinitionProviders` contribution. No JSON to edit — just initialize a wiki (`LLM Wiki: Initialize Wiki`) and the `LLM Wiki` server will appear in the Copilot MCP server list. The launcher is started on demand using the editor's bundled Node.
 
 ### Connecting from Claude Desktop / Cursor / other MCP clients
 
