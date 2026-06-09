@@ -40,5 +40,9 @@
     "@vitest/coverage-v8": "^4.1.8",
     "typescript": "^5.4.0",
     "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "diff": "^8.0.3",
+    "serialize-javascript": "^7.0.5"
   }
 }
