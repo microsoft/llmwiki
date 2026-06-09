@@ -58,7 +58,7 @@ cd llmwiki
 # Install all workspace dependencies
 npm ci
 
-# Build all packages (shared → vscode)
+# Build all packages (core → vscode)
 npm run build
 
 # Package the extension into a .vsix
@@ -90,14 +90,16 @@ Open the **LLM Wiki** icon in the Activity Bar to access:
 | `llmwiki.refresh` | LLM Wiki: Refresh | Run lint-fix, prune orphaned pages, and refresh all views. |
 | `llmwiki.fix` | LLM Wiki: Fix Issues | Open the `@wiki /fix` chat to interactively resolve lint findings. |
 | `llmwiki.removeSource` | LLM Wiki: Remove Source | Delete a raw source plus the wiki pages derived from it. |
+| `llmwiki.scanRaw` | LLM Wiki: Scan Sources for New Files | Scan `raw/` for files that have no wiki page yet and offer to ingest them. |
+| `llmwiki.selectModel` | LLM Wiki: Select Model | Choose which installed GitHub Copilot model family powers ingestion enrichment and `@wiki`. |
 
 ### Bulk Ingest
 
 The **LLM Wiki: Ingest Files or Folder** command supports four invocation modes:
 
-1. **Command Palette** — opens a picker that lets you select multiple files **and/or** folders at once.
+1. **Command Palette** — first choose **Files** or **Folder** mode, then select one or more items in the native picker. (The modes are split because a single OS dialog can't reliably select both files and folders at once.)
 2. **Explorer context menu** — right-click any file or folder anywhere in the Explorer and choose **LLM Wiki: Ingest Files or Folder**. Multi-selections (Ctrl/Shift-click) are honoured.
-3. **Welcome view** — when the raw source list is empty, click **Ingest Files or Folder** from the welcome message.
+3. **Raw Sources toolbar** — click the **+** (Ingest Files or Folder) button in the Raw Sources view title bar.
 4. **Drag-and-drop into `raw/`** — files dropped into the Raw Sources view are auto-ingested by the file watcher.
 
 When a folder is selected the extension walks it recursively, skipping `.`-prefixed entries and common build directories (`node_modules`, `dist`, `out`, `build`, `.wiki`). External files are copied into `<workspace>/.wiki/raw/` first, then sent through the per-file ingestion pipeline. Selecting more than 20 files triggers a confirmation prompt so you don't kick off a huge batch by accident.
@@ -110,6 +112,12 @@ Open the Chat view and type `@wiki` to converse with the wiki via GitHub Copilot
 - `@wiki /save` — save the previous answer as a wiki page.
 - `@wiki /lint` — run health checks and get fix suggestions.
 - `@wiki /fix` — auto-fix lint issues using the LLM.
+
+### Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `llmwiki.modelFamily` | `claude-opus-4.6` | Preferred GitHub Copilot model family for ingestion enrichment and the `@wiki` chat participant. Falls back to any available Copilot model when the requested family isn't installed; leave blank to always use the first available model. Run **LLM Wiki: Select Model** to pick one interactively. |
 
 ## MCP Server
 
@@ -179,6 +187,8 @@ If you'd rather pin the server in a workspace, add a `.vscode/mcp.json`:
 | `wiki_update_index` | Update index entry metadata |
 | `wiki_ingest_with_context` | Ingest source with context-rich response |
 
+**Prompts & resources:** Beyond tools, the server also registers MCP **prompts** (`ingest-and-integrate`, `lint-and-fix`, `research-topic`) and **resources** — `resource://wiki/index`, `resource://wiki/pages`, `resource://wiki/sources`, plus the `resource://wiki/pages/{path}` and `resource://wiki/sources/{path}` templates — so agents can browse wiki content without invoking tools.
+
 See [docs/mcp-tools.md](docs/mcp-tools.md) for the full tool reference with schemas and workflows.
 
 ## GitHub Actions
@@ -189,7 +199,7 @@ See [docs/mcp-tools.md](docs/mcp-tools.md) for the full tool reference with sche
 
 ```bash
 npm ci            # Install all workspace dependencies
-npm run build     # Build all packages (shared → vscode)
+npm run build     # Build all packages (core → vscode)
 npm test          # Run tests (vitest)
 npm run lint      # Type-check all packages (tsc --noEmit)
 npm run dev       # Watch mode (vitest watch)
