@@ -1,0 +1,57 @@
+name: Release Extension
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build core
+        run: npm run build --workspace=packages/core
+
+      - name: Package VSIX
+        run: npm run package --workspace=packages/vscode
+
+      - name: Prepare assets
+        id: vsix
+        run: |
+          VSIX=$(ls packages/vscode/*.vsix)
+          cp "$VSIX" packages/vscode/llmwiki-latest.vsix
+          echo "versioned=$VSIX" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llmwiki-vsix
+          path: packages/vscode/*.vsix
+          if-no-files-found: error
+
+      - name: Publish to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "${{ steps.vsix.outputs.versioned }}" \
+            packages/vscode/llmwiki-latest.vsix \
+            --title "${{ github.ref_name }}" --generate-notes \
+          || gh release upload "${{ github.ref_name }}" \
+            "${{ steps.vsix.outputs.versioned }}" \
+            packages/vscode/llmwiki-latest.vsix --clobber
