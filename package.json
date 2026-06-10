@@ -1,6 +1,6 @@
 {
   "name": "llmwiki",
-  "version": "0.1.2",
+  "version": "1.0.0",
   "description": "A personal knowledge base where the LLM does all the maintenance",
   "type": "module",
   "private": true,

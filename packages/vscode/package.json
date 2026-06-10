@@ -2,7 +2,7 @@
   "name": "llmwiki",
   "displayName": "LLM Wiki",
   "description": "Interactive wiki browsing powered by LLM maintenance",
-  "version": "0.1.2",
+  "version": "1.0.0",
   "publisher": "eag-rss",
   "engines": {
     "vscode": "^1.101.0"
