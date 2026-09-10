@@ -39,7 +39,7 @@
     "@types/node": "^20.0.0",
     "@vitest/coverage-v8": "^4.1.8",
     "typescript": "^5.4.0",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "diff": "^8.0.3",
