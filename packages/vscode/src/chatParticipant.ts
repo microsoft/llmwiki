@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
+import { historyToMessages, type HistoryTurn } from './chatHistory';
 import { selectPreferredModel } from './modelSelection';
 import {
   queryWiki,
@@ -156,10 +157,24 @@ async function handleQuery(
         .join('\n\n---\n\n')
     : 'No pages matched the query.';
 
-  // Step 5: Build conversation history
-  const previousMessages = chatContext.history.filter(
-    (h): h is vscode.ChatResponseTurn => h instanceof vscode.ChatResponseTurn,
-  );
+  // Step 5: Build conversation history in the order the turns happened.
+  const historyTurns: HistoryTurn[] = [];
+  for (const turn of chatContext.history) {
+    if (turn instanceof vscode.ChatRequestTurn) {
+      historyTurns.push({ role: 'user', text: turn.prompt });
+      continue;
+    }
+    if (turn instanceof vscode.ChatResponseTurn) {
+      let text = '';
+      for (const part of turn.response) {
+        if (part instanceof vscode.ChatResponseMarkdownPart) {
+          text += part.value.value;
+        }
+      }
+      historyTurns.push({ role: 'assistant', text });
+    }
+  }
+
   const messages: vscode.LanguageModelChatMessage[] = [];
 
   messages.push(
@@ -181,24 +196,12 @@ ${relevantPages}`,
     ),
   );
 
-  // Add conversation history
-  for (const turn of previousMessages) {
-    let fullMessage = '';
-    for (const part of turn.response) {
-      if (part instanceof vscode.ChatResponseMarkdownPart) {
-        fullMessage += part.value.value;
-      }
-    }
-    if (fullMessage) {
-      messages.push(vscode.LanguageModelChatMessage.Assistant(fullMessage));
-    }
-  }
-
-  // Add previous user messages from history
-  for (const turn of chatContext.history) {
-    if (turn instanceof vscode.ChatRequestTurn) {
-      messages.push(vscode.LanguageModelChatMessage.User(turn.prompt));
-    }
+  for (const message of historyToMessages(historyTurns)) {
+    messages.push(
+      message.role === 'assistant'
+        ? vscode.LanguageModelChatMessage.Assistant(message.text)
+        : vscode.LanguageModelChatMessage.User(message.text),
+    );
   }
 
   messages.push(vscode.LanguageModelChatMessage.User(question));
