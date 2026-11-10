@@ -13,9 +13,9 @@ You never write the wiki yourself. You curate sources, ask questions, and think.
 
 ## Example interface
 
-![LLM Wiki running in VS Code — tree views for entities, concepts, raw sources, and backlinks on the left, a wiki page in the editor, and Copilot Chat answering a cross-document question from the wiki on the right.](docs/images/interface.png)
+![LLM Wiki running in VS Code — the LLM Wiki sidebar with Entities, Concepts, Raw Sources, Backlinks, and Lint Findings views on the left, a wiki page in the editor, and Copilot Chat on the right answering "/wiki-ask Is JWST a replacement for Hubble?" by calling the LLM Wiki MCP tools and citing the wiki pages it used.](docs/images/interface.png)
 
-The LLM Wiki sidebar surfaces **Entities**, **Concepts**, **Raw Sources**, **Backlinks**, and **Lint Findings** tree views. The generated wiki pages open in the editor, and Copilot Chat answers questions that synthesize across multiple sources through the LLM Wiki MCP tools and skills.
+The LLM Wiki sidebar surfaces **Entities**, **Concepts**, **Raw Sources**, **Backlinks**, and **Lint Findings** tree views, and the generated wiki pages open in the editor. In Copilot Chat, the `/wiki-ask` skill answers questions that synthesize across sources: it searches and reads the wiki through the LLM Wiki MCP tools (`wiki_query`, `wiki_read_page`) and links its answer to the pages it used.
 
 ## Architecture
 
