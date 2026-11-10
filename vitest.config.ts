@@ -23,10 +23,8 @@ export default defineConfig({
         // tests/vscode/integration/* which run in a real VS Code host, not by
         // the unit suite that uses a mocked `vscode` module).
         "packages/vscode/src/extension.ts",
-        "packages/vscode/src/chatParticipant.ts",
         "packages/vscode/src/extractText.ts",
         "packages/vscode/src/llmIngest.ts",
-        "packages/vscode/src/mcpProvider.ts",
         "packages/vscode/src/modelSelection.ts",
       ],
       thresholds: {

@@ -13,9 +13,9 @@ You never write the wiki yourself. You curate sources, ask questions, and think.
 
 ## Example interface
 
-![LLM Wiki running in VS Code — tree views for entities, concepts, raw sources, and backlinks on the left, a wiki page in the editor, and the @wiki chat participant answering a cross-document question on the right.](docs/images/interface.png)
+![LLM Wiki running in VS Code — tree views for entities, concepts, raw sources, and backlinks on the left, a wiki page in the editor, and Copilot Chat answering a cross-document question from the wiki on the right.](docs/images/interface.png)
 
-The LLM Wiki sidebar surfaces **Entities**, **Concepts**, **Raw Sources**, and **Backlinks** tree views. The generated wiki pages open in the editor, and the `@wiki` chat participant answers questions that synthesize across multiple sources.
+The LLM Wiki sidebar surfaces **Entities**, **Concepts**, **Raw Sources**, **Backlinks**, and **Lint Findings** tree views. The generated wiki pages open in the editor, and Copilot Chat answers questions that synthesize across multiple sources through the LLM Wiki MCP tools and skills.
 
 ## Architecture
 
@@ -35,8 +35,10 @@ The project is an npm workspaces monorepo with two packages:
 
 | Package | npm name | Description |
 |---------|----------|-------------|
-| [packages/core](packages/core) | `@llmwiki/core` | Core wiki operations + MCP server — page I/O, index parsing, log management, lint checks, MCP tool server, ingest pipeline, bulk ingest, search, status. |
-| [packages/vscode](packages/vscode) | `llmwiki` | VS Code extension — tree views, command palette, status bar, `@wiki` chat participant, bulk ingest of files and folders. |
+| [packages/core](packages/core) | `@llmwiki/core` | Core wiki operations + MCP server — page I/O, index parsing, log management, lint checks and fixes, MCP tool server, ingest pipeline, bulk ingest, search, status. |
+| [packages/vscode](packages/vscode) | `llmwiki` | VS Code extension — tree views, command palette, status bar, Copilot skills and the Wiki Librarian agent, bulk ingest of files and folders. |
+
+The repository also contains an [agent plugin](plugin) (`plugin/`) that packages the same skills and agent with a self-contained MCP server for GitHub Copilot CLI, the GitHub Copilot app, and other Agent Plugins clients.
 
 ```
 llmwiki (VS Code extension) ──depends-on──▶ @llmwiki/core
@@ -45,7 +47,7 @@ llmwiki (VS Code extension) ──depends-on──▶ @llmwiki/core
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) v20 or later
-- [VS Code](https://code.visualstudio.com/) 1.101 or later
+- [VS Code](https://code.visualstudio.com/) 1.109 or later
 - A GitHub Copilot subscription (the extension uses VS Code's Language Model API for ingestion enrichment)
 
 ## Installation
@@ -75,6 +77,7 @@ Open the **LLM Wiki** icon in the Activity Bar to access:
 - **Concepts** — Browse concept pages (ideas, techniques, patterns).
 - **Raw Sources** — See every file in `raw/` with size & date; right-click to remove.
 - **Backlinks** — See pages that link to the page you currently have open.
+- **Lint Findings** — Health-check results grouped by severity; click one to open the page.
 
 ### Commands
 
@@ -88,10 +91,12 @@ Open the **LLM Wiki** icon in the Activity Bar to access:
 | `llmwiki.search` | LLM Wiki: Search Wiki | Filter entities/concepts by title, summary, or tag. |
 | `llmwiki.searchRaw` | LLM Wiki: Search Sources | Find a raw source file by name. |
 | `llmwiki.refresh` | LLM Wiki: Refresh | Run lint-fix, prune orphaned pages, and refresh all views. |
-| `llmwiki.fix` | LLM Wiki: Fix Issues | Open the `@wiki /fix` chat to interactively resolve lint findings. |
-| `llmwiki.removeSource` | LLM Wiki: Remove Source | Delete a raw source plus the wiki pages derived from it. |
+| `llmwiki.lint` | LLM Wiki: Run Lint | Run health checks and show the results in the Lint Findings view. |
+| `llmwiki.fix` | LLM Wiki: Fix Issues | Apply the deterministic fixes (stale index entries, unindexed pages, missing frontmatter, pages whose sources were removed) and list what still needs judgment in Lint Findings. |
+| `llmwiki.fixWithCopilot` | LLM Wiki: Fix Remaining Issues with Copilot | Open Copilot Chat with the `/wiki-fix` skill to resolve the remaining findings. |
+| `llmwiki.removeSource` | LLM Wiki: Remove Source | Delete a raw source, its summary page, and the wiki pages derived only from it (pages that also draw on another source are kept). |
 | `llmwiki.scanRaw` | LLM Wiki: Scan Sources for New Files | Scan `raw/` for files that have no wiki page yet and offer to ingest them. |
-| `llmwiki.selectModel` | LLM Wiki: Select Model | Choose which installed GitHub Copilot model family powers ingestion enrichment and `@wiki`. |
+| `llmwiki.selectModel` | LLM Wiki: Select Model | Choose which installed GitHub Copilot model family powers LLM-powered ingestion. |
 
 ### Bulk Ingest
 
@@ -104,28 +109,68 @@ The **LLM Wiki: Ingest Files or Folder** command supports four invocation modes:
 
 When a folder is selected the extension walks it recursively, skipping `.`-prefixed entries and common build directories (`node_modules`, `dist`, `out`, `build`, `.wiki`). External files are copied into `<workspace>/.wiki/raw/` first, then sent through the per-file ingestion pipeline. Selecting more than 20 files triggers a confirmation prompt so you don't kick off a huge batch by accident.
 
-### `@wiki` Chat Participant
+### Copilot Chat: skills and the Wiki Librarian agent
 
-Open the Chat view and type `@wiki` to converse with the wiki via GitHub Copilot:
+The extension contributes Copilot customizations that work in the Copilot harness (which VS Code 1.142 began rolling out as the default for new chat sessions) as well as the Local harness. They are available in workspaces that contain a wiki.
 
-- `@wiki /status` — show wiki statistics.
-- `@wiki /save` — save the previous answer as a wiki page.
-- `@wiki /lint` — run health checks and get fix suggestions.
-- `@wiki /fix` — auto-fix lint issues using the LLM.
+- **Just ask.** In Agent mode, questions about your wiki are answered through the LLM Wiki MCP tools, which the extension registers automatically. Read-only tools are annotated as such, so they run without confirmation prompts.
+- **Skills** (type `/` in chat):
+
+  | Skill | Use it to |
+  |-------|-----------|
+  | `/wiki-ask` | Answer a question from the wiki and cite the pages used. Copilot also loads it automatically for wiki questions. |
+  | `/wiki-research` | Synthesize everything the wiki knows about a topic and list knowledge gaps. Also loaded automatically. |
+  | `/wiki-ingest` | Ingest a source and integrate it: summary, entities, concepts, crosslinks, health check. Also loaded automatically. |
+  | `/wiki-save` | Save the previous answer as a page under `wiki/queries/`. Runs only when you invoke it. |
+  | `/wiki-fix` | Apply the deterministic fixes, then resolve broken links and other findings that need judgment, asking before deleting anything. Runs only when you invoke it. |
+
+- **Wiki Librarian** — a custom agent in the agent picker for longer sessions with the wiki.
+- **Instructions** — guidance applied whenever chat works with files under `.wiki/`.
+
+#### Migrating from `@wiki`
+
+VS Code [deprecated chat participants](https://code.visualstudio.com/api/extension-guides/ai/chat), and they don't run in the Copilot harness, so the `@wiki` participant has been removed.
+
+| Before | Now |
+|--------|-----|
+| `@wiki <question>` | Ask in Agent mode, or use `/wiki-ask <question>` |
+| `@wiki /status` | The status bar item, **LLM Wiki: Show Status**, or the `wiki_status` tool |
+| `@wiki /lint` | **LLM Wiki: Run Lint** (results in the Lint Findings view) or the `wiki_lint` tool |
+| `@wiki /fix` | **LLM Wiki: Fix Issues** for the deterministic fixes, then `/wiki-fix` (or **Fix with Copilot**) for the rest |
+| `@wiki /save` | `/wiki-save [title]` (previously only suggested a path) |
 
 ### Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `llmwiki.modelFamily` | `claude-opus-4.6` | Preferred GitHub Copilot model family for ingestion enrichment and the `@wiki` chat participant. Falls back to any available Copilot model when the requested family isn't installed; leave blank to always use the first available model. Run **LLM Wiki: Select Model** to pick one interactively. |
+| `llmwiki.modelFamily` | `claude-opus-4.6` | Preferred GitHub Copilot model family for LLM-powered ingestion. Falls back to any available Copilot model when the requested family isn't installed; leave blank to always use the first available model. Run **LLM Wiki: Select Model** to pick one interactively. |
 
 ## MCP Server
 
-The `@llmwiki/core` package also exposes a Model Context Protocol server so external agents (Claude Desktop, Cursor, VS Code Copilot via MCP, etc.) can read, write, and maintain wiki content programmatically.
+The `@llmwiki/core` package also exposes a Model Context Protocol server so external agents (Claude Desktop, Cursor, VS Code Copilot via MCP, Copilot CLI, etc.) can read, write, and maintain wiki content programmatically.
+
+Every tool declares a title and [annotations](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#tool-annotations): read-only tools are marked `readOnlyHint`, so VS Code runs them without a confirmation prompt, and tools that overwrite or delete content are marked `destructiveHint`. The server also sends **instructions** that explain how to use the wiki, followed by the wiki's own `AGENTS.md` schema.
 
 ### Connecting from VS Code (automatic)
 
 If you have the LLM Wiki VS Code extension installed, the MCP server registers itself automatically through VS Code's `mcpServerDefinitionProviders` contribution. No JSON to edit — just initialize a wiki (`LLM Wiki: Initialize Wiki`) and the `LLM Wiki` server will appear in the Copilot MCP server list. The launcher is started on demand using the editor's bundled Node.
+
+### Copilot CLI, the GitHub Copilot app, and other agent plugin clients
+
+The [agent plugin](plugin) bundles the skills, the Wiki Librarian agent, and a self-contained MCP server (it needs Node.js 20+ on `PATH`):
+
+```bash
+copilot plugin install microsoft/llmwiki:plugin
+# or, through the marketplace index in this repository:
+copilot plugin marketplace add microsoft/llmwiki
+copilot plugin install llmwiki@llmwiki
+```
+
+Plugin skills are prefixed with the plugin name, for example `/llmwiki:wiki-ask`. In VS Code, install the extension rather than the plugin; it contributes the same skills and agent.
+
+### How the server finds the wiki
+
+`llmwiki-mcp [wiki-root]` uses the wiki root (the `.wiki` directory) given as its argument or in the `LLMWIKI_ROOT` environment variable, and works only on that wiki. Without either, it uses `<cwd>/.wiki` if that exists when it starts; otherwise it looks in the client's workspace roots on the first tool call. In that mode it also offers two more tools: `wiki_open` selects a wiki by path, and `wiki_init` creates one. This is how the plugin works, because plugin servers start in the plugin folder.
 
 ### Connecting from Claude Desktop / Cursor / other MCP clients
 
@@ -144,11 +189,24 @@ The shared package ships an `llmwiki-mcp` stdio launcher. Add it to your client'
 }
 ```
 
-If you've installed `@llmwiki/core` globally (`npm i -g @llmwiki/core`), you can use `llmwiki-mcp` directly as the command instead of going through `npx`. The wiki-root argument is optional; when omitted the launcher defaults to `<cwd>/.wiki`.
+If you've installed `@llmwiki/core` globally (`npm i -g @llmwiki/core`), you can use `llmwiki-mcp` directly as the command instead of going through `npx`. Without npm, point the client at the self-contained bundle in a clone of this repository: `"command": "node", "args": ["/path/to/llmwiki/plugin/server/llmwiki-mcp.cjs", "/absolute/path/to/your-project/.wiki"]`.
 
-### Manual JSON config in VS Code
+### Manual JSON config
 
-If you'd rather pin the server in a workspace, add a `.vscode/mcp.json`:
+To pin the server in a workspace for the Copilot harness and Copilot CLI, add a `.mcp.json` at the workspace root:
+
+```jsonc
+{
+  "mcpServers": {
+    "llmwiki": {
+      "command": "npx",
+      "args": ["-y", "-p", "@llmwiki/core", "llmwiki-mcp", ".wiki"]
+    }
+  }
+}
+```
+
+For the Local harness in VS Code, use `.vscode/mcp.json`:
 
 ```jsonc
 {
@@ -163,7 +221,7 @@ If you'd rather pin the server in a workspace, add a `.vscode/mcp.json`:
 
 ### Available Tools
 
-**Read tools:**
+**Read tools** (read-only):
 
 | Tool | Description |
 |------|-------------|
@@ -180,31 +238,40 @@ If you'd rather pin the server in a workspace, add a `.vscode/mcp.json`:
 | Tool | Description |
 |------|-------------|
 | `wiki_write_page` | Create or overwrite a page (auto-updates index) |
-| `wiki_create_entity` | Create entity page at `entities/{slug}.md` |
-| `wiki_create_concept` | Create concept page at `concepts/{slug}.md` |
-| `wiki_update_page` | Merge partial updates into an existing page |
+| `wiki_create_entity` | Create entity page at `entities/{slug}.md`, optionally recording its `sources` |
+| `wiki_create_concept` | Create concept page at `concepts/{slug}.md`, optionally recording its `sources` |
+| `wiki_update_page` | Merge partial updates into an existing page; `addSources` extends a derived page's sources |
 | `wiki_add_crosslinks` | Add "See also" links (validates targets exist) |
 | `wiki_update_index` | Update index entry metadata |
-| `wiki_ingest_with_context` | Ingest source with context-rich response |
+| `wiki_ingest_with_context` | Ingest a source (path relative to the wiki root, e.g. `raw/article.md`) with a context-rich response |
+| `wiki_fix` | Apply the deterministic fixes; `dryRun` previews them |
+| `wiki_delete_page` | Delete a page and its index entry; reports pages that still link to it |
 
-**Prompts & resources:** Beyond tools, the server also registers MCP **prompts** (`ingest-and-integrate`, `lint-and-fix`, `research-topic`) and **resources** — `resource://wiki/index`, `resource://wiki/pages`, `resource://wiki/sources`, plus the `resource://wiki/pages/{path}` and `resource://wiki/sources/{path}` templates — so agents can browse wiki content without invoking tools.
+**Workspace tools** (only when the server isn't bound to a wiki root): `wiki_open` and `wiki_init`.
+
+`wiki_status`, `wiki_query`, `wiki_lint` and `wiki_fix` also return structured results that match their declared output schemas.
+
+**Prompts & resources:** Beyond tools, the server also registers MCP **prompts** (`ingest-and-integrate`, `lint-and-fix`, `research-topic`) and **resources** — `resource://wiki/index`, `resource://wiki/pages`, `resource://wiki/sources`, plus the `resource://wiki/pages/{path}` and `resource://wiki/sources/{path}` templates — so agents can browse wiki content without invoking tools. Argument completions suggest page paths, source paths and topics.
 
 See [docs/mcp-tools.md](docs/mcp-tools.md) for the full tool reference with schemas and workflows.
 
 ## GitHub Actions
 
-[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on push and PR to `main`. It installs dependencies, builds `@llmwiki/core` and the VS Code extension, type-checks both packages, runs the full test suite with coverage, and writes a coverage summary to the run.
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on push and PR to `main`. It installs dependencies, builds `@llmwiki/core` and the VS Code extension, checks that the committed plugin server bundle is up to date, type-checks both packages, runs the full test suite with coverage, and writes a coverage summary to the run.
 
 ## Development
 
 ```bash
 npm ci            # Install all workspace dependencies
-npm run build     # Build all packages (core → vscode)
+npm run build     # Build all packages (core → vscode) and plugin/server/llmwiki-mcp.cjs
 npm test          # Run tests (vitest)
 npm run lint      # Type-check all packages (tsc --noEmit)
 npm run dev       # Watch mode (vitest watch)
 npm run coverage  # Run tests with coverage reporting (@vitest/coverage-v8)
+npm run test:integration  # Run the extension in a real VS Code instance (after npm run build)
 ```
+
+`npm run build` regenerates `plugin/server/llmwiki-mcp.cjs`; commit it together with any change to `@llmwiki/core`. The skills, agent and instructions are authored once in `plugin/` and copied into the extension at build time.
 
 **Per-package commands:**
 

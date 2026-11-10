@@ -31,6 +31,13 @@ jobs:
       - name: Build VS Code extension
         run: npm run build --workspace=packages/vscode
 
+      - name: Check the committed plugin server bundle is up to date
+        run: |
+          if ! git diff --exit-code --stat -- plugin/server/; then
+            echo "::error::plugin/server/llmwiki-mcp.cjs is stale. Run 'npm run build' and commit the result."
+            exit 1
+          fi
+
       - name: Lint core
         run: npm run lint --workspace=packages/core
 

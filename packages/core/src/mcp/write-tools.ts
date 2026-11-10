@@ -1,21 +1,45 @@
-import { join } from 'node:path';
-import { readPage, writePage, createEntityPage, createConceptPage, addCrosslinks } from '../wiki.js';
+import { join, relative, extname } from 'node:path';
+import { stat } from 'node:fs/promises';
+import { readPage, writePage, createEntityPage, createConceptPage, addCrosslinks, deletePage } from '../wiki.js';
 import { slugify } from '../utils.js';
 import { readIndex, writeIndex, updateIndexEntry } from '../index-ops.js';
 import type { IndexEntry } from '../index-ops.js';
 import { isNotFoundError } from '../errors.js';
 import { ingestWithContext } from '../ingest-context.js';
+import { fixWiki, normalizeSourceRef } from '../fix.js';
+import { appendEntry } from '../log.js';
 import {
   assertWithinDir,
   requireString,
   optionalString,
 } from './read-tools.js';
-import type { ToolArgs, ToolDefinition } from './read-tools.js';
+import type { ToolAnnotations, ToolArgs, ToolDefinition } from './read-tools.js';
+import { FIX_OUTPUT_SCHEMA } from './schemas.js';
+
+/** Overwrites or removes existing content; repeating the call may change more. */
+const DESTRUCTIVE: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+  openWorldHint: false,
+};
+
+/** Overwrites existing content, but repeating the same call has no further effect. */
+const DESTRUCTIVE_IDEMPOTENT: ToolAnnotations = { ...DESTRUCTIVE, idempotentHint: true };
+
+/** Provenance of a derived page; lets wiki_fix remove it when its sources are gone. */
+const SOURCES_PROPERTY = {
+  type: 'array',
+  items: { type: 'string' },
+  description:
+    'Optional wiki-relative paths of the source summary pages this page is derived from (e.g. ["sources/article-summary.md"]). If all of them are later removed, wiki_fix deletes this page.',
+};
 
 /** All write tool definitions exposed by the MCP server. */
 export const WRITE_TOOLS: ToolDefinition[] = [
   {
     name: 'wiki_write_page',
+    title: 'Write wiki page',
     description:
       'Create or overwrite a wiki page with frontmatter and body content. Automatically updates the index.',
     inputSchema: {
@@ -46,11 +70,13 @@ export const WRITE_TOOLS: ToolDefinition[] = [
       required: ['pagePath', 'title', 'type', 'body'],
       additionalProperties: false,
     },
+    annotations: DESTRUCTIVE_IDEMPOTENT,
   },
   {
     name: 'wiki_create_entity',
+    title: 'Create entity page',
     description:
-      'Create a new wiki entity page at wiki/entities/{slug}.md with proper frontmatter and auto-register it in the index.',
+      'Create a new wiki entity page at wiki/entities/{slug}.md with proper frontmatter and auto-register it in the index. Overwrites an existing page with the same slug, so check for one first.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -67,15 +93,18 @@ export const WRITE_TOOLS: ToolDefinition[] = [
           items: { type: 'string' },
           description: 'Optional list of tags',
         },
+        sources: SOURCES_PROPERTY,
       },
       required: ['name', 'content'],
       additionalProperties: false,
     },
+    annotations: DESTRUCTIVE,
   },
   {
     name: 'wiki_create_concept',
+    title: 'Create concept page',
     description:
-      'Create a new wiki concept page at wiki/concepts/{slug}.md with proper frontmatter and auto-register it in the index.',
+      'Create a new wiki concept page at wiki/concepts/{slug}.md with proper frontmatter and auto-register it in the index. Overwrites an existing page with the same slug, so check for one first.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -92,13 +121,16 @@ export const WRITE_TOOLS: ToolDefinition[] = [
           items: { type: 'string' },
           description: 'Optional list of tags',
         },
+        sources: SOURCES_PROPERTY,
       },
       required: ['name', 'content'],
       additionalProperties: false,
     },
+    annotations: DESTRUCTIVE,
   },
   {
     name: 'wiki_update_page',
+    title: 'Update wiki page',
     description:
       'Update an existing wiki page by merging partial frontmatter changes and/or appending or replacing body content. Updates the index if metadata changed.',
     inputSchema: {
@@ -129,13 +161,21 @@ export const WRITE_TOOLS: ToolDefinition[] = [
           type: 'string',
           description: 'Content to replace the entire body with',
         },
+        addSources: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Summary pages of other sources whose content you are adding (e.g. ["sources/second-article-summary.md"]). Appended to the page\'s existing "sources" so it is only deleted once all of its sources are removed. Ignored for pages that list no sources.',
+        },
       },
       required: ['pagePath'],
       additionalProperties: false,
     },
+    annotations: DESTRUCTIVE,
   },
   {
     name: 'wiki_add_crosslinks',
+    title: 'Add crosslinks',
     description:
       'Add cross-reference links ("See also" section) from one wiki page to one or more target pages. Validates all target pages exist.',
     inputSchema: {
@@ -154,9 +194,17 @@ export const WRITE_TOOLS: ToolDefinition[] = [
       required: ['pagePath', 'targetPages'],
       additionalProperties: false,
     },
+    // Only appends links and skips duplicates.
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: 'wiki_update_index',
+    title: 'Update index entry',
     description:
       'Update metadata (summary, tags, category) for an existing entry in the wiki index. Returns success/failure.',
     inputSchema: {
@@ -183,9 +231,11 @@ export const WRITE_TOOLS: ToolDefinition[] = [
       required: ['pagePath'],
       additionalProperties: false,
     },
+    annotations: DESTRUCTIVE_IDEMPOTENT,
   },
   {
     name: 'wiki_ingest_with_context',
+    title: 'Ingest source with context',
     description:
       'Ingest a source file into the wiki and return enhanced context including related pages, word count, content type, and suggested next actions. Use this instead of plain ingest when you want to understand how the source relates to existing wiki content.',
     inputSchema: {
@@ -194,7 +244,7 @@ export const WRITE_TOOLS: ToolDefinition[] = [
         sourcePath: {
           type: 'string',
           description:
-            'Path to the source file to ingest (relative to project root)',
+            'Path to the source file inside the wiki root, relative to the wiki root (e.g. "raw/article.md") or absolute',
         },
         dryRun: {
           type: 'boolean',
@@ -209,6 +259,45 @@ export const WRITE_TOOLS: ToolDefinition[] = [
       required: ['sourcePath'],
       additionalProperties: false,
     },
+    // `force` overwrites an existing summary page.
+    annotations: DESTRUCTIVE,
+  },
+  {
+    name: 'wiki_fix',
+    title: 'Fix wiki issues',
+    description:
+      'Apply every deterministic wiki fix: delete entity/concept pages whose raw sources were removed, drop stale index entries, index unlisted pages, and add missing frontmatter defaults. Returns the fixes and the findings that still need judgment (for example broken links). Call with dryRun first to preview.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dryRun: {
+          type: 'boolean',
+          description: 'If true, report what would change without writing anything',
+        },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+    outputSchema: FIX_OUTPUT_SCHEMA,
+    annotations: DESTRUCTIVE_IDEMPOTENT,
+  },
+  {
+    name: 'wiki_delete_page',
+    title: 'Delete wiki page',
+    description:
+      'Delete a wiki page and remove it from the index. Returns the pages that still link to it so you can fix those links. Only use after the user confirms the deletion.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pagePath: {
+          type: 'string',
+          description: 'Relative path within the wiki/ directory (e.g. "concepts/ai.md")',
+        },
+      },
+      required: ['pagePath'],
+      additionalProperties: false,
+    },
+    annotations: DESTRUCTIVE_IDEMPOTENT,
   },
 ];
 
@@ -255,6 +344,55 @@ function optionalStringArray(args: ToolArgs, key: string): string[] | undefined 
     throw new Error(`'${key}' must be an array of strings`);
   }
   return val as string[];
+}
+
+/**
+ * Validate optional source-page paths (`key` = "sources" or "addSources"):
+ * each must be an existing summary page under wiki/sources/, such as the one
+ * returned by wiki_ingest_with_context. Returns de-duplicated wiki-relative
+ * paths. Rejecting anything else matters because a page whose sources are all
+ * missing is deleted by wiki_fix.
+ */
+async function optionalSources(
+  args: ToolArgs,
+  wikiDir: string,
+  key = 'sources',
+): Promise<string[] | undefined> {
+  const sources = optionalStringArray(args, key);
+  if (!sources || sources.length === 0) return undefined;
+  if (sources.length > MAX_TAGS_COUNT) {
+    throw new Error(`Too many ${key} (max ${MAX_TAGS_COUNT})`);
+  }
+  const normalized: string[] = [];
+  for (const source of sources) {
+    validateLength(source, key, MAX_PATH_LENGTH);
+    const relPath = normalizeSourceRef(
+      relative(wikiDir, assertWithinDir(wikiDir, source)).replace(/\\/g, '/'),
+    );
+    let isFile = false;
+    if (relPath) {
+      try {
+        isFile = (await stat(join(wikiDir, relPath))).isFile();
+      } catch {
+        isFile = false;
+      }
+    }
+    if (!relPath || !isFile) {
+      throw new Error(
+        `Source page not found: "${source}". Sources must be existing summary pages under sources/, such as the summary_page or pages_created path returned by wiki_ingest_with_context (e.g. "sources/article-summary.md").`,
+      );
+    }
+    if (!normalized.includes(relPath)) normalized.push(relPath);
+  }
+  return normalized;
+}
+
+/** Record the pages a derived page came from in its frontmatter. */
+async function setSources(wikiDir: string, relPath: string, sources: string[]): Promise<void> {
+  const fullPath = join(wikiDir, relPath);
+  const page = await readPage(fullPath);
+  page.frontmatter.sources = sources;
+  await writePage(fullPath, page);
 }
 
 /**
@@ -349,6 +487,7 @@ export async function handleWriteToolCall(
       validateLength(entityName, 'name', MAX_TITLE_LENGTH);
       validateLength(content, 'content', MAX_BODY_LENGTH);
       validateTags(tags);
+      const sources = await optionalSources(args, wikiDir);
 
       // S-3: Reject empty slugs (e.g. all-punctuation or non-Latin names)
       const slug = slugify(entityName);
@@ -360,6 +499,7 @@ export async function handleWriteToolCall(
       assertWithinDir(wikiDir, `entities/${slug}.md`);
 
       const result = await createEntityPage(wikiDir, entityName, content, tags);
+      if (sources) await setSources(wikiDir, result.path, sources);
 
       return JSON.stringify({
         status: 'created',
@@ -367,6 +507,7 @@ export async function handleWriteToolCall(
         title: entityName,
         type: 'entity',
         tags,
+        sources,
       });
     }
 
@@ -379,6 +520,7 @@ export async function handleWriteToolCall(
       validateLength(conceptName, 'name', MAX_TITLE_LENGTH);
       validateLength(content, 'content', MAX_BODY_LENGTH);
       validateTags(tags);
+      const sources = await optionalSources(args, wikiDir);
 
       // S-3: Reject empty slugs (e.g. all-punctuation or non-Latin names)
       const slug = slugify(conceptName);
@@ -390,6 +532,7 @@ export async function handleWriteToolCall(
       assertWithinDir(wikiDir, `concepts/${slug}.md`);
 
       const result = await createConceptPage(wikiDir, conceptName, content, tags);
+      if (sources) await setSources(wikiDir, result.path, sources);
 
       return JSON.stringify({
         status: 'created',
@@ -397,6 +540,7 @@ export async function handleWriteToolCall(
         title: conceptName,
         type: 'concept',
         tags,
+        sources,
       });
     }
 
@@ -431,6 +575,20 @@ export async function handleWriteToolCall(
       if (newTitle !== undefined) mergedFrontmatter.title = newTitle;
       if (newType !== undefined) mergedFrontmatter.type = newType;
       if (newTags !== undefined) mergedFrontmatter.tags = newTags;
+
+      // Extend the provenance of a derived page. Pages without sources are not
+      // derived from a raw source and must never become eligible for cleanup.
+      const addSources = await optionalSources(args, wikiDir, 'addSources');
+      let sourcesUpdated = false;
+      const currentSources = existing.frontmatter.sources;
+      if (addSources && Array.isArray(currentSources) && currentSources.length > 0) {
+        const mergedSources = [...currentSources];
+        for (const source of addSources) {
+          if (!mergedSources.includes(source)) mergedSources.push(source);
+        }
+        sourcesUpdated = mergedSources.length !== currentSources.length;
+        mergedFrontmatter.sources = mergedSources;
+      }
 
       // Handle body updates
       const bodyAppend = optionalString(args, 'bodyAppend');
@@ -469,6 +627,7 @@ export async function handleWriteToolCall(
         frontmatter: mergedFrontmatter,
         bodyUpdated: bodyAppend !== undefined || bodyReplace !== undefined,
         indexUpdated: metadataChanged,
+        sourcesUpdated,
       });
     }
 
@@ -525,12 +684,51 @@ export async function handleWriteToolCall(
     case 'wiki_ingest_with_context': {
       const sourcePath = requireString(args, 'sourcePath');
       validateLength(sourcePath, 'sourcePath', MAX_PATH_LENGTH);
-      // Validate source path stays within project root
-      assertWithinDir(wikiRoot, sourcePath);
+      // Resolve relative paths against the wiki root (not the server's cwd)
+      // and keep the source inside it.
+      const fullSourcePath = assertWithinDir(wikiRoot, sourcePath);
       const dryRun = args.dryRun === true;
       const force = args.force === true;
-      const result = await ingestWithContext(sourcePath, wikiRoot, dryRun, force);
+      const result = await ingestWithContext(fullSourcePath, wikiRoot, dryRun, force);
       return JSON.stringify(result);
+    }
+
+    case 'wiki_fix': {
+      const dryRun = args.dryRun === true;
+      return JSON.stringify(await fixWiki(wikiRoot, { dryRun }));
+    }
+
+    case 'wiki_delete_page': {
+      const pagePath = requireString(args, 'pagePath');
+      validateLength(pagePath, 'pagePath', MAX_PATH_LENGTH);
+      const relPath = relative(wikiDir, assertWithinDir(wikiDir, pagePath)).replace(/\\/g, '/');
+      if (relPath === 'index.md' || relPath === 'log.md') {
+        throw new Error(`'${relPath}' is a special wiki file and cannot be deleted`);
+      }
+      if (extname(relPath) !== '.md') {
+        throw new Error("'pagePath' must point to a markdown page (.md)");
+      }
+
+      const result = await deletePage(wikiDir, relPath);
+      // deletePage already removed the index entry, so only report real pages.
+      const linkedFrom = result.backlinkWarnings
+        .map((b) => ({
+          page: relative(wikiDir, b.sourcePage).replace(/\\/g, '/'),
+          title: b.sourceTitle,
+          linkText: b.linkText,
+        }))
+        .filter((l) => l.page !== 'index.md' && l.page !== 'log.md');
+
+      await appendEntry(join(wikiDir, 'log.md'), {
+        verb: 'deleted',
+        subject: relPath,
+        details:
+          linkedFrom.length > 0
+            ? `Page deleted. Still linked from: ${linkedFrom.map((l) => l.page).join(', ')}.`
+            : 'Page deleted.',
+      });
+
+      return JSON.stringify({ status: 'deleted', path: relPath, linkedFrom });
     }
 
     default:

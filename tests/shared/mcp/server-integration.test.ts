@@ -161,7 +161,15 @@ describe('MCP Server — Read Tools (InMemoryTransport)', () => {
     expect(names).toContain('wiki_update_index');
     expect(names).toContain('wiki_ingest_with_context');
 
-    expect(result.tools.length).toBe(14);
+    // Maintenance tools
+    expect(names).toContain('wiki_fix');
+    expect(names).toContain('wiki_delete_page');
+
+    // A server bound to a wiki root does not offer wiki_open/wiki_init.
+    expect(names).not.toContain('wiki_open');
+    expect(names).not.toContain('wiki_init');
+
+    expect(result.tools.length).toBe(16);
   });
 
   // -----------------------------------------------------------------------

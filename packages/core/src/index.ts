@@ -6,6 +6,7 @@ export * from './log.js';
 export * from './sources.js';
 export * from './backlinks.js';
 export * from './lint.js';
+export * from './fix.js';
 export * from './utils.js';
 export * from './search.js';
 export * from './ingest.js';

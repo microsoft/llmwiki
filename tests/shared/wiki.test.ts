@@ -43,6 +43,36 @@ describe('readPage', () => {
   });
 });
 
+describe('readPage frontmatter isolation', () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'readpage-'));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('does not leak mutations into later reads of identical content', async () => {
+    const file = join(dir, 'page.md');
+    const original = { frontmatter: { type: 'query', title: 'Saved' }, body: 'Body.' };
+    await writePage(file, original);
+
+    // A caller (e.g. lintFix) mutates the frontmatter it read and writes it back.
+    const first = await readPage(file);
+    first.frontmatter.created = '2026-01-01';
+    await writePage(file, first);
+
+    // The page later returns to its original content.
+    await writePage(file, original);
+
+    const again = await readPage(file);
+    expect(again.frontmatter.created).toBeUndefined();
+    expect(again.frontmatter).toEqual({ type: 'query', title: 'Saved' });
+  });
+});
+
 describe('writePage', () => {
   let tmpDir: string;
 

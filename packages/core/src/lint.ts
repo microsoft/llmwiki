@@ -251,8 +251,10 @@ export async function lintWiki(
 }
 
 export interface LintFixOptions {
-  /** When true, remove orphan pages (destructive). Default: false. */
+  /** When true, add orphan pages to the index. Default: false. */
   fixOrphans?: boolean;
+  /** When true, report what would be fixed without writing any files. */
+  dryRun?: boolean;
 }
 
 export interface LintFixResult {
@@ -310,6 +312,7 @@ export async function lintFix(
   const root = resolve(targetPath);
   const wikiDir = join(root, 'wiki');
   const indexPath = join(wikiDir, 'index.md');
+  const dryRun = options.dryRun === true;
 
   // 1. Run full lint to get all findings
   const lintResult = await lintWiki(targetPath);
@@ -337,7 +340,7 @@ export async function lintFix(
       continue;
     }
     try {
-      await removeEntry(indexPath, finding.file);
+      if (!dryRun) await removeEntry(indexPath, finding.file);
       fixed.push(finding);
     } catch {
       remaining.push(finding);
@@ -348,6 +351,9 @@ export async function lintFix(
   const missingIndexFindings = fixableFindings.filter(
     (f) => f.category === 'index-completeness',
   );
+  // An orphan page also fails index-completeness; track additions so the
+  // orphan pass below does not add the same page to the index twice.
+  const addedToIndex = new Set<string>();
   for (const finding of missingIndexFindings) {
     if (!finding.file) {
       remaining.push(finding);
@@ -364,7 +370,8 @@ export async function lintFix(
         category: categoryFromPath(relPath),
         tags: page.frontmatter.tags || [],
       };
-      await addEntry(indexPath, entry);
+      if (!dryRun) await addEntry(indexPath, entry);
+      addedToIndex.add(relPath);
       fixed.push(finding);
     } catch {
       remaining.push(finding);
@@ -423,7 +430,7 @@ export async function lintFix(
         }
       }
 
-      if (modified) {
+      if (modified && !dryRun) {
         await writePage(fullPath, page);
       }
       fixed.push(...fixedInPage);
@@ -444,6 +451,10 @@ export async function lintFix(
         continue;
       }
       const relPath = finding.file;
+      if (addedToIndex.has(relPath)) {
+        fixed.push(finding);
+        continue;
+      }
       const fullPath = join(wikiDir, relPath);
       try {
         const page = await readPage(fullPath);
@@ -454,7 +465,8 @@ export async function lintFix(
           category: categoryFromPath(relPath),
           tags: page.frontmatter.tags || [],
         };
-        await addEntry(indexPath, entry);
+        if (!dryRun) await addEntry(indexPath, entry);
+        addedToIndex.add(relPath);
         fixed.push(finding);
       } catch {
         remaining.push(finding);

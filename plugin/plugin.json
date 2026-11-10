@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "llmwiki",
+  "version": "1.0.1",
+  "description": "LLM Wiki: a personal knowledge base that your agent maintains. Skills to ask, research, ingest, save and fix, a Wiki Librarian agent, and the LLM Wiki MCP server.",
+  "author": {
+    "name": "Microsoft",
+    "url": "https://github.com/microsoft/llmwiki"
+  },
+  "homepage": "https://github.com/microsoft/llmwiki#readme",
+  "repository": "https://github.com/microsoft/llmwiki",
+  "license": "MIT",
+  "keywords": ["wiki", "knowledge-base", "mcp", "markdown", "skills"]
+}

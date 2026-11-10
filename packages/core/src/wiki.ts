@@ -3,7 +3,7 @@ import { readFile, writeFile, readdir, stat, mkdir, unlink } from 'node:fs/promi
 import { join, dirname, extname, relative, resolve } from 'node:path';
 import { isNotFoundError } from './errors.js';
 import { slugify } from './utils.js';
-import { addEntry, escapeMarkdownLinkText, readIndex, removeEntry, writeIndex } from './index-ops.js';
+import { escapeMarkdownLinkText, readIndex, removeEntry, upsertEntry, writeIndex } from './index-ops.js';
 import type { IndexEntry } from './index-ops.js';
 import { getBacklinks } from './backlinks.js';
 import type { BacklinkResult } from './backlinks.js';
@@ -25,7 +25,10 @@ export interface WikiPage {
 
 export async function readPage(filePath: string): Promise<WikiPage> {
   const raw = await readFile(filePath, 'utf-8');
-  const { data, content } = matter(raw);
+  // Passing options bypasses gray-matter's content-keyed cache, which hands
+  // out shared `data` objects: a caller mutating one page's frontmatter would
+  // otherwise change what later reads of identical content return.
+  const { data, content } = matter(raw, {});
   return {
     frontmatter: data as WikiPageFrontmatter,
     body: content.trim(),
@@ -131,7 +134,7 @@ export async function createEntityPage(
   };
 
   const indexPath = join(wikiDir, 'index.md');
-  await addEntry(indexPath, indexEntry);
+  await upsertEntry(indexPath, indexEntry);
 
   return { path: relPath, indexEntry };
 }
@@ -170,9 +173,83 @@ export async function createConceptPage(
   };
 
   const indexPath = join(wikiDir, 'index.md');
-  await addEntry(indexPath, indexEntry);
+  await upsertEntry(indexPath, indexEntry);
 
   return { path: relPath, indexEntry };
+}
+
+export interface UpsertDerivedPageResult extends CreatePageResult {
+  /** False when an existing page was extended instead. */
+  created: boolean;
+}
+
+/**
+ * Create an entity or concept page derived from a source summary page, or —
+ * if a page with the same slug exists — extend it instead of overwriting it:
+ * the content is added before any "## See also" section (unless already
+ * present), tags are combined, and `sourcePage` is added to `sources` when the
+ * page already lists sources. New pages record `sources: [sourcePage]`.
+ */
+export async function upsertDerivedPage(
+  wikiDir: string,
+  kind: 'entity' | 'concept',
+  name: string,
+  content: string,
+  tags: string[] = [],
+  sourcePage?: string,
+): Promise<UpsertDerivedPageResult> {
+  const relPath = `${kind === 'entity' ? 'entities' : 'concepts'}/${slugify(name)}.md`;
+  const fullPath = join(wikiDir, relPath);
+
+  let existing: WikiPage | undefined;
+  try {
+    existing = await readPage(fullPath);
+  } catch (err) {
+    if (!isNotFoundError(err)) throw err;
+  }
+
+  if (!existing) {
+    const result =
+      kind === 'entity'
+        ? await createEntityPage(wikiDir, name, content, tags)
+        : await createConceptPage(wikiDir, name, content, tags);
+    if (sourcePage) {
+      const page = await readPage(fullPath);
+      page.frontmatter.sources = [sourcePage];
+      await writePage(fullPath, page);
+    }
+    return { ...result, created: true };
+  }
+
+  const frontmatter: WikiPageFrontmatter = { ...existing.frontmatter };
+  const existingTags = Array.isArray(frontmatter.tags) ? frontmatter.tags : [];
+  frontmatter.tags = [...new Set([...existingTags, ...tags])];
+  const sources = frontmatter.sources;
+  if (sourcePage && Array.isArray(sources) && sources.length > 0 && !sources.includes(sourcePage)) {
+    frontmatter.sources = [...sources, sourcePage];
+  }
+
+  let body = existing.body;
+  const addition = content.trim();
+  if (addition && !body.includes(addition)) {
+    const seeAlso = body.search(/^## See also\b/m);
+    body =
+      seeAlso >= 0
+        ? `${body.slice(0, seeAlso).trimEnd()}\n\n${addition}\n\n${body.slice(seeAlso)}`
+        : `${body.trimEnd()}\n\n${addition}`;
+  }
+  await writePage(fullPath, { frontmatter, body });
+
+  const indexEntry: IndexEntry = {
+    path: relPath,
+    title: (frontmatter.title as string | undefined) || name,
+    summary: '',
+    category: kind === 'entity' ? 'Entities' : 'Concepts',
+    tags: frontmatter.tags,
+  };
+  await upsertEntry(join(wikiDir, 'index.md'), indexEntry);
+
+  return { path: relPath, indexEntry, created: false };
 }
 
 /**

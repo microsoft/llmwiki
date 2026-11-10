@@ -3,9 +3,9 @@ import { join, basename } from 'node:path';
 import { WikiPagesTreeDataProvider } from './wikiPagesTree';
 import { RawSourcesTreeDataProvider } from './rawSourcesTree';
 import { BacklinksTreeDataProvider } from './backlinksTree';
+import { LintFindingsTreeDataProvider } from './lintFindingsTree';
 import { registerCommands } from './commands';
 import { createStatusBar } from './statusBar';
-import { registerChatParticipant } from './chatParticipant';
 import { llmIngest } from './llmIngest';
 import { registerMcpServerProvider } from './mcpProvider';
 
@@ -87,6 +87,10 @@ function registerFullViews(
   const backlinksProvider = new BacklinksTreeDataProvider(wikiProjectRoot);
   const backlinksRegistration = vscode.window.registerTreeDataProvider('backlinks', backlinksProvider);
 
+  const lintFindingsProvider = new LintFindingsTreeDataProvider(wikiProjectRoot);
+  const lintFindingsRegistration = vscode.window.registerTreeDataProvider('lintFindings', lintFindingsProvider);
+  vscode.commands.executeCommand('setContext', 'llmwiki.hasLintFindings', false);
+
   const watcher = vscode.workspace.createFileSystemWatcher(
     new vscode.RelativePattern(workspaceFolder, `${WIKI_DIR_NAME}/wiki/**/*.md`),
   );
@@ -127,21 +131,18 @@ function registerFullViews(
     autoCleanup(uri, wikiProjectRoot, outputChannel, wikiProviders);
   });
 
-  const wikiProviders = { entities: entitiesProvider, concepts: conceptsProvider, rawSources: rawSourcesProvider };
+  const wikiProviders = {
+    entities: entitiesProvider,
+    concepts: conceptsProvider,
+    rawSources: rawSourcesProvider,
+    lintFindings: lintFindingsProvider,
+  };
   registerCommands(context, workspaceFolder, wikiProjectRoot, wikiProviders, outputChannel);
-  registerChatParticipant(context, workspaceFolder, outputChannel);
   registerMcpServerProvider(context, workspaceFolder, outputChannel);
-
-  // Fix button opens @wiki /fix in chat
-  context.subscriptions.push(
-    vscode.commands.registerCommand('llmwiki.fix', () => {
-      vscode.commands.executeCommand('workbench.action.chat.open', { query: '@wiki /fix' });
-    }),
-  );
 
   const statusBar = createStatusBar(context, wikiProjectRoot);
 
-  context.subscriptions.push(entitiesRegistration, conceptsRegistration, watcher, entitiesProvider, conceptsProvider, rawSourcesRegistration, rawWatcher, rawSourcesProvider, backlinksRegistration, backlinksProvider, statusBar);
+  context.subscriptions.push(entitiesRegistration, conceptsRegistration, watcher, entitiesProvider, conceptsProvider, rawSourcesRegistration, rawWatcher, rawSourcesProvider, backlinksRegistration, backlinksProvider, lintFindingsRegistration, lintFindingsProvider, statusBar);
 
   // Manual scan command — also resilient backup if the watcher misses an event.
   context.subscriptions.push(
@@ -329,9 +330,7 @@ async function autoCleanup(
   outputChannel: vscode.OutputChannel,
   providers: { entities: WikiPagesTreeDataProvider; concepts: WikiPagesTreeDataProvider; rawSources: RawSourcesTreeDataProvider },
 ): Promise<void> {
-  const { slugify, deletePage, readPage, appendEntry } = await import('@llmwiki/core');
-  const { readdir } = await import('node:fs/promises');
-  const { extname } = await import('node:path');
+  const { slugify, removeSourcePages, appendEntry } = await import('@llmwiki/core');
   const wikiDir = join(wikiProjectRoot, 'wiki');
   const logPath = join(wikiDir, 'log.md');
   const fileName = basename(uri.fsPath);
@@ -340,41 +339,18 @@ async function autoCleanup(
 
   outputChannel.appendLine(`[autoCleanup] Source removed: ${fileName}, looking for ${summaryRelPath}`);
 
-  let removedCount = 0;
-
-  // Delete summary page
+  // Delete the summary and the pages derived only from this source; pages
+  // that still have another existing source are kept.
+  let removed: string[] = [];
   try {
-    await deletePage(wikiDir, summaryRelPath);
-    removedCount++;
-    outputChannel.appendLine(`[autoCleanup] Deleted summary: ${summaryRelPath}`);
-  } catch {
-    // May not exist
-  }
-
-  // Delete entity/concept pages tagged with this source
-  try {
-    const allFiles = await readdir(wikiDir, { recursive: true }) as string[];
-    const mdPages = allFiles
-      .filter((f) => typeof f === 'string' && extname(f) === '.md')
-      .map((f) => f.replace(/\\/g, '/'))
-      .filter((f) => f !== 'index.md' && f !== 'log.md');
-
-    for (const relPath of mdPages) {
-      try {
-        const page = await readPage(join(wikiDir, relPath));
-        const sources = page.frontmatter.sources as string[] | undefined;
-        if (sources && sources.includes(summaryRelPath)) {
-          await deletePage(wikiDir, relPath);
-          removedCount++;
-          outputChannel.appendLine(`[autoCleanup] Deleted tagged page: ${relPath}`);
-        }
-      } catch {
-        // Skip unreadable pages
-      }
+    removed = await removeSourcePages(wikiDir, summaryRelPath);
+    for (const relPath of removed) {
+      outputChannel.appendLine(`[autoCleanup] Deleted: ${relPath}`);
     }
   } catch (err) {
-    outputChannel.appendLine(`[autoCleanup] Error scanning pages: ${err}`);
+    outputChannel.appendLine(`[autoCleanup] Error removing pages: ${err}`);
   }
+  const removedCount = removed.length;
 
   if (removedCount > 0) {
     try {

@@ -19,6 +19,8 @@ export interface IngestResult {
   dry_run: boolean;
   error?: string;
   message?: string;
+  /** Existing summary page (wiki-relative) when the source was already ingested. */
+  summary_page?: string;
 }
 
 /**
@@ -112,7 +114,8 @@ export async function ingestSource(
       pages_created: [],
       pages_updated: [],
       dry_run: dryRun,
-      message: 'Source already ingested. Use --force to re-ingest.',
+      message: 'Source already ingested. Read summary_page and build on it; re-ingest with force only if the user asks.',
+      summary_page: summaryRelPath,
     };
   }
 

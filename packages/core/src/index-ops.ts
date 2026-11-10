@@ -164,6 +164,24 @@ export async function addEntry(
 }
 
 /**
+ * Add an entry, or replace the existing entry with the same path. An empty
+ * `summary` keeps the existing entry's summary.
+ */
+export async function upsertEntry(
+  filePath: string,
+  entry: IndexEntry,
+): Promise<void> {
+  const entries = await readIndex(filePath);
+  const idx = entries.findIndex((e) => e.path === entry.path);
+  if (idx >= 0) {
+    entries[idx] = { ...entry, summary: entry.summary || entries[idx].summary };
+  } else {
+    entries.push(entry);
+  }
+  await writeIndex(filePath, entries);
+}
+
+/**
  * Remove an entry from the index file by its path.
  * If the path does not exist, the file is left unchanged.
  */

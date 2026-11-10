@@ -66,7 +66,7 @@ const AGENTS_CONTENT = `# AGENTS.md
 
 **Optional fields:**
 - \`tags\` — Array of tag strings
-- \`sources\` — Array of source references
+- \`sources\` — Source summary pages this page was derived from, as wiki-relative paths (e.g. \`sources/article-summary.md\`). When all of them are removed, the page is cleaned up. Pages without \`sources\` are never removed automatically.
 - \`created\` — Creation date (YYYY-MM-DD)
 - \`updated\` — Last updated date (YYYY-MM-DD)
 - \`source_path\` — Relative path to the original source file
@@ -112,7 +112,7 @@ results_count: <number of results>
 
 ### Ingest Workflow
 
-1. Place a raw file in the \`raw/\` directory (or run **LLM Wiki: Add Source** from the Command Palette).
+1. Place a raw file in the \`raw/\` directory (or run **LLM Wiki: Ingest Files or Folder** from the Command Palette).
 2. The extension automatically ingests new sources and writes a summary page in \`wiki/sources/\`.
 3. \`wiki/index.md\` is updated with the new entry.
 4. \`wiki/log.md\` records the ingestion event.
@@ -125,7 +125,7 @@ results_count: <number of results>
 - **stale-entries** (error) — Index entries pointing to deleted files
 - **missing-pages** (info) — Referenced pages that do not exist yet
 
-Run lint via the **LLM Wiki** chat participant: \`@wiki /lint\`.
+Run lint with **LLM Wiki: Run Lint** and apply the deterministic fixes with **LLM Wiki: Fix Issues**. In Copilot Chat, the \`/wiki-fix\` skill resolves the remaining findings.
 
 ### Cross-Referencing Guidelines
 

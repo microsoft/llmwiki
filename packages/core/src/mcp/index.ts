@@ -1,6 +1,12 @@
 export { createMcpServer } from './server.js';
+export type { CreateMcpServerOptions } from './server.js';
 export { READ_TOOLS, handleReadToolCall, assertWithinDir } from './read-tools.js';
-export type { ToolArgs, ToolDefinition } from './read-tools.js';
+export type { ToolAnnotations, ToolArgs, ToolDefinition } from './read-tools.js';
 export { WRITE_TOOLS, handleWriteToolCall } from './write-tools.js';
+export { WORKSPACE_TOOLS, handleWorkspaceToolCall } from './workspace-tools.js';
+export { WikiRootState, NoWikiError, findWikiRoot } from './wiki-root.js';
+export type { WikiRootSource, WikiRootStateOptions } from './wiki-root.js';
+export { BASE_INSTRUCTIONS, buildInstructions } from './instructions.js';
 export { registerResources } from './resources.js';
 export { registerPrompts, PROMPTS } from './prompts.js';
+export { registerCompletions } from './completions.js';

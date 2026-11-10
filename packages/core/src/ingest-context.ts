@@ -104,7 +104,9 @@ function generateSuggestedActions(
   }
 
   if (ingestResult.status === 'skipped') {
-    actions.push('Use force=true to re-ingest this source');
+    actions.push(
+      'Source already ingested: read the existing summary page (summary_page) and build on it; re-ingest with force only if the user asks',
+    );
     return actions;
   }
 

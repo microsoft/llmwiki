@@ -26,7 +26,7 @@ See the [main README](https://github.com/microsoft/llmwiki#readme) for the full 
 
 ## Use as an MCP server
 
-The package ships an `llmwiki-mcp` binary that exposes 14 wiki tools over stdio.
+The package ships an `llmwiki-mcp` binary that exposes the wiki tools, resources and prompts over stdio.
 
 ```bash
 # Direct invocation
@@ -39,7 +39,7 @@ npx llmwiki-mcp ./.wiki
 }
 ```
 
-The single positional argument is the path to a `.wiki/` directory; it defaults to `./.wiki` when omitted.
+The single positional argument (or the `LLMWIKI_ROOT` environment variable) is the path to a `.wiki/` directory. Without it, the server uses `./.wiki` if present, otherwise looks for the wiki in the client's workspace roots, and adds `wiki_open` and `wiki_init` tools so an agent can select or create one.
 
 ## License
 

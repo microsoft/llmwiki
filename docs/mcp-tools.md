@@ -21,6 +21,11 @@
   - [wiki_add_crosslinks](#wiki_add_crosslinks)
   - [wiki_update_index](#wiki_update_index)
   - [wiki_ingest_with_context](#wiki_ingest_with_context)
+  - [wiki_fix](#wiki_fix)
+  - [wiki_delete_page](#wiki_delete_page)
+- [Workspace Tools](#workspace-tools)
+  - [wiki_open](#wiki_open)
+  - [wiki_init](#wiki_init)
 - [Security Model](#security-model)
 - [Example Workflows](#example-workflows)
 - [See Also](#see-also)
@@ -33,13 +38,15 @@ The `llmwiki` MCP server exposes wiki operations over the [Model Context Protoco
 
 | Property | Value |
 |----------|-------|
-| **Server name** | `llmwiki` |
-| **Version** | `0.1.0` |
+| **Server name** | `llmwiki` (title: LLM Wiki) |
+| **Version** | The `@llmwiki/core` package version |
 | **Protocol** | MCP over stdio |
 | **Launcher** | `llmwiki-mcp [wiki-root]` (bin from `@llmwiki/core`) |
 | **VS Code** | Auto-registered by the LLM Wiki extension via `mcpServerDefinitionProviders` |
-| **Response format** | JSON text content |
+| **Agent plugin** | `plugin/` — `copilot plugin install microsoft/llmwiki:plugin` |
+| **Response format** | JSON text content; `wiki_status`, `wiki_query`, `wiki_lint` and `wiki_fix` also return `structuredContent` matching their `outputSchema` |
 | **Error shape** | `{ isError: true }` with an error message string |
+| **Instructions** | Usage guidance plus the wiki's `AGENTS.md` (when the wiki is known at startup) |
 
 ### Connecting
 
@@ -58,9 +65,11 @@ The `llmwiki` MCP server exposes wiki operations over the [Model Context Protoco
 }
 ```
 
-The wiki-root argument is optional; when omitted the launcher defaults to `<cwd>/.wiki`. Install `@llmwiki/core` globally (`npm i -g @llmwiki/core`) to skip the `npx` indirection.
+The wiki root comes from the argument or the `LLMWIKI_ROOT` environment variable. Without either, the server uses `<cwd>/.wiki` when it exists at startup, otherwise looks in the client's workspace roots, and adds the [workspace tools](#workspace-tools) so an agent can open or create one. Install `@llmwiki/core` globally (`npm i -g @llmwiki/core`) to skip the `npx` indirection.
 
-The server provides **7 read tools** for querying and inspecting the wiki, and **7 write tools** for creating, updating, and maintaining content. All tools accept a single JSON object as input and return a single JSON object as output.
+The server provides **7 read tools** for querying and inspecting the wiki, and **9 write tools** for creating, updating, and maintaining content. All tools accept a single JSON object as input and return a single JSON object as output.
+
+Every tool has a `title` and [annotations](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#tool-annotations). Read tools set `readOnlyHint: true`, so VS Code runs them without asking for confirmation. Write tools set `readOnlyHint: false`; those that can overwrite or delete content also set `destructiveHint: true`. All tools set `openWorldHint: false`.
 
 ---
 
@@ -423,6 +432,9 @@ Create a new wiki entity page at `wiki/entities/{slug}.md` with proper frontmatt
 | `name` | string | **Yes** | Entity name (used for title and slug generation) |
 | `content` | string | **Yes** | Markdown body content |
 | `tags` | string[] | No | Tags for frontmatter and index |
+| `sources` | string[] | No | Existing source summary pages under `sources/` that the page is derived from (e.g. `["sources/report-summary.md"]`). Anything else is rejected. If all of them are later removed, `wiki_fix` deletes the page. |
+
+An existing page with the same slug is overwritten, so check for one first.
 
 **Output**
 
@@ -433,6 +445,7 @@ Create a new wiki entity page at `wiki/entities/{slug}.md` with proper frontmatt
 | `title` | string | Entity name used as title |
 | `type` | string | Always `"entity"` |
 | `tags` | string[] | Applied tags |
+| `sources` | string[] | Recorded sources, when given |
 
 **Example**
 
@@ -470,6 +483,9 @@ Create a new wiki concept page at `wiki/concepts/{slug}.md` with proper frontmat
 | `name` | string | **Yes** | Concept name (used for title and slug generation) |
 | `content` | string | **Yes** | Markdown body content |
 | `tags` | string[] | No | Tags for frontmatter and index |
+| `sources` | string[] | No | Existing source summary pages under `sources/` that the page is derived from. Anything else is rejected. If all of them are later removed, `wiki_fix` deletes the page. |
+
+An existing page with the same slug is overwritten, so check for one first.
 
 **Output**
 
@@ -480,6 +496,7 @@ Create a new wiki concept page at `wiki/concepts/{slug}.md` with proper frontmat
 | `title` | string | Concept name used as title |
 | `type` | string | Always `"concept"` |
 | `tags` | string[] | Applied tags |
+| `sources` | string[] | Recorded sources, when given |
 
 **Example**
 
@@ -520,6 +537,7 @@ Update an existing wiki page by merging partial frontmatter changes and/or appen
 | `tags` | string[] | No | New tags (replaces existing tags) |
 | `bodyAppend` | string | No | Markdown to append to existing body |
 | `bodyReplace` | string | No | Markdown to replace entire body |
+| `addSources` | string[] | No | Summary pages of other sources whose content you are adding (e.g. `["sources/second-report-summary.md"]`). Appended to the page's existing `sources`, so the page is only deleted once all of its sources are removed. Must be existing summary pages under `sources/`. Ignored for pages that list no sources, so hand-written pages never become eligible for cleanup. |
 
 **Output**
 
@@ -530,6 +548,7 @@ Update an existing wiki page by merging partial frontmatter changes and/or appen
 | `frontmatter` | object | Updated frontmatter |
 | `bodyUpdated` | boolean | Whether the body was changed |
 | `indexUpdated` | boolean | Whether the index was refreshed |
+| `sourcesUpdated` | boolean | Whether `addSources` added any source |
 
 > **Note:** Fails gracefully if the target page does not exist.
 
@@ -661,7 +680,7 @@ Ingest a source file into the wiki and return enhanced context including related
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `sourcePath` | string | **Yes** | Path to source file, relative to project root |
+| `sourcePath` | string | **Yes** | Path to the source file inside the wiki root — relative to the wiki root (e.g. `raw/article.md`) or absolute |
 | `dryRun` | boolean | No | If `true`, preview the ingest without writing files |
 | `force` | boolean | No | If `true`, re-ingest even if the source was previously processed |
 
@@ -671,7 +690,7 @@ Ingest result plus enriched context:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `ingest` | object | Standard ingest output (`status`, `pages_created`, `pages_updated`, `dry_run`, etc.) |
+| `ingest` | object | Standard ingest output (`status`, `pages_created`, `pages_updated`, `dry_run`, etc.). When `status` is `"skipped"` because the source was already ingested, `summary_page` names the existing summary page. |
 | `source_word_count` | number | Word count of the source file |
 | `source_content_type` | string | Detected content type from file extension (e.g. `"markdown"`, `"pdf"`, `"text"`, `"html"`) |
 | `related_pages` | array | Existing wiki pages related to the ingested content (each with `path`, `title`, `score`, `excerpt`) |
@@ -714,6 +733,98 @@ Ingest result plus enriched context:
 
 ---
 
+### `wiki_fix`
+
+Apply every deterministic fix in one pass: delete entity/concept pages whose `sources` were all removed, drop stale index entries, add unlisted pages to the index, and add missing frontmatter defaults. Findings that need judgment (broken links, invalid page types, missing pages) are returned in `remaining`. Successful fixes are logged in `log.md` as `lint-fix`.
+
+**Input Schema**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `dryRun` | boolean | No | If `true`, report what would change without writing anything |
+
+**Output** (also returned as `structuredContent`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dry_run` | boolean | Whether this was a preview |
+| `removed_pages` | string[] | Derived pages deleted (or that would be deleted) because their sources are gone |
+| `fixed` | LintFinding[] | Findings that were fixed |
+| `remaining` | LintFinding[] | Findings that still need attention |
+| `fixedCount` | number | `fixed.length` |
+| `remainingCount` | number | `remaining.length` |
+
+**Example**
+
+```json
+// Request
+{ "tool": "wiki_fix", "input": { "dryRun": true } }
+
+// Response
+{
+  "command": "fix",
+  "api_version": "1",
+  "dry_run": true,
+  "removed_pages": ["entities/old-vendor.md"],
+  "fixed": [
+    { "severity": "error", "category": "stale-entries", "message": "Stale index entry \"Deleted\" points to missing file \"concepts/deleted.md\"", "file": "concepts/deleted.md" }
+  ],
+  "remaining": [
+    { "severity": "error", "category": "broken-links", "message": "Broken link to \"concepts/missing.md\" in page \"concepts/linked.md\"", "file": "concepts/linked.md" }
+  ],
+  "fixedCount": 1,
+  "remainingCount": 1
+}
+```
+
+---
+
+### `wiki_delete_page`
+
+Delete a wiki page and remove it from the index. Refuses `index.md`, `log.md` and non-markdown files. The deletion is logged in `log.md`. Agents should only call it after the user confirms.
+
+**Input Schema**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `pagePath` | string | **Yes** | Relative path within `wiki/` (e.g. `"concepts/ai.md"`) |
+
+**Output**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | Always `"deleted"` |
+| `path` | string | Normalized path of the deleted page |
+| `linkedFrom` | array | Pages that still link to it (`page`, `title`, `linkText`), so their links can be fixed |
+
+---
+
+## Workspace Tools
+
+These tools are listed only when the server was started without a wiki root (no argument and no `LLMWIKI_ROOT`), for example from the agent plugin.
+
+### `wiki_open`
+
+Select the wiki to work with. Read-only.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | **Yes** | Absolute path of the project folder that contains `.wiki`, or of the `.wiki` folder itself |
+
+Returns `{ "status": "opened", "wiki_root", "wiki_page_count", "source_count" }`.
+
+### `wiki_init`
+
+Create a new wiki (`.wiki/` with `raw/`, `wiki/`, `index.md`, `log.md` and `AGENTS.md`) and open it. Does nothing if the folder already has one.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | No | Absolute path of the project folder. Defaults to the first workspace root reported by the client. |
+
+Returns the init result plus `wiki_root`.
+
+---
+
 ## Security Model
 
 All MCP tools enforce a layered security model to prevent unauthorized file system access and data corruption.
@@ -732,6 +843,8 @@ Every tool that reads or writes wiki files validates paths with `assertWithinDir
 | **Empty slug rejection** | `wiki_create_entity`, `wiki_create_concept` | Names that produce empty slugs are rejected |
 | **Target existence check** | `wiki_add_crosslinks` | All target pages must exist before links are written |
 | **Index injection prevention** | `wiki_update_index`, `wiki_write_page` | Upsert pattern prevents duplicate or malformed index entries |
+| **Protected files** | `wiki_delete_page` | `index.md`, `log.md` and non-markdown files cannot be deleted |
+| **Source containment** | `wiki_ingest_with_context`, `wiki_create_entity`, `wiki_create_concept`, `wiki_update_page` | Source paths must resolve inside the wiki root; recorded `sources`/`addSources` must be existing pages |
 
 ---
 
@@ -788,13 +901,17 @@ Ingest a source file, create a new entity from the findings, and link it to exis
 
 ### 3. Maintain Wiki Health
 
-Run a lint pass, fix issues found, and update the index to keep metadata accurate.
+Run a lint pass, apply the deterministic fixes, fix what remains, and update the index to keep metadata accurate.
 
 ```jsonc
 // Step 1 — Run lint to discover problems
 { "tool": "wiki_lint", "input": {} }
 
-// Step 2 — Fix a page with outdated content
+// Step 2 — Preview, then apply the deterministic fixes
+{ "tool": "wiki_fix", "input": { "dryRun": true } }
+{ "tool": "wiki_fix", "input": {} }
+
+// Step 3 — Fix a page with outdated content
 {
   "tool": "wiki_update_page",
   "input": {
@@ -804,7 +921,7 @@ Run a lint pass, fix issues found, and update the index to keep metadata accurat
   }
 }
 
-// Step 3 — Update the index entry to match
+// Step 4 — Update the index entry to match
 {
   "tool": "wiki_update_index",
   "input": {

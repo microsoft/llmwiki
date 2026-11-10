@@ -1,0 +1,3 @@
+# Generated agent-plugin MCP server bundle. Rebuilt by `npm run build`; CI
+# fails if the committed copy is stale. Keep bytes exact on every platform.
+plugin/server/llmwiki-mcp.cjs -text linguist-generated=true
