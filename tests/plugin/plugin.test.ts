@@ -92,6 +92,14 @@ describe('skills', () => {
       expect(skill.data['disable-model-invocation'] === true, skill.name).toBe(manual);
     }
   });
+
+  it('applies wiki_fix only after the user approves the pages it would delete', () => {
+    const fix = skills.find((s) => s.name === 'wiki-fix')!;
+    expect(fix.content).toContain('removed_pages');
+    expect(fix.content).toMatch(/Wait for an explicit yes/);
+    expect(fix.content).toMatch(/don't call `wiki_fix` without `dryRun`/);
+    expect(BASE_INSTRUCTIONS).toMatch(/removed_pages, apply only after the user approves/);
+  });
 });
 
 describe('agent and rules', () => {

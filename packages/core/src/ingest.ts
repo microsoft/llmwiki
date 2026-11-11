@@ -3,6 +3,7 @@ import { join, resolve, basename, dirname, extname, relative } from 'node:path';
 import { writePage, directoryExists } from './wiki.js';
 import { addEntry, removeEntry } from './index-ops.js';
 import { appendEntry } from './log.js';
+import { withWikiLock } from './lock.js';
 import { slugify } from './utils.js';
 import { API_VERSION } from './constants.js';
 import { isNotFoundError, isPermissionError } from './errors.js';
@@ -27,13 +28,26 @@ export interface IngestResult {
  * Ingest a source file into the wiki knowledge base.
  *
  * Reads the source, creates a summary page in wiki/sources/,
- * updates wiki/index.md, and appends to wiki/log.md.
+ * updates wiki/index.md, and appends to wiki/log.md. Unless `dryRun` is set,
+ * this runs under the wiki lock so the duplicate check and the writes don't
+ * interleave with other writers.
  */
 export async function ingestSource(
   sourcePath: string,
   targetPath: string,
   dryRun: boolean,
   force: boolean = false,
+): Promise<IngestResult> {
+  if (dryRun) return ingestSourceFile(sourcePath, targetPath, dryRun, force);
+  const wikiDir = join(resolve(targetPath), 'wiki');
+  return withWikiLock(wikiDir, () => ingestSourceFile(sourcePath, targetPath, dryRun, force));
+}
+
+async function ingestSourceFile(
+  sourcePath: string,
+  targetPath: string,
+  dryRun: boolean,
+  force: boolean,
 ): Promise<IngestResult> {
   const root = resolve(targetPath);
   const wikiDir = join(root, 'wiki');

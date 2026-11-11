@@ -46,6 +46,8 @@ VS Code deprecated chat participants, and the Copilot harness (which VS Code 1.1
 - Lint auto-fix no longer adds an unindexed orphan page to the index twice, and creating an entity or concept page that already exists updates its index entry instead of adding a duplicate.
 - Reading a page no longer returns frontmatter mutated by an earlier caller when the file's content repeats (gray-matter cache), which could make lint miss findings in long-running processes such as the MCP server.
 - The MCP server definition sets `ELECTRON_RUN_AS_NODE` explicitly, so it also starts when spawned by a process that doesn't inherit it.
+- Concurrent writers no longer overwrite each other's changes. For example, two ingests that extend the same entity page now both keep their content and `sources`. Page and index updates hold a write lock (`wiki/.llmwiki.lock`) that the extension and every MCP server process share.
+- Deleting pages (**Remove Source**, cleanup after a source is removed, `wiki_delete_page`) never deletes `index.md` or `log.md` under another letter case. It also refuses paths that leave the wiki through a symlinked folder.
 
 ## [1.0.1] — 2026-10-12
 

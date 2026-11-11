@@ -1,8 +1,8 @@
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { statSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { appendEntry } from './log.js';
 import { API_VERSION, WIKI_DIR_NAME } from './constants.js';
-import { isNotFoundError } from './errors.js';
 
 /**
  * Result of running the init command.
@@ -137,6 +137,20 @@ Run lint with **LLM Wiki: Run Lint** and apply the deterministic fixes with **LL
 `;
 
 /**
+ * True when `root` (a `.wiki` folder) holds an initialized wiki, meaning it
+ * has a `wiki/` directory. initWiki, MCP wiki discovery and the VS Code
+ * extension use the same test, so a wiki whose index.md went missing still
+ * opens and wiki_fix can rebuild the index.
+ */
+export function isWikiInitialized(root: string): boolean {
+  try {
+    return statSync(join(root, 'wiki')).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Initialize a wiki knowledge base at the given path.
  * Creates the `.wiki` directory containing the wiki structure.
  * The `targetPath` is the project/workspace folder; the wiki root
@@ -146,24 +160,17 @@ Run lint with **LLM Wiki: Run Lint** and apply the deterministic fixes with **LL
  */
 export async function initWiki(targetPath: string): Promise<InitResult> {
   const root = resolve(targetPath, WIKI_DIR_NAME);
-  const wikiDir = join(root, 'wiki');
 
   // Detect if already initialized
-  try {
-    const wikiStat = await stat(wikiDir);
-    if (wikiStat.isDirectory()) {
-      return {
-        command: 'init',
-        api_version: API_VERSION,
-        status: 'already_initialized',
-        created_dirs: [],
-        created_files: [],
-        warning: 'Wiki is already initialized (wiki/ directory exists)',
-      };
-    }
-  } catch (err) {
-    if (!isNotFoundError(err)) throw err;
-    // Directory does not exist — proceed with init
+  if (isWikiInitialized(root)) {
+    return {
+      command: 'init',
+      api_version: API_VERSION,
+      status: 'already_initialized',
+      created_dirs: [],
+      created_files: [],
+      warning: 'Wiki is already initialized (wiki/ directory exists)',
+    };
   }
 
   // Create directory structure

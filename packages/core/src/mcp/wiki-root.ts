@@ -1,9 +1,9 @@
-import { existsSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { WIKI_DIR_NAME } from '../constants.js';
+import { isWikiInitialized } from '../init.js';
 
 /** Raised when a tool needs a wiki but the server has not located one yet. */
 export class NoWikiError extends Error {
@@ -17,20 +17,17 @@ export class NoWikiError extends Error {
   }
 }
 
-function isWikiRoot(dir: string): boolean {
-  return existsSync(join(dir, 'wiki', 'index.md'));
-}
-
 /**
  * Resolve the wiki root for `dir`, which may be a project folder containing
  * `.wiki/` or the `.wiki` folder itself. Returns `undefined` if neither holds
- * an initialized wiki (`wiki/index.md`).
+ * an initialized wiki: a `wiki/` directory, the same test wiki_init uses. A
+ * wiki whose index.md is missing still opens, so wiki_fix can rebuild it.
  */
 export function findWikiRoot(dir: string): string | undefined {
   const abs = resolve(dir);
   const nested = join(abs, WIKI_DIR_NAME);
-  if (isWikiRoot(nested)) return nested;
-  if (basename(abs) === WIKI_DIR_NAME && isWikiRoot(abs)) return abs;
+  if (isWikiInitialized(nested)) return nested;
+  if (basename(abs) === WIKI_DIR_NAME && isWikiInitialized(abs)) return abs;
   return undefined;
 }
 
@@ -120,7 +117,7 @@ export class WikiRootState {
     const found = findWikiRoot(dir);
     if (!found) {
       throw new Error(
-        `No LLM Wiki found at ${resolve(dir)} (expected ${WIKI_DIR_NAME}/wiki/index.md). Use wiki_init to create one.`,
+        `No LLM Wiki found at ${resolve(dir)} (expected a ${WIKI_DIR_NAME}/wiki/ folder). Use wiki_init to create one.`,
       );
     }
     if (this.isFixed && found !== this.root) {

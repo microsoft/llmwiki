@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fixWiki, findOrphanedDerivedPages, normalizeSourceRef, removeSourcePages } from '../../packages/core/src/fix.js';
-import { lintFix } from '../../packages/core/src/lint.js';
+import { lintFix, type LintFinding } from '../../packages/core/src/lint.js';
 import { writePage } from '../../packages/core/src/wiki.js';
 import { writeIndex, readIndex } from '../../packages/core/src/index-ops.js';
 import { readLog } from '../../packages/core/src/log.js';
@@ -214,6 +214,41 @@ describe('fixWiki', () => {
     const files = [...result.fixed, ...result.remaining].map((f) => f.file);
     expect(files).not.toContain('entities/gone.md');
     expect(result.fixed.map((f) => f.category)).toContain('stale-entries');
+  });
+
+  it('previews exactly what applying reports, linting the wiki as it will be after the deletions', async () => {
+    await page(
+      'entities/gone.md',
+      { type: 'entity', title: 'Gone', tags: [], created: '2026-01-01', sources: ['sources/removed-summary.md'] },
+      'See [nowhere](../concepts/nowhere.md) and [only from gone](../concepts/only-from-gone.md).',
+    );
+    await page('concepts/keeper.md', { type: 'concept', title: 'Keeper', tags: [], created: '2026-01-01' }, 'Built on [Gone](../entities/gone.md).');
+    await page('concepts/only-from-gone.md', { type: 'concept', title: 'Only from gone', tags: [], created: '2026-01-01' });
+    await writeIndex(join(wikiDir, 'index.md'), [
+      { path: 'entities/gone.md', title: 'Gone', summary: '', category: 'Entities', tags: [] },
+      { path: 'concepts/keeper.md', title: 'Keeper', summary: '', category: 'Concepts', tags: [] },
+    ]);
+    const sorted = (findings: LintFinding[]) =>
+      findings.map((f) => `${f.category} | ${f.file} | ${f.message}`).sort();
+
+    const preview = await fixWiki(root, { dryRun: true });
+    const applied = await fixWiki(root);
+
+    expect(preview.removed_pages).toEqual(['entities/gone.md']);
+    expect(applied.removed_pages).toEqual(['entities/gone.md']);
+    expect(sorted(preview.fixed)).toEqual(sorted(applied.fixed));
+    expect(sorted(preview.remaining)).toEqual(sorted(applied.remaining));
+
+    // The link to the removed page breaks…
+    expect(preview.remaining).toContainEqual(
+      expect.objectContaining({ category: 'broken-links', file: 'concepts/keeper.md' }),
+    );
+    // …the removed page's own links no longer count…
+    expect(JSON.stringify(preview)).not.toContain('concepts/nowhere.md');
+    // …and the page only it linked to becomes an orphan that gets indexed.
+    expect(preview.fixed).toContainEqual(
+      expect.objectContaining({ category: 'orphan-pages', file: 'concepts/only-from-gone.md' }),
+    );
   });
 });
 

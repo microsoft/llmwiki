@@ -87,6 +87,7 @@ llmwiki/
 │   │   │   ├── index.ts            # Barrel export
 │   │   │   ├── constants.ts        # API_VERSION
 │   │   │   ├── errors.ts           # isNotFoundError, isPermissionError
+│   │   │   ├── lock.ts             # withWikiLock (cross-process wiki write lock)
 │   │   │   ├── wiki.ts             # readPage, writePage, listPages, getPageLinks,
 │   │   │   │                       # directoryExists, createEntityPage,
 │   │   │   │                       # createConceptPage, addCrosslinks
@@ -357,6 +358,8 @@ This is what `mcp.json` entries (Claude Desktop, Cursor, `.vscode/mcp.json`, `.m
 - **Bound** — a root from the argument or `LLMWIKI_ROOT`. Only that wiki is used; `wiki_open`/`wiki_init` are not offered.
 - **Discovery** — no root given. If `<cwd>/.wiki` exists when the server starts, it is used (and its `AGENTS.md` goes into the instructions). Otherwise, on the first tool call the server checks the client's workspace roots (MCP `roots/list`; a wiki found this way is re-discovered after `roots/list_changed`). Agents can also select a wiki with `wiki_open` or create one with `wiki_init`. Agent plugin clients start servers in the plugin folder and may report no roots, so the plugin's skills call `wiki_open` with the workspace folder when needed.
 
+A folder counts as a wiki when `.wiki/wiki/` exists. `initWiki` and the extension use the same test, so a wiki whose `index.md` is missing still opens, and `wiki_fix` can rebuild the index.
+
 Tool calls made before a wiki is found return an error that tells the agent how to open one.
 
 ### Server Metadata
@@ -431,7 +434,8 @@ External LLM Agent
 - **Input validation:** All required fields are checked for non-empty strings; arrays are validated for correct element types.
 - **Empty slug/title rejection:** Tools reject empty or whitespace-only slug and title arguments.
 - **Index injection prevention:** Index updates use an upsert (find-or-replace) pattern to prevent duplicate entries.
-- **Protected files:** `wiki_delete_page` refuses `index.md`, `log.md` and non-markdown files.
+- **Protected files:** `wiki_delete_page` refuses `index.md`, `log.md` (in any letter case) and non-markdown files. `deletePage` checks the path again after resolving symlinked folders, so a link such as `wiki/linked -> ../raw` can't be used to delete files outside the wiki.
+- **Concurrent writes:** every read-modify-write of a page or `index.md` (ingest, `upsertDerivedPage`, crosslinks, `wiki_update_page`, index updates, fixes and source cleanup) runs under the wiki write lock (`withWikiLock` in `lock.ts`). The lock is a `wiki/.llmwiki.lock` file, so the extension and every MCP server process share it. It is re-entrant within one call chain, and a lock left by a crashed process is broken after 10 seconds.
 - **Provenance:** `sources` / `addSources` must name existing summary pages under `sources/`. Only such entries take part in cleanup: a page is deleted as orphaned when every one of them is definitely missing (`ENOENT`), and other entries (raw paths, URLs) count as present. Pages without `sources` are never deleted automatically, and the extension's LLM ingest extends existing pages instead of overwriting them.
 - **Error isolation:** Each tool call is wrapped in try/catch, returning `isError: true` on failure without crashing the server.
 
@@ -569,6 +573,7 @@ extension.ts
 |--------|---------|---------|
 | `constants.ts` | `API_VERSION`, `WIKI_DIR_NAME`, `CORE_VERSION` | API version string (`'1'`) included in MCP JSON output, the `.wiki` directory name, and the package version reported by the MCP server. |
 | `errors.ts` | `isNotFoundError`, `isPermissionError` | Error classification guards for ENOENT and EACCES. |
+| `lock.ts` | `withWikiLock` | Runs a read-modify-write of pages or `index.md` under the wiki write lock: a `wiki/.llmwiki.lock` file shared by the extension and MCP server processes, re-entrant within one call chain, and broken when stale. |
 | `wiki.ts` | `readPage`, `writePage`, `listPages`, `getPageLinks`, `directoryExists`, `createEntityPage`, `createConceptPage`, `addCrosslinks` | Read/write wiki pages with gray-matter frontmatter. List `.md` files recursively. Extract internal markdown links. Create typed pages with auto-index registration. Append cross-reference links. |
 | `index-ops.ts` | `readIndex`, `writeIndex`, `addEntry`, `removeEntry`, `findEntries`, `updateIndexEntry` | Parse and serialize the categorized `index.md` format. CRUD operations on index entries including partial metadata updates. |
 | `log.ts` | `appendEntry`, `readLog`, `getRecentEntries` | Append timestamped entries to `log.md`. Parse log entries. Retrieve recent entries. |
@@ -578,7 +583,7 @@ extension.ts
 | `fix.ts` | `fixWiki`, `findOrphanedDerivedPages`, `removeSourcePages` | One pass of every deterministic fix: delete entity/concept pages whose sources were all removed, then `lintFix` with orphan indexing. Used by the extension's Fix Issues/Refresh commands and the `wiki_fix` tool. `removeSourcePages` deletes a removed source's summary and the pages left with no existing source (Remove Source and the `raw/` deletion watcher). |
 | `utils.ts` | `slugify`, `excerpt` | Slugify filenames for wiki paths. Extract text excerpts with configurable max length. |
 | `search.ts` | `countOccurrences` | Case-insensitive substring occurrence counting for query scoring. |
-| `init.ts` | `initWiki` | Initialize a wiki: create directory structure, index, log, and AGENTS.md template. |
+| `init.ts` | `initWiki`, `isWikiInitialized` | Initialize a wiki: create directory structure, index, log, and AGENTS.md template. `isWikiInitialized` (a `wiki/` folder exists) is also what MCP discovery checks. |
 | `ingest.ts` | `ingestSource` | Ingest a single source file with duplicate detection. |
 | `ingest-context.ts` | `ingestWithContext` | Ingest a source with enriched context: word count, content type detection, related pages, follow-up actions. Used by `wiki_ingest_with_context`. |
 | `bulk-ingest.ts` | `bulkIngest` | Batch ingest all files from `raw/`, with progress callbacks and per-file status tracking. |

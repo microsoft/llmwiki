@@ -192,4 +192,20 @@ describe('upsertDerivedPage', () => {
     expect(page.frontmatter.title).toBe('Mine');
     expect(page.body).toBe('My own notes.\n\nFrom a source.');
   });
+
+  it('keeps every source when ingests extend the same page at the same time', async () => {
+    const sources = ['a', 'b', 'c', 'd', 'e'].map((name) => `sources/${name}-summary.md`);
+
+    await Promise.all(
+      sources.map((source, i) =>
+        upsertDerivedPage(wikiDir, 'entity', 'Grace Hopper', `Fact ${i}.`, [`tag-${i}`], source),
+      ),
+    );
+
+    const page = await readPage(join(wikiDir, 'entities', 'grace-hopper.md'));
+    expect([...(page.frontmatter.sources ?? [])].sort()).toEqual(sources);
+    expect([...(page.frontmatter.tags ?? [])].sort()).toEqual(['tag-0', 'tag-1', 'tag-2', 'tag-3', 'tag-4']);
+    for (let i = 0; i < sources.length; i++) expect(page.body).toContain(`Fact ${i}.`);
+    expect(await readIndex(join(wikiDir, 'index.md'))).toHaveLength(1);
+  });
 });

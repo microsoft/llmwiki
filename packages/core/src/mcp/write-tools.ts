@@ -1,6 +1,15 @@
-import { join, relative, extname } from 'node:path';
+import { dirname, join, relative, extname } from 'node:path';
 import { stat } from 'node:fs/promises';
-import { readPage, writePage, createEntityPage, createConceptPage, addCrosslinks, deletePage } from '../wiki.js';
+import {
+  readPage,
+  writePage,
+  createEntityPage,
+  createConceptPage,
+  addCrosslinks,
+  deletePage,
+  isSpecialWikiFile,
+} from '../wiki.js';
+import { withWikiLock } from '../lock.js';
 import { slugify } from '../utils.js';
 import { readIndex, writeIndex, updateIndexEntry } from '../index-ops.js';
 import type { IndexEntry } from '../index-ops.js';
@@ -266,7 +275,7 @@ export const WRITE_TOOLS: ToolDefinition[] = [
     name: 'wiki_fix',
     title: 'Fix wiki issues',
     description:
-      'Apply every deterministic wiki fix: delete entity/concept pages whose raw sources were removed, drop stale index entries, index unlisted pages, and add missing frontmatter defaults. Returns the fixes and the findings that still need judgment (for example broken links). Call with dryRun first to preview.',
+      'Apply every deterministic wiki fix: delete entity/concept pages whose raw sources were removed, drop stale index entries, index unlisted pages, and add missing frontmatter defaults. Returns the fixes and the findings that still need judgment (for example broken links). Call with dryRun first to preview; if the preview lists removed_pages, apply only after the user approves deleting them.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -390,9 +399,11 @@ async function optionalSources(
 /** Record the pages a derived page came from in its frontmatter. */
 async function setSources(wikiDir: string, relPath: string, sources: string[]): Promise<void> {
   const fullPath = join(wikiDir, relPath);
-  const page = await readPage(fullPath);
-  page.frontmatter.sources = sources;
-  await writePage(fullPath, page);
+  await withWikiLock(wikiDir, async () => {
+    const page = await readPage(fullPath);
+    page.frontmatter.sources = sources;
+    await writePage(fullPath, page);
+  });
 }
 
 /**
@@ -417,14 +428,16 @@ async function upsertIndexEntry(
   indexPath: string,
   entry: IndexEntry,
 ): Promise<void> {
-  const entries = await readIndex(indexPath);
-  const idx = entries.findIndex((e) => e.path === entry.path);
-  if (idx >= 0) {
-    entries[idx] = entry;
-  } else {
-    entries.push(entry);
-  }
-  await writeIndex(indexPath, entries);
+  await withWikiLock(dirname(indexPath), async () => {
+    const entries = await readIndex(indexPath);
+    const idx = entries.findIndex((e) => e.path === entry.path);
+    if (idx >= 0) {
+      entries[idx] = entry;
+    } else {
+      entries.push(entry);
+    }
+    await writeIndex(indexPath, entries);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -456,17 +469,19 @@ export async function handleWriteToolCall(
 
       const fullPath = assertWithinDir(wikiDir, pagePath);
 
-      await writePage(fullPath, {
-        frontmatter: { type, title, tags },
-        body,
-      });
+      await withWikiLock(wikiDir, async () => {
+        await writePage(fullPath, {
+          frontmatter: { type, title, tags },
+          body,
+        });
 
-      await upsertIndexEntry(indexPath, {
-        path: pagePath,
-        title,
-        summary: '',
-        category: categoryFromPath(pagePath),
-        tags,
+        await upsertIndexEntry(indexPath, {
+          path: pagePath,
+          title,
+          summary: '',
+          category: categoryFromPath(pagePath),
+          tags,
+        });
       });
 
       return JSON.stringify({
@@ -498,8 +513,11 @@ export async function handleWriteToolCall(
       // Validate the derived path stays within wiki dir
       assertWithinDir(wikiDir, `entities/${slug}.md`);
 
-      const result = await createEntityPage(wikiDir, entityName, content, tags);
-      if (sources) await setSources(wikiDir, result.path, sources);
+      const result = await withWikiLock(wikiDir, async () => {
+        const created = await createEntityPage(wikiDir, entityName, content, tags);
+        if (sources) await setSources(wikiDir, created.path, sources);
+        return created;
+      });
 
       return JSON.stringify({
         status: 'created',
@@ -531,8 +549,11 @@ export async function handleWriteToolCall(
       // Validate the derived path stays within wiki dir
       assertWithinDir(wikiDir, `concepts/${slug}.md`);
 
-      const result = await createConceptPage(wikiDir, conceptName, content, tags);
-      if (sources) await setSources(wikiDir, result.path, sources);
+      const result = await withWikiLock(wikiDir, async () => {
+        const created = await createConceptPage(wikiDir, conceptName, content, tags);
+        if (sources) await setSources(wikiDir, created.path, sources);
+        return created;
+      });
 
       return JSON.stringify({
         status: 'created',
@@ -549,85 +570,90 @@ export async function handleWriteToolCall(
       validateLength(pagePath, 'pagePath', MAX_PATH_LENGTH);
       const fullPath = assertWithinDir(wikiDir, pagePath);
 
-      // Read existing page — fail gracefully if not found
-      let existing;
-      try {
-        existing = await readPage(fullPath);
-      } catch (err) {
-        if (isNotFoundError(err)) {
-          throw new Error(`Page not found: ${pagePath}`);
+      // Read, merge and write under the wiki lock so concurrent updates (from
+      // this server, another one, or the VS Code extension) don't overwrite
+      // each other's content or sources.
+      return withWikiLock(wikiDir, async () => {
+        // Read existing page — fail gracefully if not found
+        let existing;
+        try {
+          existing = await readPage(fullPath);
+        } catch (err) {
+          if (isNotFoundError(err)) {
+            throw new Error(`Page not found: ${pagePath}`);
+          }
+          throw err;
         }
-        throw err;
-      }
 
-      // Merge frontmatter updates
-      const newTitle = optionalString(args, 'title');
-      // S-7: Reject empty titles
-      if (newTitle !== undefined && newTitle.length === 0) {
-        throw new Error("'title' must be non-empty when provided");
-      }
-      if (newTitle !== undefined) validateLength(newTitle, 'title', MAX_TITLE_LENGTH);
-      const newType = optionalString(args, 'type');
-      const newTags = optionalStringArray(args, 'tags');
-      validateTags(newTags);
-
-      const mergedFrontmatter = { ...existing.frontmatter };
-      if (newTitle !== undefined) mergedFrontmatter.title = newTitle;
-      if (newType !== undefined) mergedFrontmatter.type = newType;
-      if (newTags !== undefined) mergedFrontmatter.tags = newTags;
-
-      // Extend the provenance of a derived page. Pages without sources are not
-      // derived from a raw source and must never become eligible for cleanup.
-      const addSources = await optionalSources(args, wikiDir, 'addSources');
-      let sourcesUpdated = false;
-      const currentSources = existing.frontmatter.sources;
-      if (addSources && Array.isArray(currentSources) && currentSources.length > 0) {
-        const mergedSources = [...currentSources];
-        for (const source of addSources) {
-          if (!mergedSources.includes(source)) mergedSources.push(source);
+        // Merge frontmatter updates
+        const newTitle = optionalString(args, 'title');
+        // S-7: Reject empty titles
+        if (newTitle !== undefined && newTitle.length === 0) {
+          throw new Error("'title' must be non-empty when provided");
         }
-        sourcesUpdated = mergedSources.length !== currentSources.length;
-        mergedFrontmatter.sources = mergedSources;
-      }
+        if (newTitle !== undefined) validateLength(newTitle, 'title', MAX_TITLE_LENGTH);
+        const newType = optionalString(args, 'type');
+        const newTags = optionalStringArray(args, 'tags');
+        validateTags(newTags);
 
-      // Handle body updates
-      const bodyAppend = optionalString(args, 'bodyAppend');
-      if (bodyAppend !== undefined) validateLength(bodyAppend, 'bodyAppend', MAX_BODY_LENGTH);
-      const bodyReplace = optionalString(args, 'bodyReplace');
-      if (bodyReplace !== undefined) validateLength(bodyReplace, 'bodyReplace', MAX_BODY_LENGTH);
+        const mergedFrontmatter = { ...existing.frontmatter };
+        if (newTitle !== undefined) mergedFrontmatter.title = newTitle;
+        if (newType !== undefined) mergedFrontmatter.type = newType;
+        if (newTags !== undefined) mergedFrontmatter.tags = newTags;
 
-      let mergedBody = existing.body;
-      if (bodyReplace !== undefined) {
-        mergedBody = bodyReplace;
-      } else if (bodyAppend !== undefined) {
-        mergedBody = existing.body + '\n\n' + bodyAppend;
-      }
+        // Extend the provenance of a derived page. Pages without sources are not
+        // derived from a raw source and must never become eligible for cleanup.
+        const addSources = await optionalSources(args, wikiDir, 'addSources');
+        let sourcesUpdated = false;
+        const currentSources = existing.frontmatter.sources;
+        if (addSources && Array.isArray(currentSources) && currentSources.length > 0) {
+          const mergedSources = [...currentSources];
+          for (const source of addSources) {
+            if (!mergedSources.includes(source)) mergedSources.push(source);
+          }
+          sourcesUpdated = mergedSources.length !== currentSources.length;
+          mergedFrontmatter.sources = mergedSources;
+        }
 
-      await writePage(fullPath, {
-        frontmatter: mergedFrontmatter,
-        body: mergedBody,
-      });
+        // Handle body updates
+        const bodyAppend = optionalString(args, 'bodyAppend');
+        if (bodyAppend !== undefined) validateLength(bodyAppend, 'bodyAppend', MAX_BODY_LENGTH);
+        const bodyReplace = optionalString(args, 'bodyReplace');
+        if (bodyReplace !== undefined) validateLength(bodyReplace, 'bodyReplace', MAX_BODY_LENGTH);
 
-      // Update index if metadata changed
-      const metadataChanged =
-        newTitle !== undefined || newType !== undefined || newTags !== undefined;
-      if (metadataChanged) {
-        await upsertIndexEntry(indexPath, {
-          path: pagePath,
-          title: (mergedFrontmatter.title as string) ?? '',
-          summary: '',
-          category: categoryFromPath(pagePath),
-          tags: (mergedFrontmatter.tags as string[]) ?? [],
+        let mergedBody = existing.body;
+        if (bodyReplace !== undefined) {
+          mergedBody = bodyReplace;
+        } else if (bodyAppend !== undefined) {
+          mergedBody = existing.body + '\n\n' + bodyAppend;
+        }
+
+        await writePage(fullPath, {
+          frontmatter: mergedFrontmatter,
+          body: mergedBody,
         });
-      }
 
-      return JSON.stringify({
-        status: 'updated',
-        path: pagePath,
-        frontmatter: mergedFrontmatter,
-        bodyUpdated: bodyAppend !== undefined || bodyReplace !== undefined,
-        indexUpdated: metadataChanged,
-        sourcesUpdated,
+        // Update index if metadata changed
+        const metadataChanged =
+          newTitle !== undefined || newType !== undefined || newTags !== undefined;
+        if (metadataChanged) {
+          await upsertIndexEntry(indexPath, {
+            path: pagePath,
+            title: (mergedFrontmatter.title as string) ?? '',
+            summary: '',
+            category: categoryFromPath(pagePath),
+            tags: (mergedFrontmatter.tags as string[]) ?? [],
+          });
+        }
+
+        return JSON.stringify({
+          status: 'updated',
+          path: pagePath,
+          frontmatter: mergedFrontmatter,
+          bodyUpdated: bodyAppend !== undefined || bodyReplace !== undefined,
+          indexUpdated: metadataChanged,
+          sourcesUpdated,
+        });
       });
     }
 
@@ -702,13 +728,14 @@ export async function handleWriteToolCall(
       const pagePath = requireString(args, 'pagePath');
       validateLength(pagePath, 'pagePath', MAX_PATH_LENGTH);
       const relPath = relative(wikiDir, assertWithinDir(wikiDir, pagePath)).replace(/\\/g, '/');
-      if (relPath === 'index.md' || relPath === 'log.md') {
+      if (isSpecialWikiFile(relPath)) {
         throw new Error(`'${relPath}' is a special wiki file and cannot be deleted`);
       }
       if (extname(relPath) !== '.md') {
         throw new Error("'pagePath' must point to a markdown page (.md)");
       }
 
+      // deletePage repeats these checks after resolving symlinked folders.
       const result = await deletePage(wikiDir, relPath);
       // deletePage already removed the index entry, so only report real pages.
       const linkedFrom = result.backlinkWarnings
@@ -717,7 +744,7 @@ export async function handleWriteToolCall(
           title: b.sourceTitle,
           linkText: b.linkText,
         }))
-        .filter((l) => l.page !== 'index.md' && l.page !== 'log.md');
+        .filter((l) => !isSpecialWikiFile(l.page));
 
       await appendEntry(join(wikiDir, 'log.md'), {
         verb: 'deleted',

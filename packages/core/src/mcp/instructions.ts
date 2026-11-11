@@ -19,7 +19,7 @@ Answering questions:
 Maintaining the wiki:
 - Prefer wiki_create_entity, wiki_create_concept, wiki_update_page and wiki_add_crosslinks over editing files directly; they keep index.md consistent.
 - To ingest a source, make sure the file is under raw/, then call wiki_ingest_with_context with sourcePath "raw/<file>".
-- For health checks call wiki_lint. wiki_fix applies the deterministic fixes (preview with dryRun first); resolve the remaining findings by editing pages.
+- For health checks call wiki_lint. wiki_fix applies the deterministic fixes: preview with dryRun first, and if the preview lists removed_pages, apply only after the user approves deleting them. Resolve the remaining findings by editing pages.
 - Delete pages with wiki_delete_page only after the user confirms.`;
 
 const DISCOVERY_INSTRUCTIONS = `Locating the wiki: if a tool reports that no wiki is open, call wiki_open with the absolute path of the user's project folder (usually the current working directory). Use wiki_init only when the user wants a new wiki.`;

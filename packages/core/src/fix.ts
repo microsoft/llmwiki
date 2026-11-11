@@ -3,6 +3,7 @@ import { extname, join, resolve } from 'node:path';
 import { readPage, deletePage } from './wiki.js';
 import { lintFix, type LintFinding } from './lint.js';
 import { appendEntry } from './log.js';
+import { withWikiLock } from './lock.js';
 import { API_VERSION } from './constants.js';
 import { isNotFoundError } from './errors.js';
 
@@ -105,28 +106,32 @@ export async function findOrphanedDerivedPages(wikiDir: string): Promise<string[
  * (`summaryRelPath`, e.g. "sources/article-summary.md") and every page that
  * lists it in `sources` and has no other source left. Pages that still have
  * another existing source are kept. Returns the wiki-relative paths deleted.
+ * Runs under the wiki lock, so an ingest can't add a source to a page between
+ * the check and the deletion.
  */
 export async function removeSourcePages(wikiDir: string, summaryRelPath: string): Promise<string[]> {
-  const removed: string[] = [];
-  try {
-    await deletePage(wikiDir, summaryRelPath);
-    removed.push(summaryRelPath);
-  } catch {
-    // The source was never ingested, or its summary is already gone.
-  }
-
-  for (const relPath of await listContentPages(wikiDir)) {
-    const sources = await readSources(wikiDir, relPath);
-    if (!Array.isArray(sources) || !sources.some((s) => normalizeSourceRef(s) === summaryRelPath)) continue;
-    if (!(await allSourcesMissing(wikiDir, sources))) continue;
+  return withWikiLock(wikiDir, async () => {
+    const removed: string[] = [];
     try {
-      await deletePage(wikiDir, relPath);
-      removed.push(relPath);
+      await deletePage(wikiDir, summaryRelPath);
+      removed.push(summaryRelPath);
     } catch {
-      // Already gone.
+      // The source was never ingested, or its summary is already gone.
     }
-  }
-  return removed;
+
+    for (const relPath of await listContentPages(wikiDir)) {
+      const sources = await readSources(wikiDir, relPath);
+      if (!Array.isArray(sources) || !sources.some((s) => normalizeSourceRef(s) === summaryRelPath)) continue;
+      if (!(await allSourcesMissing(wikiDir, sources))) continue;
+      try {
+        await deletePage(wikiDir, relPath);
+        removed.push(relPath);
+      } catch {
+        // Already gone.
+      }
+    }
+    return removed;
+  });
 }
 
 /**
@@ -137,7 +142,9 @@ export async function removeSourcePages(wikiDir: string, summaryRelPath: string)
  *
  * Findings that need judgment (broken links, invalid types, missing pages)
  * are returned in `remaining`. With `dryRun`, nothing is written and the
- * result describes what would change.
+ * result describes what would change: the lint runs against the wiki as it
+ * would be after the deletions. Otherwise the whole pass runs under the wiki
+ * lock.
  */
 export async function fixWiki(
   wikiRoot: string,
@@ -147,44 +154,48 @@ export async function fixWiki(
   const wikiDir = join(root, 'wiki');
   const dryRun = options.dryRun === true;
 
-  const removed: string[] = [];
-  for (const relPath of await findOrphanedDerivedPages(wikiDir)) {
-    if (dryRun) {
-      removed.push(relPath);
-      continue;
+  const run = async (): Promise<FixWikiResult> => {
+    const removed: string[] = [];
+    for (const relPath of await findOrphanedDerivedPages(wikiDir)) {
+      if (dryRun) {
+        removed.push(relPath);
+        continue;
+      }
+      try {
+        await deletePage(wikiDir, relPath);
+        removed.push(relPath);
+      } catch {
+        // Already gone — nothing to report.
+      }
     }
-    try {
-      await deletePage(wikiDir, relPath);
-      removed.push(relPath);
-    } catch {
-      // Already gone — nothing to report.
-    }
-  }
 
-  const result = await lintFix(root, { fixOrphans: true, dryRun });
-
-  // In a dry run the pages above still exist, so drop findings about them.
-  const removedSet = new Set(removed);
-  const keep = (f: LintFinding) => !(dryRun && f.file && removedSet.has(f.file));
-  const fixed = result.fixed.filter(keep);
-  const remaining = result.remaining.filter(keep);
-
-  if (!dryRun && (removed.length > 0 || fixed.length > 0)) {
-    await appendEntry(join(wikiDir, 'log.md'), {
-      verb: 'lint-fix',
-      subject: 'wiki',
-      details: `Removed ${removed.length} orphaned page(s), fixed ${fixed.length} issue(s), ${remaining.length} remaining.`,
+    // In a dry run the pages are still there, so lint as if they were deleted:
+    // links to them break, and their own links and findings disappear.
+    const { fixed, remaining } = await lintFix(root, {
+      fixOrphans: true,
+      dryRun,
+      assumeDeleted: removed,
     });
-  }
 
-  return {
-    command: 'fix',
-    api_version: API_VERSION,
-    dry_run: dryRun,
-    removed_pages: removed,
-    fixed,
-    remaining,
-    fixedCount: fixed.length,
-    remainingCount: remaining.length,
+    if (!dryRun && (removed.length > 0 || fixed.length > 0)) {
+      await appendEntry(join(wikiDir, 'log.md'), {
+        verb: 'lint-fix',
+        subject: 'wiki',
+        details: `Removed ${removed.length} orphaned page(s), fixed ${fixed.length} issue(s), ${remaining.length} remaining.`,
+      });
+    }
+
+    return {
+      command: 'fix',
+      api_version: API_VERSION,
+      dry_run: dryRun,
+      removed_pages: removed,
+      fixed,
+      remaining,
+      fixedCount: fixed.length,
+      remainingCount: remaining.length,
+    };
   };
+
+  return dryRun ? run() : withWikiLock(wikiDir, run);
 }

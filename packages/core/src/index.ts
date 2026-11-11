@@ -1,5 +1,6 @@
 export * from './constants.js';
 export * from './errors.js';
+export * from './lock.js';
 export * from './wiki.js';
 export * from './index-ops.js';
 export * from './log.js';

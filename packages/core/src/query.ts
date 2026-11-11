@@ -3,6 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import { readPage, writePage, directoryExists } from './wiki.js';
 import { readIndex, type IndexEntry } from './index-ops.js';
 import { appendEntry } from './log.js';
+import { withWikiLock } from './lock.js';
 import { countOccurrences } from './search.js';
 import { excerpt } from './utils.js';
 import { API_VERSION } from './constants.js';
@@ -137,21 +138,23 @@ export async function queryWiki(
       body += `- **Excerpt:** ${r.excerpt}\n\n`;
     }
 
-    await writePage(queryFullPath, {
-      frontmatter: {
-        type: 'query',
-        title: `Query: ${queryStr}`,
-        created: today,
-        query: queryStr,
-      },
-      body: body.trim(),
-    });
+    await withWikiLock(wikiDir, async () => {
+      await writePage(queryFullPath, {
+        frontmatter: {
+          type: 'query',
+          title: `Query: ${queryStr}`,
+          created: today,
+          query: queryStr,
+        },
+        body: body.trim(),
+      });
 
-    const logPath = join(wikiDir, 'log.md');
-    await appendEntry(logPath, {
-      verb: 'queried',
-      subject: queryStr,
-      details: `Saved query "${queryStr}" → ${queryRelPath} (${results.length} results)`,
+      const logPath = join(wikiDir, 'log.md');
+      await appendEntry(logPath, {
+        verb: 'queried',
+        subject: queryStr,
+        details: `Saved query "${queryStr}" → ${queryRelPath} (${results.length} results)`,
+      });
     });
 
     output.saved = queryRelPath;

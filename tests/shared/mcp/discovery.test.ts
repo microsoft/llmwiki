@@ -15,7 +15,7 @@ import { createMcpServer } from '../../../packages/core/src/mcp/server.js';
 import { findWikiRoot } from '../../../packages/core/src/mcp/wiki-root.js';
 import { initWiki } from '../../../packages/core/src/init.js';
 import { writePage } from '../../../packages/core/src/wiki.js';
-import { addEntry } from '../../../packages/core/src/index-ops.js';
+import { addEntry, readIndex } from '../../../packages/core/src/index-ops.js';
 
 let base: string;
 let projectA: string;
@@ -95,6 +95,11 @@ describe('findWikiRoot', () => {
     expect(findWikiRoot(emptyDir)).toBeUndefined();
     expect(findWikiRoot(join(base, 'does-not-exist'))).toBeUndefined();
   });
+
+  it('accepts a wiki whose index.md is missing, like wiki_init does', async () => {
+    await rm(join(projectA, '.wiki', 'wiki', 'index.md'));
+    expect(findWikiRoot(projectA)).toBe(join(projectA, '.wiki'));
+  });
 });
 
 describe('Discovery mode', () => {
@@ -172,6 +177,22 @@ describe('Discovery mode', () => {
     expect(isError).toBe(true);
     expect(text).toContain("Pass 'path'");
     expect(existsSync(join(emptyDir, '.wiki'))).toBe(false);
+  });
+
+  it('opens a wiki whose index.md is missing so wiki_fix can rebuild the index', async () => {
+    const indexPath = join(projectB, '.wiki', 'wiki', 'index.md');
+    await rm(indexPath);
+    const client = await connect(emptyDir);
+
+    const opened = await call(client, 'wiki_open', { path: projectB });
+    expect(opened.isError).toBe(false);
+    const init = await call(client, 'wiki_init', { path: projectB });
+    expect(init.isError).toBe(false);
+    expect(init.parsed.status).toBe('already_initialized');
+
+    const fix = await call(client, 'wiki_fix');
+    expect(fix.isError).toBe(false);
+    expect((await readIndex(indexPath)).map((e) => e.path)).toEqual(['concepts/topic.md']);
   });
 });
 

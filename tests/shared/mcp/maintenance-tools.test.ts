@@ -3,7 +3,7 @@
  * paths for wiki_ingest_with_context.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile, symlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -11,7 +11,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../../../packages/core/src/mcp/server.js';
 import { initWiki } from '../../../packages/core/src/init.js';
-import { writePage } from '../../../packages/core/src/wiki.js';
+import { readPage, upsertDerivedPage, writePage } from '../../../packages/core/src/wiki.js';
 import { readIndex, writeIndex } from '../../../packages/core/src/index-ops.js';
 
 let projectDir: string;
@@ -127,11 +127,22 @@ describe('wiki_delete_page', () => {
     expect(parsed.path).toBe('entities/turing.md');
   });
 
-  it.each(['index.md', 'log.md', 'concepts/../index.md'])('refuses to delete %s', async (pagePath) => {
+  it.each(['index.md', 'log.md', 'concepts/../index.md', 'Index.md', 'LOG.md'])('refuses to delete %s', async (pagePath) => {
     const { text, isError } = await call('wiki_delete_page', { pagePath });
     expect(isError).toBe(true);
     expect(text).toContain('special wiki file');
     expect(existsSync(join(wikiDir, 'index.md'))).toBe(true);
+  });
+
+  it('refuses a page reached through a folder that links outside the wiki', async () => {
+    await writeFile(join(wikiRoot, 'raw', 'source.md'), '# Source');
+    await symlink(join(wikiRoot, 'raw'), join(wikiDir, 'linked'), 'junction');
+
+    const { text, isError } = await call('wiki_delete_page', { pagePath: 'linked/source.md' });
+
+    expect(isError).toBe(true);
+    expect(text).toContain('Path traversal');
+    expect(existsSync(join(wikiRoot, 'raw', 'source.md'))).toBe(true);
   });
 
   it('refuses paths outside the wiki directory', async () => {
@@ -251,6 +262,37 @@ describe('wiki_create_entity / wiki_create_concept sources', () => {
       });
       expect(isError).toBe(true);
       expect(text).toContain('Source page not found');
+    });
+
+    it('keeps every change when updates and an ingest overlap', async () => {
+      const names = ['b', 'c', 'd', 'e'];
+      for (const name of ['c', 'd', 'e', 'f']) {
+        await writePage(join(wikiDir, 'sources', `${name}-summary.md`), {
+          frontmatter: { type: 'summary', title: name.toUpperCase() },
+          body: 'Summary.',
+        });
+      }
+
+      const [updates] = await Promise.all([
+        Promise.all(
+          names.map((name) =>
+            call('wiki_update_page', {
+              pagePath: 'concepts/shared.md',
+              bodyAppend: `From ${name.toUpperCase()}.`,
+              addSources: [`sources/${name}-summary.md`],
+            }),
+          ),
+        ),
+        // The VS Code extension's ingest extends pages through the same lock.
+        upsertDerivedPage(wikiDir, 'concept', 'Shared', 'From F.', [], 'sources/f-summary.md'),
+      ]);
+
+      expect(updates.map((u) => u.isError)).toEqual(names.map(() => false));
+      const page = await readPage(join(wikiDir, 'concepts', 'shared.md'));
+      expect([...(page.frontmatter.sources ?? [])].sort()).toEqual(
+        ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => `sources/${name}-summary.md`),
+      );
+      for (const name of [...names, 'f']) expect(page.body).toContain(`From ${name.toUpperCase()}.`);
     });
   });
 });

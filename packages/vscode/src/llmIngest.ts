@@ -10,6 +10,7 @@ import {
   upsertDerivedPage,
   addCrosslinks,
   appendEntry,
+  withWikiLock,
   type IndexEntry,
 } from '@llmwiki/core';
 
@@ -97,15 +98,17 @@ export async function llmIngest(
     progress.report({ message: 'Writing LLM summary…' });
     const summaryPath = join(wikiDir, summaryRelPath);
     try {
-      const page = await readPage(summaryPath);
-      if (stubSummary !== undefined && page.body !== stubSummary) {
-        outputChannel.appendLine(`[llmIngest] Kept summary edited during ingest: ${summaryRelPath}`);
-      } else {
-        page.body = analysis.summary;
-        await writePage(summaryPath, page);
-        pagesUpdated.push(summaryRelPath);
-        outputChannel.appendLine(`[llmIngest] Rewrote summary: ${summaryRelPath}`);
-      }
+      await withWikiLock(wikiDir, async () => {
+        const page = await readPage(summaryPath);
+        if (stubSummary !== undefined && page.body !== stubSummary) {
+          outputChannel.appendLine(`[llmIngest] Kept summary edited during ingest: ${summaryRelPath}`);
+        } else {
+          page.body = analysis.summary;
+          await writePage(summaryPath, page);
+          pagesUpdated.push(summaryRelPath);
+          outputChannel.appendLine(`[llmIngest] Rewrote summary: ${summaryRelPath}`);
+        }
+      });
     } catch (err) {
       outputChannel.appendLine(`[llmIngest] Failed to rewrite summary: ${err}`);
     }
@@ -114,6 +117,8 @@ export async function llmIngest(
   // ── Steps 5–6: Create or extend entity and concept pages ─────
   // Pages that already exist (from another source, or written while the
   // model ran) are extended rather than overwritten, keeping their sources.
+  // upsertDerivedPage holds the wiki lock while it merges, so concurrent
+  // ingests and MCP tools can't overwrite each other's changes.
   const derived = [
     ...analysis.entities.map((item) => ({ kind: 'entity' as const, item })),
     ...analysis.concepts.map((item) => ({ kind: 'concept' as const, item })),

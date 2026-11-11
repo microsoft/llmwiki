@@ -737,6 +737,8 @@ Ingest result plus enriched context:
 
 Apply every deterministic fix in one pass: delete entity/concept pages whose `sources` were all removed, drop stale index entries, add unlisted pages to the index, and add missing frontmatter defaults. Findings that need judgment (broken links, invalid page types, missing pages) are returned in `remaining`. Successful fixes are logged in `log.md` as `lint-fix`.
 
+Preview with `dryRun` first. The preview lints the wiki as it would be after the deletions, so `remaining` already includes the links those deletions would break. When `removed_pages` is not empty, agents should apply the fixes only after the user approves deleting those pages.
+
 **Input Schema**
 
 | Parameter | Type | Required | Description |
@@ -781,7 +783,7 @@ Apply every deterministic fix in one pass: delete entity/concept pages whose `so
 
 ### `wiki_delete_page`
 
-Delete a wiki page and remove it from the index. Refuses `index.md`, `log.md` and non-markdown files. The deletion is logged in `log.md`. Agents should only call it after the user confirms.
+Delete a wiki page and remove it from the index. Refuses `index.md` and `log.md` (in any letter case), non-markdown files, and paths that leave the wiki directory, including through a symlinked folder. The deletion is logged in `log.md`. Agents should only call it after the user confirms.
 
 **Input Schema**
 
@@ -811,7 +813,7 @@ Select the wiki to work with. Read-only.
 |-----------|------|----------|-------------|
 | `path` | string | **Yes** | Absolute path of the project folder that contains `.wiki`, or of the `.wiki` folder itself |
 
-Returns `{ "status": "opened", "wiki_root", "wiki_page_count", "source_count" }`.
+Returns `{ "status": "opened", "wiki_root", "wiki_page_count", "source_count" }`. A folder counts as a wiki when it has `.wiki/wiki/` (the same test `wiki_init` uses). If its `index.md` is missing, `wiki_fix` rebuilds it.
 
 ### `wiki_init`
 
@@ -843,8 +845,12 @@ Every tool that reads or writes wiki files validates paths with `assertWithinDir
 | **Empty slug rejection** | `wiki_create_entity`, `wiki_create_concept` | Names that produce empty slugs are rejected |
 | **Target existence check** | `wiki_add_crosslinks` | All target pages must exist before links are written |
 | **Index injection prevention** | `wiki_update_index`, `wiki_write_page` | Upsert pattern prevents duplicate or malformed index entries |
-| **Protected files** | `wiki_delete_page` | `index.md`, `log.md` and non-markdown files cannot be deleted |
+| **Protected files** | `wiki_delete_page` | `index.md`, `log.md` (in any letter case) and non-markdown files cannot be deleted, and the path is checked again after resolving symlinked folders |
 | **Source containment** | `wiki_ingest_with_context`, `wiki_create_entity`, `wiki_create_concept`, `wiki_update_page` | Source paths must resolve inside the wiki root; recorded `sources`/`addSources` must be existing pages |
+
+### Concurrent Writes
+
+Tools that read, merge and write a page or `index.md` (for example `wiki_update_page`, `wiki_add_crosslinks`, `wiki_fix` and the create tools with `sources`) hold the wiki write lock, a `wiki/.llmwiki.lock` file. The VS Code extension's ingest and cleanup use the same lock, so two writers in different processes can't overwrite each other's changes. A lock left behind by a process that crashed is removed after 10 seconds.
 
 ---
 
@@ -908,6 +914,7 @@ Run a lint pass, apply the deterministic fixes, fix what remains, and update the
 { "tool": "wiki_lint", "input": {} }
 
 // Step 2 — Preview, then apply the deterministic fixes
+// (if the preview lists removed_pages, apply only after the user approves)
 { "tool": "wiki_fix", "input": { "dryRun": true } }
 { "tool": "wiki_fix", "input": {} }
 
