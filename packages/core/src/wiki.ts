@@ -1,9 +1,10 @@
 import matter from 'gray-matter';
-import { readFile, writeFile, readdir, stat, mkdir, unlink } from 'node:fs/promises';
-import { join, dirname, extname, relative, resolve } from 'node:path';
+import { readFile, writeFile, readdir, stat, mkdir, unlink, realpath } from 'node:fs/promises';
+import { join, dirname, extname, relative, resolve, basename, isAbsolute, sep } from 'node:path';
 import { isNotFoundError } from './errors.js';
+import { withWikiLock } from './lock.js';
 import { slugify } from './utils.js';
-import { addEntry, escapeMarkdownLinkText, readIndex, removeEntry, writeIndex } from './index-ops.js';
+import { escapeMarkdownLinkText, readIndex, removeEntry, upsertEntry, writeIndex } from './index-ops.js';
 import type { IndexEntry } from './index-ops.js';
 import { getBacklinks } from './backlinks.js';
 import type { BacklinkResult } from './backlinks.js';
@@ -25,7 +26,10 @@ export interface WikiPage {
 
 export async function readPage(filePath: string): Promise<WikiPage> {
   const raw = await readFile(filePath, 'utf-8');
-  const { data, content } = matter(raw);
+  // Passing options bypasses gray-matter's content-keyed cache, which hands
+  // out shared `data` objects: a caller mutating one page's frontmatter would
+  // otherwise change what later reads of identical content return.
+  const { data, content } = matter(raw, {});
   return {
     frontmatter: data as WikiPageFrontmatter,
     body: content.trim(),
@@ -112,28 +116,30 @@ export async function createEntityPage(
   const fullPath = join(wikiDir, relPath);
   const now = new Date().toISOString();
 
-  await writePage(fullPath, {
-    frontmatter: {
-      type: 'entity',
+  return withWikiLock(wikiDir, async () => {
+    await writePage(fullPath, {
+      frontmatter: {
+        type: 'entity',
+        title: name,
+        tags,
+        created: now,
+      },
+      body: content,
+    });
+
+    const indexEntry: IndexEntry = {
+      path: relPath,
       title: name,
+      summary: '',
+      category: 'Entities',
       tags,
-      created: now,
-    },
-    body: content,
+    };
+
+    const indexPath = join(wikiDir, 'index.md');
+    await upsertEntry(indexPath, indexEntry);
+
+    return { path: relPath, indexEntry };
   });
-
-  const indexEntry: IndexEntry = {
-    path: relPath,
-    title: name,
-    summary: '',
-    category: 'Entities',
-    tags,
-  };
-
-  const indexPath = join(wikiDir, 'index.md');
-  await addEntry(indexPath, indexEntry);
-
-  return { path: relPath, indexEntry };
 }
 
 /**
@@ -151,28 +157,110 @@ export async function createConceptPage(
   const fullPath = join(wikiDir, relPath);
   const now = new Date().toISOString();
 
-  await writePage(fullPath, {
-    frontmatter: {
-      type: 'concept',
+  return withWikiLock(wikiDir, async () => {
+    await writePage(fullPath, {
+      frontmatter: {
+        type: 'concept',
+        title: name,
+        tags,
+        created: now,
+      },
+      body: content,
+    });
+
+    const indexEntry: IndexEntry = {
+      path: relPath,
       title: name,
+      summary: '',
+      category: 'Concepts',
       tags,
-      created: now,
-    },
-    body: content,
+    };
+
+    const indexPath = join(wikiDir, 'index.md');
+    await upsertEntry(indexPath, indexEntry);
+
+    return { path: relPath, indexEntry };
   });
+}
 
-  const indexEntry: IndexEntry = {
-    path: relPath,
-    title: name,
-    summary: '',
-    category: 'Concepts',
-    tags,
-  };
+export interface UpsertDerivedPageResult extends CreatePageResult {
+  /** False when an existing page was extended instead. */
+  created: boolean;
+}
 
-  const indexPath = join(wikiDir, 'index.md');
-  await addEntry(indexPath, indexEntry);
+/**
+ * Create an entity or concept page derived from a source summary page, or —
+ * if a page with the same slug exists — extend it instead of overwriting it:
+ * the content is added before any "## See also" section (unless already
+ * present), tags are combined, and `sourcePage` is added to `sources` when the
+ * page already lists sources. New pages record `sources: [sourcePage]`.
+ *
+ * The read, merge and write happen under the wiki lock, so concurrent ingests
+ * (in this process or another one) extend the page one after the other
+ * instead of overwriting each other's content and sources.
+ */
+export async function upsertDerivedPage(
+  wikiDir: string,
+  kind: 'entity' | 'concept',
+  name: string,
+  content: string,
+  tags: string[] = [],
+  sourcePage?: string,
+): Promise<UpsertDerivedPageResult> {
+  const relPath = `${kind === 'entity' ? 'entities' : 'concepts'}/${slugify(name)}.md`;
+  const fullPath = join(wikiDir, relPath);
 
-  return { path: relPath, indexEntry };
+  return withWikiLock(wikiDir, async () => {
+    let existing: WikiPage | undefined;
+    try {
+      existing = await readPage(fullPath);
+    } catch (err) {
+      if (!isNotFoundError(err)) throw err;
+    }
+
+    if (!existing) {
+      const result =
+        kind === 'entity'
+          ? await createEntityPage(wikiDir, name, content, tags)
+          : await createConceptPage(wikiDir, name, content, tags);
+      if (sourcePage) {
+        const page = await readPage(fullPath);
+        page.frontmatter.sources = [sourcePage];
+        await writePage(fullPath, page);
+      }
+      return { ...result, created: true };
+    }
+
+    const frontmatter: WikiPageFrontmatter = { ...existing.frontmatter };
+    const existingTags = Array.isArray(frontmatter.tags) ? frontmatter.tags : [];
+    frontmatter.tags = [...new Set([...existingTags, ...tags])];
+    const sources = frontmatter.sources;
+    if (sourcePage && Array.isArray(sources) && sources.length > 0 && !sources.includes(sourcePage)) {
+      frontmatter.sources = [...sources, sourcePage];
+    }
+
+    let body = existing.body;
+    const addition = content.trim();
+    if (addition && !body.includes(addition)) {
+      const seeAlso = body.search(/^## See also\b/m);
+      body =
+        seeAlso >= 0
+          ? `${body.slice(0, seeAlso).trimEnd()}\n\n${addition}\n\n${body.slice(seeAlso)}`
+          : `${body.trimEnd()}\n\n${addition}`;
+    }
+    await writePage(fullPath, { frontmatter, body });
+
+    const indexEntry: IndexEntry = {
+      path: relPath,
+      title: (frontmatter.title as string | undefined) || name,
+      summary: '',
+      category: kind === 'entity' ? 'Entities' : 'Concepts',
+      tags: frontmatter.tags,
+    };
+    await upsertEntry(join(wikiDir, 'index.md'), indexEntry);
+
+    return { path: relPath, indexEntry, created: false };
+  });
 }
 
 /**
@@ -180,6 +268,7 @@ export async function createConceptPage(
  * Validates all source and target pages exist, reads target titles from
  * frontmatter, and appends (or extends) a "## See also" section with
  * relative markdown links.  Duplicate links are silently skipped.
+ * Runs under the wiki lock, like other page updates.
  */
 export async function addCrosslinks(
   wikiDir: string,
@@ -187,7 +276,14 @@ export async function addCrosslinks(
   toPages: string[],
 ): Promise<void> {
   if (toPages.length === 0) return;
+  await withWikiLock(wikiDir, () => appendCrosslinks(wikiDir, fromPage, toPages));
+}
 
+async function appendCrosslinks(
+  wikiDir: string,
+  fromPage: string,
+  toPages: string[],
+): Promise<void> {
   const fromFull = join(wikiDir, fromPage);
 
   // Validate fromPage exists
@@ -286,11 +382,62 @@ export interface DeleteResult {
 }
 
 /**
+ * True for the wiki's own index.md and log.md (wiki-relative path), in any
+ * letter case: on case-insensitive file systems `Index.md` is the index.
+ */
+export function isSpecialWikiFile(relPath: string): boolean {
+  const normalized = relPath.replace(/\\/g, '/').toLowerCase();
+  return normalized === 'index.md' || normalized === 'log.md';
+}
+
+/** True when `target` is strictly inside `base` (both absolute). */
+function isInside(base: string, target: string): boolean {
+  const rel = relative(base, target);
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
+/**
+ * Resolve the file that `deletePage` may remove. The path must stay inside
+ * the wiki both as written and after resolving symlinked folders (so a link
+ * such as wiki/linked -> ../raw can't delete a raw source), and must not be
+ * index.md or log.md at either location. Returns the resolved path.
+ */
+async function resolveDeletablePage(wikiDir: string, pagePath: string): Promise<string> {
+  const base = resolve(wikiDir);
+  const full = resolve(base, pagePath);
+  if (!isInside(base, full)) {
+    throw new Error('Path traversal detected — pagePath must stay within wikiDir');
+  }
+
+  let realBase: string;
+  let realParent: string;
+  try {
+    realBase = await realpath(base);
+    realParent = await realpath(dirname(full));
+  } catch (err) {
+    if (isNotFoundError(err)) throw new Error(`Page not found: ${pagePath}`);
+    throw err;
+  }
+  const realFull = join(realParent, basename(full));
+  if (!isInside(realBase, realFull)) {
+    throw new Error('Path traversal detected — pagePath must stay within wikiDir');
+  }
+
+  for (const rel of [relative(base, full), relative(realBase, realFull)]) {
+    if (isSpecialWikiFile(rel)) {
+      throw new Error(`'${rel.replace(/\\/g, '/')}' is a special wiki file and cannot be deleted`);
+    }
+  }
+  return realFull;
+}
+
+/**
  * Delete a wiki page by relative path.
  * Validates the page exists, computes backlink warnings, removes the index
  * entry, then deletes the file from disk.
  *
- * Security: validates pagePath stays within wikiDir (no path traversal).
+ * Security: pagePath must stay within wikiDir, also after resolving symlinked
+ * folders, and can't be index.md or log.md (in any letter case).
  * Order: index entry removed FIRST, then file deleted (safer to have orphan
  * file than orphan index entry).
  */
@@ -298,39 +445,36 @@ export async function deletePage(
   wikiDir: string,
   pagePath: string,
 ): Promise<DeleteResult> {
-  // 1. Path traversal validation
-  const resolvedBase = resolve(wikiDir).replace(/\\/g, '/');
-  const resolvedFull = resolve(wikiDir, pagePath).replace(/\\/g, '/');
-  if (!resolvedFull.startsWith(resolvedBase + '/') && resolvedFull !== resolvedBase) {
-    throw new Error('Path traversal detected — pagePath must stay within wikiDir');
-  }
+  // 1. Path traversal and special-file validation
+  const fullPath = await resolveDeletablePage(wikiDir, pagePath);
 
-  // 2. Validate page exists
-  const fullPath = join(wikiDir, pagePath);
-  try {
-    await stat(fullPath);
-  } catch (err) {
-    if (isNotFoundError(err)) {
-      throw new Error(`Page not found: ${pagePath}`);
+  return withWikiLock(wikiDir, async () => {
+    // 2. Validate page exists
+    try {
+      await stat(fullPath);
+    } catch (err) {
+      if (isNotFoundError(err)) {
+        throw new Error(`Page not found: ${pagePath}`);
+      }
+      throw err;
     }
-    throw err;
-  }
 
-  // 3. Compute backlinks before deletion
-  const backlinkWarnings = await getBacklinks(wikiDir, pagePath);
+    // 3. Compute backlinks before deletion
+    const backlinkWarnings = await getBacklinks(wikiDir, pagePath);
 
-  // 4. Remove index entry FIRST (safer order)
-  const indexPath = join(wikiDir, 'index.md');
-  await removeEntry(indexPath, pagePath);
+    // 4. Remove index entry FIRST (safer order)
+    const indexPath = join(wikiDir, 'index.md');
+    await removeEntry(indexPath, pagePath);
 
-  // 5. Delete the file from disk
-  await unlink(fullPath);
+    // 5. Delete the file from disk
+    await unlink(fullPath);
 
-  return {
-    deletedPath: pagePath,
-    deleted: true,
-    backlinkWarnings,
-  };
+    return {
+      deletedPath: pagePath,
+      deleted: true,
+      backlinkWarnings,
+    };
+  });
 }
 
 export interface RenameResult {
@@ -349,11 +493,20 @@ export interface RenameResult {
 /**
  * Rename (move) a wiki page from oldPath to newPath.
  * Rewrites backlinks across the wiki, updates the index entry, and
- * optionally updates a path-derived frontmatter title.
+ * optionally updates a path-derived frontmatter title. Runs under the wiki
+ * lock, like other page updates.
  *
  * Security: validates both paths stay within wikiDir (no path traversal).
  */
 export async function renamePage(
+  wikiDir: string,
+  oldPath: string,
+  newPath: string,
+): Promise<RenameResult> {
+  return withWikiLock(wikiDir, () => movePage(wikiDir, oldPath, newPath));
+}
+
+async function movePage(
   wikiDir: string,
   oldPath: string,
   newPath: string,

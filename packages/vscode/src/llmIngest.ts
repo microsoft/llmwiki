@@ -7,10 +7,10 @@ import {
   readIndex,
   readPage,
   writePage,
-  createEntityPage,
-  createConceptPage,
+  upsertDerivedPage,
   addCrosslinks,
   appendEntry,
+  withWikiLock,
   type IndexEntry,
 } from '@llmwiki/core';
 
@@ -57,6 +57,18 @@ export async function llmIngest(
   pagesCreated.push(...ingestResult.pages_created);
   pagesUpdated.push(...ingestResult.pages_updated);
 
+  // Remember the stub summary so a summary edited while the model runs (for
+  // example by a Copilot agent using the wiki tools) is not overwritten.
+  const summaryRelPath = ingestResult.pages_created[0];
+  let stubSummary: string | undefined;
+  if (summaryRelPath) {
+    try {
+      stubSummary = (await readPage(join(wikiDir, summaryRelPath))).body;
+    } catch {
+      // Summary missing; step 4 skips it.
+    }
+  }
+
   // ── Step 2: Read source content + existing wiki context ──────
   progress.report({ message: 'Extracting text from source…' });
   const sourceContent = await extractText(sourcePath);
@@ -82,53 +94,43 @@ export async function llmIngest(
   }
 
   // ── Step 4: Rewrite the summary page with LLM summary ───────
-  if (analysis.summary && ingestResult.pages_created.length > 0) {
+  if (analysis.summary && summaryRelPath) {
     progress.report({ message: 'Writing LLM summary…' });
-    const summaryPath = join(wikiDir, ingestResult.pages_created[0]);
-    const { readPage, writePage } = await import('@llmwiki/core');
+    const summaryPath = join(wikiDir, summaryRelPath);
     try {
-      const page = await readPage(summaryPath);
-      page.body = analysis.summary;
-      await writePage(summaryPath, page);
-      pagesUpdated.push(ingestResult.pages_created[0]);
-      outputChannel.appendLine(`[llmIngest] Rewrote summary: ${ingestResult.pages_created[0]}`);
+      await withWikiLock(wikiDir, async () => {
+        const page = await readPage(summaryPath);
+        if (stubSummary !== undefined && page.body !== stubSummary) {
+          outputChannel.appendLine(`[llmIngest] Kept summary edited during ingest: ${summaryRelPath}`);
+        } else {
+          page.body = analysis.summary;
+          await writePage(summaryPath, page);
+          pagesUpdated.push(summaryRelPath);
+          outputChannel.appendLine(`[llmIngest] Rewrote summary: ${summaryRelPath}`);
+        }
+      });
     } catch (err) {
       outputChannel.appendLine(`[llmIngest] Failed to rewrite summary: ${err}`);
     }
   }
 
-  // ── Step 5: Create entity pages ──────────────────────────────
-  const sourceRelPath = ingestResult.pages_created[0] ?? '';
-  for (const entity of analysis.entities) {
-    progress.report({ message: `Creating entity: ${entity.name}…` });
+  // ── Steps 5–6: Create or extend entity and concept pages ─────
+  // Pages that already exist (from another source, or written while the
+  // model ran) are extended rather than overwritten, keeping their sources.
+  // upsertDerivedPage holds the wiki lock while it merges, so concurrent
+  // ingests and MCP tools can't overwrite each other's changes.
+  const derived = [
+    ...analysis.entities.map((item) => ({ kind: 'entity' as const, item })),
+    ...analysis.concepts.map((item) => ({ kind: 'concept' as const, item })),
+  ];
+  for (const { kind, item } of derived) {
+    progress.report({ message: `Adding ${kind}: ${item.name}…` });
     try {
-      const result = await createEntityPage(wikiDir, entity.name, entity.content, entity.tags);
-      // Tag with source for cleanup on removal
-      const pagePath = join(wikiDir, result.path);
-      const page = await readPage(pagePath);
-      page.frontmatter.sources = [sourceRelPath];
-      await writePage(pagePath, page);
-      pagesCreated.push(result.path);
-      outputChannel.appendLine(`[llmIngest] Created entity: ${result.path}`);
+      const result = await upsertDerivedPage(wikiDir, kind, item.name, item.content, item.tags, summaryRelPath);
+      (result.created ? pagesCreated : pagesUpdated).push(result.path);
+      outputChannel.appendLine(`[llmIngest] ${result.created ? 'Created' : 'Extended'} ${kind}: ${result.path}`);
     } catch (err) {
-      outputChannel.appendLine(`[llmIngest] Failed to create entity "${entity.name}": ${err}`);
-    }
-  }
-
-  // ── Step 6: Create concept pages ─────────────────────────────
-  for (const concept of analysis.concepts) {
-    progress.report({ message: `Creating concept: ${concept.name}…` });
-    try {
-      const result = await createConceptPage(wikiDir, concept.name, concept.content, concept.tags);
-      // Tag with source for cleanup on removal
-      const pagePath = join(wikiDir, result.path);
-      const page = await readPage(pagePath);
-      page.frontmatter.sources = [sourceRelPath];
-      await writePage(pagePath, page);
-      pagesCreated.push(result.path);
-      outputChannel.appendLine(`[llmIngest] Created concept: ${result.path}`);
-    } catch (err) {
-      outputChannel.appendLine(`[llmIngest] Failed to create concept "${concept.name}": ${err}`);
+      outputChannel.appendLine(`[llmIngest] Failed to add ${kind} "${item.name}": ${err}`);
     }
   }
 
@@ -147,8 +149,8 @@ export async function llmIngest(
   // ── Step 8: Log the enrichment ───────────────────────────────
   await appendEntry(logPath, {
     verb: 'enriched',
-    subject: ingestResult.pages_created[0] ?? sourcePath,
-    details: `LLM created ${analysis.entities.length} entities, ${analysis.concepts.length} concepts, ${analysis.crosslinks.length} crosslinks.`,
+    subject: summaryRelPath ?? sourcePath,
+    details: `LLM added ${analysis.entities.length} entities, ${analysis.concepts.length} concepts, ${analysis.crosslinks.length} crosslinks.`,
   });
 
   return { pagesCreated, pagesUpdated };

@@ -6,18 +6,36 @@ import { listPages, readPage } from '../wiki.js';
 import { listSources } from '../sources.js';
 import { readIndex } from '../index-ops.js';
 import { isNotFoundError } from '../errors.js';
+import { LINT_OUTPUT_SCHEMA, QUERY_OUTPUT_SCHEMA, STATUS_OUTPUT_SCHEMA } from './schemas.js';
+
+/** MCP tool behaviour hints (the MCP specification's `ToolAnnotations`). */
+export interface ToolAnnotations {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
 
 /** JSON-Schema definition for a single MCP tool. */
 export interface ToolDefinition {
   name: string;
+  /** Human-readable name shown by MCP clients. */
+  title: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** When set, the tool also returns `structuredContent` matching this schema. */
+  outputSchema?: Record<string, unknown>;
+  annotations: ToolAnnotations;
 }
+
+/** Read-only tools have no side effects and only touch the local wiki. */
+const READ_ONLY: ToolAnnotations = { readOnlyHint: true, openWorldHint: false };
 
 /** All read-only tool definitions exposed by the MCP server. */
 export const READ_TOOLS: ToolDefinition[] = [
   {
     name: 'wiki_status',
+    title: 'Wiki status',
     description:
       'Return wiki status including source count, page count, lint dates, orphan pages and index coverage.',
     inputSchema: {
@@ -26,11 +44,14 @@ export const READ_TOOLS: ToolDefinition[] = [
       required: [],
       additionalProperties: false,
     },
+    outputSchema: STATUS_OUTPUT_SCHEMA,
+    annotations: READ_ONLY,
   },
   {
     name: 'wiki_query',
+    title: 'Search wiki',
     description:
-      'Search the wiki for pages matching a free-text query. Returns matched pages with relevance scores.',
+      'Search the wiki for pages matching a free-text query. Returns matched pages with relevance scores and excerpts. Start here when answering a question, then read the best matches with wiki_read_page.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -39,9 +60,12 @@ export const READ_TOOLS: ToolDefinition[] = [
       required: ['query'],
       additionalProperties: false,
     },
+    outputSchema: QUERY_OUTPUT_SCHEMA,
+    annotations: READ_ONLY,
   },
   {
     name: 'wiki_lint',
+    title: 'Lint wiki',
     description:
       'Lint the wiki and return findings grouped by severity (error, warning, info) with optional category filter.',
     inputSchema: {
@@ -55,9 +79,12 @@ export const READ_TOOLS: ToolDefinition[] = [
       required: [],
       additionalProperties: false,
     },
+    outputSchema: LINT_OUTPUT_SCHEMA,
+    annotations: READ_ONLY,
   },
   {
     name: 'wiki_list_pages',
+    title: 'List wiki pages',
     description:
       'List all wiki pages with their file paths and frontmatter metadata.',
     inputSchema: {
@@ -66,9 +93,11 @@ export const READ_TOOLS: ToolDefinition[] = [
       required: [],
       additionalProperties: false,
     },
+    annotations: READ_ONLY,
   },
   {
     name: 'wiki_list_sources',
+    title: 'List raw sources',
     description:
       'List all raw source files with name, path, size, modified date and extension.',
     inputSchema: {
@@ -77,9 +106,11 @@ export const READ_TOOLS: ToolDefinition[] = [
       required: [],
       additionalProperties: false,
     },
+    annotations: READ_ONLY,
   },
   {
     name: 'wiki_read_page',
+    title: 'Read wiki page',
     description:
       'Read a single wiki page by relative path. Returns frontmatter and body content.',
     inputSchema: {
@@ -93,9 +124,11 @@ export const READ_TOOLS: ToolDefinition[] = [
       required: ['path'],
       additionalProperties: false,
     },
+    annotations: READ_ONLY,
   },
   {
     name: 'wiki_read_index',
+    title: 'Read wiki index',
     description:
       'Read the wiki index file and return parsed entries with path, title, summary, category and tags.',
     inputSchema: {
@@ -104,6 +137,7 @@ export const READ_TOOLS: ToolDefinition[] = [
       required: [],
       additionalProperties: false,
     },
+    annotations: READ_ONLY,
   },
 ];
 

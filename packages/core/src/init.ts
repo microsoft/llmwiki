@@ -1,8 +1,8 @@
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { statSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { appendEntry } from './log.js';
 import { API_VERSION, WIKI_DIR_NAME } from './constants.js';
-import { isNotFoundError } from './errors.js';
 
 /**
  * Result of running the init command.
@@ -66,7 +66,7 @@ const AGENTS_CONTENT = `# AGENTS.md
 
 **Optional fields:**
 - \`tags\` — Array of tag strings
-- \`sources\` — Array of source references
+- \`sources\` — Source summary pages this page was derived from, as wiki-relative paths (e.g. \`sources/article-summary.md\`). When all of them are removed, the page is cleaned up. Pages without \`sources\` are never removed automatically.
 - \`created\` — Creation date (YYYY-MM-DD)
 - \`updated\` — Last updated date (YYYY-MM-DD)
 - \`source_path\` — Relative path to the original source file
@@ -112,7 +112,7 @@ results_count: <number of results>
 
 ### Ingest Workflow
 
-1. Place a raw file in the \`raw/\` directory (or run **LLM Wiki: Add Source** from the Command Palette).
+1. Place a raw file in the \`raw/\` directory (or run **LLM Wiki: Ingest Files or Folder** from the Command Palette).
 2. The extension automatically ingests new sources and writes a summary page in \`wiki/sources/\`.
 3. \`wiki/index.md\` is updated with the new entry.
 4. \`wiki/log.md\` records the ingestion event.
@@ -125,7 +125,7 @@ results_count: <number of results>
 - **stale-entries** (error) — Index entries pointing to deleted files
 - **missing-pages** (info) — Referenced pages that do not exist yet
 
-Run lint via the **LLM Wiki** chat participant: \`@wiki /lint\`.
+Run lint with **LLM Wiki: Run Lint** and apply the deterministic fixes with **LLM Wiki: Fix Issues**. In Copilot Chat, the \`/wiki-fix\` skill resolves the remaining findings.
 
 ### Cross-Referencing Guidelines
 
@@ -137,6 +137,20 @@ Run lint via the **LLM Wiki** chat participant: \`@wiki /lint\`.
 `;
 
 /**
+ * True when `root` (a `.wiki` folder) holds an initialized wiki, meaning it
+ * has a `wiki/` directory. initWiki, MCP wiki discovery and the VS Code
+ * extension use the same test, so a wiki whose index.md went missing still
+ * opens and wiki_fix can rebuild the index.
+ */
+export function isWikiInitialized(root: string): boolean {
+  try {
+    return statSync(join(root, 'wiki')).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Initialize a wiki knowledge base at the given path.
  * Creates the `.wiki` directory containing the wiki structure.
  * The `targetPath` is the project/workspace folder; the wiki root
@@ -146,24 +160,17 @@ Run lint via the **LLM Wiki** chat participant: \`@wiki /lint\`.
  */
 export async function initWiki(targetPath: string): Promise<InitResult> {
   const root = resolve(targetPath, WIKI_DIR_NAME);
-  const wikiDir = join(root, 'wiki');
 
   // Detect if already initialized
-  try {
-    const wikiStat = await stat(wikiDir);
-    if (wikiStat.isDirectory()) {
-      return {
-        command: 'init',
-        api_version: API_VERSION,
-        status: 'already_initialized',
-        created_dirs: [],
-        created_files: [],
-        warning: 'Wiki is already initialized (wiki/ directory exists)',
-      };
-    }
-  } catch (err) {
-    if (!isNotFoundError(err)) throw err;
-    // Directory does not exist — proceed with init
+  if (isWikiInitialized(root)) {
+    return {
+      command: 'init',
+      api_version: API_VERSION,
+      status: 'already_initialized',
+      created_dirs: [],
+      created_files: [],
+      warning: 'Wiki is already initialized (wiki/ directory exists)',
+    };
   }
 
   // Create directory structure

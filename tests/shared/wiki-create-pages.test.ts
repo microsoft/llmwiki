@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createEntityPage, createConceptPage, readPage } from '../../packages/core/src/wiki.js';
-import { readIndex } from '../../packages/core/src/index-ops.js';
+import { createEntityPage, createConceptPage, readPage, upsertDerivedPage, writePage } from '../../packages/core/src/wiki.js';
+import { readIndex, updateIndexEntry } from '../../packages/core/src/index-ops.js';
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -62,6 +62,18 @@ describe('createEntityPage', () => {
     const result = await createEntityPage(wikiDir, 'Some Complex Name!', 'Content.');
     expect(result.path).toBe('entities/some-complex-name.md');
   });
+
+  it('should update the existing index entry when the page is created again', async () => {
+    await createEntityPage(wikiDir, 'Ada Lovelace', 'First version.', ['history']);
+    await updateIndexEntry(join(wikiDir, 'index.md'), 'entities/ada-lovelace.md', { summary: 'First programmer' });
+
+    await createEntityPage(wikiDir, 'Ada Lovelace', 'Second version.', ['history', 'math']);
+
+    const entries = await readIndex(join(wikiDir, 'index.md'));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].tags).toEqual(['history', 'math']);
+    expect(entries[0].summary).toBe('First programmer');
+  });
 });
 
 describe('createConceptPage', () => {
@@ -113,5 +125,87 @@ describe('createConceptPage', () => {
 
     const page = await readPage(join(wikiDir, result.path));
     expect(page.frontmatter.tags).toEqual([]);
+  });
+});
+
+describe('upsertDerivedPage', () => {
+  let wikiDir: string;
+
+  beforeEach(async () => {
+    wikiDir = await mkdtemp(join(tmpdir(), 'wiki-upsert-test-'));
+    await writeFile(join(wikiDir, 'index.md'), '', 'utf-8');
+  });
+
+  afterEach(async () => {
+    await rm(wikiDir, { recursive: true, force: true });
+  });
+
+  it('creates a new page that records its source', async () => {
+    const result = await upsertDerivedPage(wikiDir, 'entity', 'Grace Hopper', 'Wrote A-0.', ['people'], 'sources/a-summary.md');
+
+    expect(result).toMatchObject({ path: 'entities/grace-hopper.md', created: true });
+    const page = await readPage(join(wikiDir, result.path));
+    expect(page.frontmatter.sources).toEqual(['sources/a-summary.md']);
+    expect(page.body).toBe('Wrote A-0.');
+  });
+
+  it('extends an existing derived page instead of overwriting it', async () => {
+    await upsertDerivedPage(wikiDir, 'concept', 'COBOL', 'Business language (1959).', ['language'], 'sources/a-summary.md');
+    await writePage(join(wikiDir, 'concepts', 'cobol.md'), {
+      frontmatter: { ...(await readPage(join(wikiDir, 'concepts', 'cobol.md'))).frontmatter },
+      body: 'Business language (1959).\n\n## See also\n\n- [Hopper](../entities/grace-hopper.md)',
+    });
+
+    const result = await upsertDerivedPage(wikiDir, 'concept', 'COBOL', 'Designed by CODASYL.', ['history'], 'sources/b-summary.md');
+
+    expect(result.created).toBe(false);
+    const page = await readPage(join(wikiDir, 'concepts', 'cobol.md'));
+    expect(page.body).toBe(
+      'Business language (1959).\n\nDesigned by CODASYL.\n\n## See also\n\n- [Hopper](../entities/grace-hopper.md)',
+    );
+    expect(page.frontmatter.tags).toEqual(['language', 'history']);
+    expect(page.frontmatter.sources).toEqual(['sources/a-summary.md', 'sources/b-summary.md']);
+    const entries = await readIndex(join(wikiDir, 'index.md'));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].tags).toEqual(['language', 'history']);
+  });
+
+  it('does not repeat content that is already on the page', async () => {
+    await upsertDerivedPage(wikiDir, 'entity', 'Ada', 'Wrote the first program.', [], 'sources/a-summary.md');
+    await upsertDerivedPage(wikiDir, 'entity', 'Ada', 'Wrote the first program.', [], 'sources/a-summary.md');
+
+    const page = await readPage(join(wikiDir, 'entities', 'ada.md'));
+    expect(page.body).toBe('Wrote the first program.');
+    expect(page.frontmatter.sources).toEqual(['sources/a-summary.md']);
+  });
+
+  it('never adds sources to a hand-written page', async () => {
+    await writePage(join(wikiDir, 'entities', 'mine.md'), {
+      frontmatter: { type: 'entity', title: 'Mine', tags: ['personal'] },
+      body: 'My own notes.',
+    });
+
+    await upsertDerivedPage(wikiDir, 'entity', 'Mine', 'From a source.', [], 'sources/a-summary.md');
+
+    const page = await readPage(join(wikiDir, 'entities', 'mine.md'));
+    expect(page.frontmatter.sources).toBeUndefined();
+    expect(page.frontmatter.title).toBe('Mine');
+    expect(page.body).toBe('My own notes.\n\nFrom a source.');
+  });
+
+  it('keeps every source when ingests extend the same page at the same time', async () => {
+    const sources = ['a', 'b', 'c', 'd', 'e'].map((name) => `sources/${name}-summary.md`);
+
+    await Promise.all(
+      sources.map((source, i) =>
+        upsertDerivedPage(wikiDir, 'entity', 'Grace Hopper', `Fact ${i}.`, [`tag-${i}`], source),
+      ),
+    );
+
+    const page = await readPage(join(wikiDir, 'entities', 'grace-hopper.md'));
+    expect([...(page.frontmatter.sources ?? [])].sort()).toEqual(sources);
+    expect([...(page.frontmatter.tags ?? [])].sort()).toEqual(['tag-0', 'tag-1', 'tag-2', 'tag-3', 'tag-4']);
+    for (let i = 0; i < sources.length; i++) expect(page.body).toContain(`Fact ${i}.`);
+    expect(await readIndex(join(wikiDir, 'index.md'))).toHaveLength(1);
   });
 });

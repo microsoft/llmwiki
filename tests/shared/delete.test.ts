@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { deletePage, writePage } from '../../packages/core/src/wiki.js';
 import { addEntry, readIndex } from '../../packages/core/src/index-ops.js';
-import { mkdtemp, rm, writeFile, mkdir, stat } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, mkdir, stat, symlink } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -109,5 +110,56 @@ describe('deletePage', () => {
     await expect(
       deletePage(wikiDir, '../../etc/passwd'),
     ).rejects.toThrow('Path traversal detected');
+  });
+
+  it.each(['index.md', 'Index.md', 'LOG.md', 'concepts/../Log.md'])(
+    'refuses to delete %s (case-insensitive file systems)',
+    async (pagePath) => {
+      await expect(deletePage(wikiDir, pagePath)).rejects.toThrow('special wiki file');
+      expect(existsSync(join(wikiDir, 'index.md'))).toBe(true);
+    },
+  );
+
+  describe('through symlinked folders', () => {
+    let outside: string;
+
+    // Junctions need no special rights on Windows; elsewhere these are symlinks.
+    const link = (target: string, name: string) => symlink(target, join(wikiDir, name), 'junction');
+
+    beforeEach(async () => {
+      outside = await mkdtemp(join(tmpdir(), 'wiki-delete-outside-'));
+      await writeFile(join(outside, 'source.md'), '# Raw source', 'utf-8');
+      await link(outside, 'linked');
+    });
+
+    afterEach(async () => {
+      await rm(outside, { recursive: true, force: true });
+    });
+
+    it('refuses a page whose folder links outside the wiki', async () => {
+      await expect(deletePage(wikiDir, 'linked/source.md')).rejects.toThrow('Path traversal detected');
+      expect(existsSync(join(outside, 'source.md'))).toBe(true);
+    });
+
+    it.each(['self/index.md', 'self/Index.md', 'self/log.md'])(
+      'refuses %s, which resolves to a special wiki file',
+      async (pagePath) => {
+        await link(wikiDir, 'self');
+        await expect(deletePage(wikiDir, pagePath)).rejects.toThrow('special wiki file');
+        expect(existsSync(join(wikiDir, 'index.md'))).toBe(true);
+      },
+    );
+
+    it('still deletes a page reached through a folder link inside the wiki', async () => {
+      await writePage(join(wikiDir, 'concepts', 'target.md'), {
+        frontmatter: { title: 'Target' },
+        body: 'Body.',
+      });
+      await link(join(wikiDir, 'concepts'), 'alias');
+
+      await deletePage(wikiDir, 'alias/target.md');
+
+      expect(existsSync(join(wikiDir, 'concepts', 'target.md'))).toBe(false);
+    });
   });
 });

@@ -55,7 +55,7 @@ function ingestAndIntegrateMessages(sourcePath: string) {
           text: [
             `Ingest the source file "${sourcePath}" and fully integrate its knowledge into the wiki. Follow these steps:`,
             '',
-            '1. **Ingest with context**: Call wiki_ingest_with_context with source_path set to',
+            '1. **Ingest with context**: Call wiki_ingest_with_context with sourcePath set to',
             `   "${sourcePath}". Review the returned related_pages and suggested_actions.`,
             '',
             '2. **Create entity pages**: For each person, organization, or named thing mentioned',
@@ -94,18 +94,20 @@ function lintAndFixMessages() {
             '1. **Run lint**: Call wiki_lint to get all findings. Note the total count and',
             '   severity breakdown (error, warning, info).',
             '',
-            '2. **Review errors first**: For each error-severity finding, determine if it can',
-            '   be fixed deterministically:',
-            '   - Stale index entries (page referenced in index but file missing) → remove entry',
-            '   - Missing index entries (page exists but not in index) → add entry',
-            '   - Missing frontmatter fields (no title, no tags) → add sensible defaults',
+            '2. **Preview deterministic fixes**: Call wiki_fix with dryRun set to true. It lists',
+            '   stale index entries to drop, unlisted pages to index, missing frontmatter',
+            '   defaults to add, and entity/concept pages whose raw sources were removed.',
             '',
-            '3. **Fix deterministic issues**: Use wiki_update_index to fix index problems.',
-            '   Use wiki_read_page and appropriate write tools to fix frontmatter issues.',
+            '3. **Confirm deletions**: If removed_pages is not empty, list those pages and ask',
+            '   the user whether to delete them. Wait for an explicit yes. If the user declines',
+            '   or does not answer, skip step 4: do not call wiki_fix without dryRun, because',
+            '   it would delete those pages.',
             '',
-            '4. **Report remaining**: List any findings that require human judgment:',
-            '   - Orphan pages (exist but nothing links to them)',
+            '4. **Apply them**: Call wiki_fix (without dryRun) and note what it fixed.',
+            '',
+            '5. **Report remaining**: List the findings that still require human judgment:',
             '   - Broken crosslinks (link target does not exist)',
+            '   - Invalid page types',
             '   - Contradictory information across pages',
             '',
             'Summarize: how many issues found, how many fixed, how many remain.',
@@ -161,7 +163,7 @@ function researchTopicMessages(topic: string) {
  * Prompts provide structured multi-step instructions that guide an LLM agent
  * through common wiki operations using the available MCP tools.
  */
-export function registerPrompts(server: Server, _wikiRoot: string): void {
+export function registerPrompts(server: Server, _wikiRoot?: string): void {
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({
     prompts: PROMPTS.map((p) => ({
       name: p.name,

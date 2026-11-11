@@ -20,6 +20,7 @@
   "scripts": {
     "build": "npm run build --workspace=packages/core && npm run build --workspace=packages/vscode",
     "test": "vitest run",
+    "test:integration": "node tests/vscode/integration/build.mjs && node tests/vscode/integration/out/runTest.js",
     "coverage": "vitest run --coverage",
     "lint": "npm run lint --workspace=packages/core && npm run lint --workspace=packages/vscode",
     "dev": "vitest watch"

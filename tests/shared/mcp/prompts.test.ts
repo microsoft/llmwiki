@@ -185,6 +185,17 @@ describe('MCP Prompts — GetPrompt lint-and-fix', () => {
     expect(allText).toContain('wiki_lint');
     expect(allText).toMatch(/severity|error.*warning|warning.*error/i);
   });
+
+  it('asks the user before applying fixes that delete pages', async () => {
+    const result = await client.getPrompt({ name: 'lint-and-fix' });
+    const allText = result.messages
+      .map((m) => ('text' in m.content ? m.content.text : ''))
+      .join('\n');
+
+    expect(allText).toContain('removed_pages');
+    expect(allText).toMatch(/Wait for an explicit yes/);
+    expect(allText).toMatch(/do not call wiki_fix without dryRun/);
+  });
 });
 
 // ---------------------------------------------------------------------------

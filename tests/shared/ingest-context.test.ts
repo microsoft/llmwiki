@@ -329,9 +329,10 @@ describe('ingestWithContext', () => {
     const result = await ingestWithContext(sourceFile, tempDir);
 
     expect(result.ingest.status).toBe('skipped');
-    expect(result.suggested_actions).toContain(
-      'Use force=true to re-ingest this source',
-    );
+    expect(result.ingest.summary_page).toBe('sources/dup-summary.md');
+    expect(result.suggested_actions).toEqual([
+      'Source already ingested: read the existing summary page (summary_page) and build on it; re-ingest with force only if the user asks',
+    ]);
   });
 
   it('finds related pages when wiki has matching content', async () => {

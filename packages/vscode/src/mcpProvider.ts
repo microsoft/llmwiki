@@ -4,6 +4,32 @@ import { existsSync } from 'node:fs';
 import { WIKI_DIR_NAME } from '@llmwiki/core';
 
 /**
+ * Build the stdio definition VS Code uses to start the `llmwiki` MCP server.
+ *
+ * The command is the editor's own executable (`process.execPath`), so the
+ * server doesn't depend on a system Node install. That binary only behaves
+ * like Node when `ELECTRON_RUN_AS_NODE` is set, and the process that spawns
+ * MCP servers (for example the Agent Host behind the Copilot harness) may not
+ * inherit it from the extension host, so it is set explicitly.
+ */
+export function createLlmWikiServerDefinition(
+  launcherPath: string,
+  wikiRoot: string,
+  workspaceFolder: string,
+  version: string,
+): vscode.McpStdioServerDefinition {
+  const definition = new vscode.McpStdioServerDefinition(
+    'LLM Wiki',
+    process.execPath,
+    [launcherPath, wikiRoot],
+    { ELECTRON_RUN_AS_NODE: '1' },
+    version,
+  );
+  definition.cwd = vscode.Uri.file(workspaceFolder);
+  return definition;
+}
+
+/**
  * Registers an `McpServerDefinitionProvider` that exposes the `llmwiki` MCP
  * server to Copilot Chat (and any other MCP-aware consumer in VS Code).
  *
@@ -58,18 +84,14 @@ export function registerMcpServerProvider(
 
   const provider: vscode.McpServerDefinitionProvider = {
     onDidChangeMcpServerDefinitions: emitter.event,
-    provideMcpServerDefinitions: () => {
-      const definition = new vscode.McpStdioServerDefinition(
-        'LLM Wiki',
-        // Use the editor's bundled Node so we don't depend on a system install.
-        process.execPath,
-        [launcherPath, wikiRoot],
-        {},
+    provideMcpServerDefinitions: () => [
+      createLlmWikiServerDefinition(
+        launcherPath,
+        wikiRoot,
+        workspaceFolder,
         context.extension.packageJSON.version as string,
-      );
-      definition.cwd = vscode.Uri.file(workspaceFolder);
-      return [definition];
-    },
+      ),
+    ],
   };
 
   outputChannel.appendLine(

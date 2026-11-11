@@ -87,6 +87,7 @@ llmwiki/
 │   │   │   ├── index.ts            # Barrel export
 │   │   │   ├── constants.ts        # API_VERSION
 │   │   │   ├── errors.ts           # isNotFoundError, isPermissionError
+│   │   │   ├── lock.ts             # withWikiLock (cross-process wiki write lock)
 │   │   │   ├── wiki.ts             # readPage, writePage, listPages, getPageLinks,
 │   │   │   │                       # directoryExists, createEntityPage,
 │   │   │   │                       # createConceptPage, addCrosslinks
@@ -102,13 +103,21 @@ llmwiki/
 │   │   │   ├── ingest.ts           # ingestSource (single-file ingest)
 │   │   │   ├── ingest-context.ts   # ingestWithContext (enriched response)
 │   │   │   ├── bulk-ingest.ts      # bulkIngest (batch ingest helper)
+│   │   │   ├── fix.ts              # fixWiki (orphaned derived pages + lintFix in one pass)
 │   │   │   ├── query.ts            # queryWiki, slugifyQuery (weighted search)
 │   │   │   ├── status.ts           # getWikiStatus (aggregate statistics)
 │   │   │   └── mcp/
 │   │   │       ├── index.ts        # Barrel export
 │   │   │       ├── server.ts       # createMcpServer — registers tools, dispatches
-│   │   │       ├── read-tools.ts   # 7 read-only tools
-│   │   │       ├── write-tools.ts  # 7 write tools
+│   │   │       ├── read-tools.ts   # 7 read-only tools (+ ToolDefinition/annotations types)
+│   │   │       ├── write-tools.ts  # 9 write tools (incl. wiki_fix, wiki_delete_page)
+│   │   │       ├── workspace-tools.ts # wiki_open, wiki_init (discovery mode only)
+│   │   │       ├── wiki-root.ts    # WikiRootState — fixed root or discovery (roots, cwd, open)
+│   │   │       ├── instructions.ts # Server instructions (+ the wiki's AGENTS.md)
+│   │   │       ├── schemas.ts      # Output schemas for structured tool results
+│   │   │       ├── completions.ts  # Argument completions for templates and prompts
+│   │   │       ├── resources.ts    # resource://wiki/* resources and templates
+│   │   │       ├── prompts.ts      # Prompt templates (ingest, lint, research)
 │   │   │       └── bin.ts          # llmwiki-mcp stdio launcher (shebang + StdioServerTransport)
 │   │   ├── package.json            # @llmwiki/core (bin: llmwiki-mcp)
 │   │   └── tsconfig.json
@@ -116,23 +125,34 @@ llmwiki/
 │   └── vscode/                     # llmwiki — VS Code extension
 │       ├── src/
 │       │   ├── extension.ts        # activate/deactivate — wires providers & watchers
-│       │   ├── commands.ts         # Command handlers (init, ingest, query, status, …)
+│       │   ├── commands.ts         # Command handlers (init, ingest, query, status, lint, fix, …)
 │       │   ├── llmIngest.ts        # LM API enrichment pipeline for single-file ingest
 │       │   ├── statusBar.ts        # StatusBarManager — debounced live page count
 │       │   ├── wikiPagesTree.ts    # WikiPagesTreeDataProvider (Entities/Concepts/Sources)
 │       │   ├── rawSourcesTree.ts   # RawSourcesTreeDataProvider (raw/ browser)
 │       │   ├── backlinksTree.ts    # BacklinksTreeDataProvider (reverse links)
 │       │   ├── lintFindingsTree.ts # LintFindingsTreeDataProvider (severity-grouped)
-│       │   ├── mcpProvider.ts      # vscode.lm.registerMcpServerDefinitionProvider → llmwiki-mcp
-│       │   └── chatParticipant.ts  # @wiki chat participant (/status, /save, /lint, /fix)
-│       ├── package.json            # VS Code extension manifest
-│       └── esbuild.config.mjs      # CJS bundle, external: ['vscode']
+│       │   └── mcpProvider.ts      # vscode.lm.registerMcpServerDefinitionProvider → llmwiki-mcp
+│       ├── package.json            # VS Code extension manifest (incl. chatSkills/chatAgents/chatInstructions)
+│       └── esbuild.config.mjs      # CJS bundles + plugin server bundle + copies chat customizations
+│
+├── plugin/                         # Agent plugin (Agent Plugins 1.0)
+│   ├── plugin.json                 # Manifest
+│   ├── mcp.json                    # Starts server/llmwiki-mcp.cjs with node
+│   ├── server/llmwiki-mcp.cjs      # Generated, committed MCP server bundle
+│   ├── skills/                     # wiki-ask, wiki-research, wiki-ingest, wiki-save, wiki-fix
+│   └── com.github.copilot/
+│       ├── agents/                 # wiki-librarian.agent.md
+│       └── rules/                  # llmwiki.instructions.md (applyTo .wiki/**)
 │
 ├── tests/
 │   ├── shared/                     # Shared library tests (incl. mcp/)
 │   ├── vscode/                     # Extension tests (mocked vscode module)
+│   │   └── integration/            # Real VS Code tests (npm run test:integration)
+│   ├── plugin/                     # Plugin validation + stdio e2e of the bundle
 │   └── fixtures/                   # Test fixture data
 ├── .github/
+│   ├── plugin/marketplace.json     # Marketplace index for the agent plugin
 │   └── workflows/
 │       └── ci.yml                  # CI — lint, build, test on push/PR to main
 ├── package.json                    # Workspace root — workspaces:
@@ -236,7 +256,7 @@ Activity Bar: "LLM Wiki" ($(book) icon)
 │
 └── Lint Findings (lintFindingsTree.ts)
     └── LintFindingsTreeDataProvider
-        ├── Populated by llmwiki.lint via setFindings()
+        ├── Populated by llmwiki.lint, llmwiki.fix and llmwiki.refresh via setFindings()
         ├── Groups by severity (Errors → Warnings → Info)
         └── Click to open the affected file
 ```
@@ -252,9 +272,11 @@ Activity Bar: "LLM Wiki" ($(book) icon)
 | `llmwiki.openPage` | Command palette | Quick pick from index entries → opens selected page |
 | `llmwiki.search` | Command palette | Filter entities/concepts by title, summary, or tag |
 | `llmwiki.searchRaw` | Command palette | Find a raw source file by name |
-| `llmwiki.refresh` | Command palette | Runs lint-fix, prunes orphans, refreshes trees |
-| `llmwiki.fix` | Lint Findings view | Opens `@wiki /fix` chat to interactively resolve findings |
-| `llmwiki.removeSource` | Raw Sources context menu | Deletes a raw source plus pages derived from it |
+| `llmwiki.refresh` | Command palette | Runs `fixWiki` (prunes orphaned pages, lint-fix), refreshes trees |
+| `llmwiki.lint` | Palette / Lint Findings view | Runs `lintWiki` and shows the findings in the Lint Findings view |
+| `llmwiki.fix` | Raw Sources / Lint Findings views | Runs `fixWiki` with progress; remaining findings go to the Lint Findings view with a **Fix with Copilot** action |
+| `llmwiki.fixWithCopilot` | Lint Findings view / notifications | Opens Copilot Chat with the `/wiki-fix` skill |
+| `llmwiki.removeSource` | Raw Sources context menu | Deletes a raw source, its summary page, and pages derived only from it (`removeSourcePages`) |
 
 ### Bulk Ingest
 
@@ -299,14 +321,15 @@ withProgress (Notification) → for each file:
 - **Auto-refresh:** file system watchers on `wiki/**/*.md` and `raw/**` with 300ms debounce
 - **Uninitialized state:** shows "Wiki: Not initialized"
 
-### Chat Participant (`@wiki`)
+### Copilot Chat Integration
 
-The extension contributes a chat participant for GitHub Copilot Chat:
+The extension has no chat participant (VS Code deprecated the Chat Participant API and the Copilot harness doesn't run participants). It integrates with Copilot Chat through:
 
-- `@wiki /status` — show wiki statistics.
-- `@wiki /save` — save the previous answer as a wiki page.
-- `@wiki /lint` — run health checks and get fix suggestions.
-- `@wiki /fix` — auto-fix lint issues using the LLM.
+- **The MCP server** — registered by `mcpProvider.ts`; answers questions and edits the wiki through annotated tools, with server instructions that include the wiki's `AGENTS.md`.
+- **Skills, a custom agent and instructions** — contributed through `chatSkills`, `chatAgents` and `chatInstructions` (gated on `llmwiki.isWikiWorkspace`). They are authored once in `plugin/` and copied to `out/chat/` by `esbuild.config.mjs`, so the extension and the agent plugin always ship the same content.
+- **Commands** — `llmwiki.fixWithCopilot` opens chat with `/wiki-fix` after **Fix Issues** has applied the deterministic fixes.
+
+The Language Model API is still used directly for ingestion enrichment (`llmIngest.ts`), which runs outside chat.
 
 ### Bundling
 
@@ -318,7 +341,7 @@ The MCP server lives in `@llmwiki/core` and exposes wiki operations via the [Mod
 
 ### Launcher (`llmwiki-mcp`)
 
-`packages/core/src/mcp/bin.ts` is the executable entry point declared in the package `bin` field. It accepts a single argument — the path to a wiki root (defaulting to `./.wiki`) — validates the directory exists, builds a server via `createMcpServer({ wikiRoot })`, and connects it to a `StdioServerTransport`. The CJS bundle output is `dist/mcp/bin.js` with a Node shebang preserved by tsc.
+`packages/core/src/mcp/bin.ts` is the executable entry point declared in the package `bin` field. It takes the wiki root from its single argument or the `LLMWIKI_ROOT` environment variable, validates the directory exists, builds a server via `createMcpServer({ wikiRoot })`, and connects it to a `StdioServerTransport`. With neither, it starts in discovery mode (`createMcpServer({ cwd })`). The output is `dist/mcp/bin.js` with a Node shebang preserved by tsc.
 
 Once `@llmwiki/core` is installed, the launcher is invoked as:
 
@@ -326,11 +349,30 @@ Once `@llmwiki/core` is installed, the launcher is invoked as:
 npx llmwiki-mcp ./.wiki
 ```
 
-This is what `mcp.json` entries (Claude Desktop, Cursor, `.vscode/mcp.json`) point at.
+This is what `mcp.json` entries (Claude Desktop, Cursor, `.vscode/mcp.json`, `.mcp.json`) point at. The same launcher is bundled into `out/mcp-server.cjs` (VSIX) and `plugin/server/llmwiki-mcp.cjs` (agent plugin).
+
+### Locating the Wiki
+
+`WikiRootState` (`mcp/wiki-root.ts`) decides which wiki the server works on:
+
+- **Bound** — a root from the argument or `LLMWIKI_ROOT`. Only that wiki is used; `wiki_open`/`wiki_init` are not offered.
+- **Discovery** — no root given. If `<cwd>/.wiki` exists when the server starts, it is used (and its `AGENTS.md` goes into the instructions). Otherwise, on the first tool call the server checks the client's workspace roots (MCP `roots/list`; a wiki found this way is re-discovered after `roots/list_changed`). Agents can also select a wiki with `wiki_open` or create one with `wiki_init`. Agent plugin clients start servers in the plugin folder and may report no roots, so the plugin's skills call `wiki_open` with the workspace folder when needed.
+
+A folder counts as a wiki when `.wiki/wiki/` exists. `initWiki` and the extension use the same test, so a wiki whose `index.md` is missing still opens, and `wiki_fix` can rebuild the index.
+
+Tool calls made before a wiki is found return an error that tells the agent how to open one.
+
+### Server Metadata
+
+- **Tool annotations and titles** — read tools set `readOnlyHint` (VS Code skips the confirmation prompt); tools that overwrite or delete content set `destructiveHint`; all tools set `openWorldHint: false`.
+- **Structured output** — `wiki_status`, `wiki_query`, `wiki_lint` and `wiki_fix` declare an `outputSchema` (`mcp/schemas.ts`) and return matching `structuredContent` alongside the JSON text.
+- **Instructions** — `mcp/instructions.ts` explains the wiki layout and workflows; when the root is known at startup, the wiki's `AGENTS.md` is appended (capped at 12,000 characters).
+- **Completions** — page paths for `resource://wiki/pages/{path}`, source paths for `resource://wiki/sources/{path}`, `raw/` paths for the `ingest-and-integrate` prompt, and index titles for `research-topic`.
+- **Server info** — name, title, version (`CORE_VERSION`, kept in sync with `package.json` by a test), website and icon.
 
 ### VS Code Auto-Registration
 
-`packages/vscode/src/mcpProvider.ts` calls `vscode.lm.registerMcpServerDefinitionProvider` (stable API, requires VS Code ≥ 1.101) to advertise the launcher to Copilot automatically when a `.wiki` workspace is detected. The provider resolves `@llmwiki/core/mcp-bin` via `require.resolve`, builds a `vscode.McpStdioServerDefinition` pointing at `process.execPath <launcher> <wikiRoot>`, and exposes it under the id `llmwiki`. No `mcp.json` is required for the VS Code path.
+`packages/vscode/src/mcpProvider.ts` calls `vscode.lm.registerMcpServerDefinitionProvider` (stable API since VS Code 1.101) to advertise the launcher to Copilot automatically when a `.wiki` workspace is detected. The provider uses the bundled `out/mcp-server.cjs` (falling back to `@llmwiki/core/mcp-bin` in a dev checkout), builds a `vscode.McpStdioServerDefinition` pointing at `process.execPath <launcher> <wikiRoot>` with `ELECTRON_RUN_AS_NODE=1` (so the editor binary runs as Node even when the spawning process, such as the Agent Host, doesn't set it), and exposes it under the id `llmwiki`. No `mcp.json` is required for the VS Code path.
 
 ### Tool Inventory
 
@@ -344,12 +386,16 @@ This is what `mcp.json` entries (Claude Desktop, Cursor, `.vscode/mcp.json`) poi
 | `wiki_read_page` | Read | Single page content by path |
 | `wiki_read_index` | Read | All index entries |
 | `wiki_write_page` | Write | Create/overwrite page with auto-index |
-| `wiki_create_entity` | Write | Create entity page at `entities/{slug}.md` |
-| `wiki_create_concept` | Write | Create concept page at `concepts/{slug}.md` |
+| `wiki_create_entity` | Write | Create entity page at `entities/{slug}.md` (optional `sources` provenance) |
+| `wiki_create_concept` | Write | Create concept page at `concepts/{slug}.md` (optional `sources` provenance) |
 | `wiki_update_page` | Write | Merge partial updates into existing page |
 | `wiki_add_crosslinks` | Write | Add "See also" section with validated links |
 | `wiki_update_index` | Write | Update index entry metadata |
-| `wiki_ingest_with_context` | Write | Ingest source with context-rich response |
+| `wiki_ingest_with_context` | Write | Ingest source (path relative to the wiki root) with context-rich response |
+| `wiki_fix` | Write | Deterministic fixes via `fixWiki`, with `dryRun` preview |
+| `wiki_delete_page` | Write | Delete a page and its index entry; reports remaining backlinks |
+| `wiki_open` | Workspace | Select the wiki by path (discovery mode only) |
+| `wiki_init` | Workspace | Create a wiki in a project folder (discovery mode only) |
 
 ### MCP Data Flow
 
@@ -365,7 +411,7 @@ External LLM Agent
 ├─────────┬───────────┤
 │ Read    │ Write     │
 │ Tools   │ Tools     │
-│ (7)     │ (7)       │
+│ (7)     │ (9)       │
 └────┬────┴────┬──────┘
      │         │
      ▼         ▼
@@ -388,6 +434,9 @@ External LLM Agent
 - **Input validation:** All required fields are checked for non-empty strings; arrays are validated for correct element types.
 - **Empty slug/title rejection:** Tools reject empty or whitespace-only slug and title arguments.
 - **Index injection prevention:** Index updates use an upsert (find-or-replace) pattern to prevent duplicate entries.
+- **Protected files:** `wiki_delete_page` refuses `index.md`, `log.md` (in any letter case) and non-markdown files. `deletePage` checks the path again after resolving symlinked folders, so a link such as `wiki/linked -> ../raw` can't be used to delete files outside the wiki.
+- **Concurrent writes:** every read-modify-write of a page or `index.md` (ingest, `upsertDerivedPage`, crosslinks, `wiki_update_page`, index updates, fixes and source cleanup) runs under the wiki write lock (`withWikiLock` in `lock.ts`). The lock is a `wiki/.llmwiki.lock` file, so the extension and every MCP server process share it. It is re-entrant within one call chain, and a lock left by a crashed process is broken after 10 seconds.
+- **Provenance:** `sources` / `addSources` must name existing summary pages under `sources/`. Only such entries take part in cleanup: a page is deleted as orphaned when every one of them is definitely missing (`ENOENT`), and other entries (raw paths, URLs) count as present. Pages without `sources` are never deleted automatically, and the extension's LLM ingest extends existing pages instead of overwriting them.
 - **Error isolation:** Each tool call is wrapped in try/catch, returning `isError: true` on failure without crashing the server.
 
 ## Data Flow
@@ -455,7 +504,7 @@ Human runs llmwiki.query and supplies search terms
 ### Lint Flow
 
 ```
-llmwiki.lint or @wiki /lint
+llmwiki.lint, llmwiki.fix, or the wiki_lint / wiki_fix MCP tools
          │
          ▼
 ┌─────────────────┐
@@ -481,7 +530,7 @@ llmwiki.lint or @wiki /lint
 
 ### CI (`ci.yml`)
 
-Runs on every push and pull request to `main`. Executes lint (`tsc --noEmit`), build, and test (`vitest run` with coverage) for `@llmwiki/core` and the VS Code extension on Node.js 20.
+Runs on every push and pull request to `main`. Executes lint (`tsc --noEmit`), build, and test (`vitest run` with coverage) for `@llmwiki/core` and the VS Code extension on Node.js 20, and fails if the committed `plugin/server/llmwiki-mcp.cjs` differs from a fresh build.
 
 ## Module Dependencies
 
@@ -506,7 +555,7 @@ Runs on every push and pull request to `main`. Executes lint (`tsc --noEmit`), b
 
 ```
 extension.ts
-  └─► commands.ts ──► @llmwiki/core (readIndex, directoryExists, lintWiki,
+  └─► commands.ts ──► @llmwiki/core (readIndex, directoryExists, lintWiki, fixWiki,
   │                    appendEntry, ingestSource, queryWiki, getWikiStatus)
   │                  └─► llmIngest.ts (LM API enrichment)
   └─► wikiPagesTree.ts ──► @llmwiki/core (readIndex)
@@ -514,26 +563,27 @@ extension.ts
   └─► backlinksTree.ts ──► @llmwiki/core (getBacklinks)
   └─► lintFindingsTree.ts ──► @llmwiki/core (LintFinding type)
   └─► statusBar.ts ──► @llmwiki/core (directoryExists, getWikiStatus)
-  └─► chatParticipant.ts ──► @llmwiki/core (queryWiki, lintWiki, writePage, …)
   └─► mcpProvider.ts ──► vscode.lm.registerMcpServerDefinitionProvider
-                         (spawns `@llmwiki/core/mcp-bin` over stdio)
+                         (spawns out/mcp-server.cjs over stdio)
 ```
 
 ### Shared Library Modules
 
 | Module | Exports | Purpose |
 |--------|---------|---------|
-| `constants.ts` | `API_VERSION` | API version string (`'1'`) included in MCP JSON output. |
+| `constants.ts` | `API_VERSION`, `WIKI_DIR_NAME`, `CORE_VERSION` | API version string (`'1'`) included in MCP JSON output, the `.wiki` directory name, and the package version reported by the MCP server. |
 | `errors.ts` | `isNotFoundError`, `isPermissionError` | Error classification guards for ENOENT and EACCES. |
+| `lock.ts` | `withWikiLock` | Runs a read-modify-write of pages or `index.md` under the wiki write lock: a `wiki/.llmwiki.lock` file shared by the extension and MCP server processes, re-entrant within one call chain, and broken when stale. |
 | `wiki.ts` | `readPage`, `writePage`, `listPages`, `getPageLinks`, `directoryExists`, `createEntityPage`, `createConceptPage`, `addCrosslinks` | Read/write wiki pages with gray-matter frontmatter. List `.md` files recursively. Extract internal markdown links. Create typed pages with auto-index registration. Append cross-reference links. |
 | `index-ops.ts` | `readIndex`, `writeIndex`, `addEntry`, `removeEntry`, `findEntries`, `updateIndexEntry` | Parse and serialize the categorized `index.md` format. CRUD operations on index entries including partial metadata updates. |
 | `log.ts` | `appendEntry`, `readLog`, `getRecentEntries` | Append timestamped entries to `log.md`. Parse log entries. Retrieve recent entries. |
 | `sources.ts` | `listSources` | List all files in `raw/` with metadata (name, path, size, modified, extension). |
 | `backlinks.ts` | `getBacklinks` | Find all pages containing links to a target page via link resolution. |
-| `lint.ts` | `lintWiki` | Run 6 health-check categories (including frontmatter-validation) and return structured `LintResult`. |
+| `lint.ts` | `lintWiki`, `lintFix` | Run 6 health-check categories (including frontmatter-validation) and return structured `LintResult`; `lintFix` applies the deterministic fixes (with an optional `dryRun`). |
+| `fix.ts` | `fixWiki`, `findOrphanedDerivedPages`, `removeSourcePages` | One pass of every deterministic fix: delete entity/concept pages whose sources were all removed, then `lintFix` with orphan indexing. Used by the extension's Fix Issues/Refresh commands and the `wiki_fix` tool. `removeSourcePages` deletes a removed source's summary and the pages left with no existing source (Remove Source and the `raw/` deletion watcher). |
 | `utils.ts` | `slugify`, `excerpt` | Slugify filenames for wiki paths. Extract text excerpts with configurable max length. |
 | `search.ts` | `countOccurrences` | Case-insensitive substring occurrence counting for query scoring. |
-| `init.ts` | `initWiki` | Initialize a wiki: create directory structure, index, log, and AGENTS.md template. |
+| `init.ts` | `initWiki`, `isWikiInitialized` | Initialize a wiki: create directory structure, index, log, and AGENTS.md template. `isWikiInitialized` (a `wiki/` folder exists) is also what MCP discovery checks. |
 | `ingest.ts` | `ingestSource` | Ingest a single source file with duplicate detection. |
 | `ingest-context.ts` | `ingestWithContext` | Ingest a source with enriched context: word count, content type detection, related pages, follow-up actions. Used by `wiki_ingest_with_context`. |
 | `bulk-ingest.ts` | `bulkIngest` | Batch ingest all files from `raw/`, with progress callbacks and per-file status tracking. |
@@ -554,7 +604,7 @@ extension.ts
 ### Why a VS Code extension as the only UI?
 
 - **Primary editor.** Most wiki users already work in VS Code. A native extension removes context-switching between terminal and editor.
-- **Rich interaction.** Tree views, quick picks, the status bar, and the `@wiki` chat participant provide discovery and navigation that a CLI cannot match.
+- **Rich interaction.** Tree views, quick picks, the status bar, and Copilot Chat skills backed by the wiki's MCP server provide discovery and navigation that a CLI cannot match.
 - **LM API built in.** The extension uses VS Code's Language Model API for ingestion enrichment, with no extra credentials or HTTP wiring.
 - **Single surface.** Concentrating on one client keeps the shared library focused and the test surface small.
 

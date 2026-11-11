@@ -16,7 +16,7 @@ The agent doesn't just dump raw content into pages — it performs a structured 
 6. **Enrich** existing pages with knowledge from the new source.
 7. **Verify** wiki health to catch broken links, missing metadata, or orphan pages.
 
-This workflow uses the `llmwiki` MCP server — 14 tools over stdio transport. Launch it via the `llmwiki-mcp` bin shipped by `@llmwiki/core`:
+This workflow uses the `llmwiki` MCP server over stdio transport. Launch it via the `llmwiki-mcp` bin shipped by `@llmwiki/core` (in VS Code the extension registers it for you, and the `/wiki-ingest` skill runs this workflow):
 
 ```bash
 npx -p @llmwiki/core llmwiki-mcp /abs/path/to/your-project/.wiki
@@ -623,6 +623,6 @@ If `wiki_lint` returns errors after the workflow, inspect each finding:
 
 ## See Also
 
-- [MCP Tools Reference](../mcp-tools.md) — Full schema documentation for all 14 tools
+- [MCP Tools Reference](../mcp-tools.md) — Full schema documentation for all tools
 - [Model Context Protocol Specification](https://modelcontextprotocol.io/) — The MCP protocol standard
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — System architecture and the three-layer model

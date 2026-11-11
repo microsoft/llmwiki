@@ -52,9 +52,12 @@ vi.mock('@llmwiki/core', () => ({
   initWiki: vi.fn(),
   lintWiki: vi.fn(),
   lintFix: vi.fn(),
+  fixWiki: vi.fn(),
   ingestSource: vi.fn(),
   queryWiki: vi.fn(),
   getWikiStatus: vi.fn(),
+  removeSourcePages: vi.fn(),
+  slugify: (name: string) => name.toLowerCase().replace(/\.[^.]+$/, '').replace(/[^a-z0-9]+/g, '-'),
   isNotFoundError: (err: unknown) =>
     err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT',
 }));
@@ -80,18 +83,24 @@ import {
   readIndex,
   directoryExists,
   lintWiki,
+  fixWiki,
+  removeSourcePages,
+  appendEntry,
   listPages,
   readLog,
   ingestSource,
   queryWiki,
   getWikiStatus,
 } from '@llmwiki/core';
-import { readdir } from 'node:fs/promises';
+import { readdir, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
 import * as vscode from 'vscode';
 
 const mockDirectoryExists = directoryExists as Mock;
 const mockReadIndex = readIndex as Mock;
 const mockLintWiki = lintWiki as Mock;
+const mockFixWiki = fixWiki as Mock;
+const mockRemoveSourcePages = removeSourcePages as Mock;
 const mockListPages = listPages as Mock;
 const mockReadLog = readLog as Mock;
 const mockReaddir = readdir as Mock;
@@ -110,6 +119,7 @@ const mockProviders = {
   entities: { refresh: vi.fn() },
   concepts: { refresh: vi.fn() },
   rawSources: { refresh: vi.fn() },
+  lintFindings: { setFindings: vi.fn() },
 };
 
 const mockOutputChannel = {
@@ -132,6 +142,8 @@ describe('Command handlers', () => {
     vi.clearAllMocks();
     Object.keys(commandHandlers).forEach((k) => delete commandHandlers[k]);
     mockContext.subscriptions = [];
+    // VS Code resolves notification promises with the chosen button (or undefined).
+    mockShowWarningMessage.mockResolvedValue(undefined);
 
     registerCommands(
       mockContext,
@@ -370,23 +382,160 @@ describe('Command handlers', () => {
   });
 
   describe('llmwiki.refresh', () => {
-    it('should refresh all providers and run lint-fix', async () => {
+    const noIssues = { removed_pages: [], fixed: [], remaining: [], fixedCount: 0, remainingCount: 0 };
+
+    it('should refresh all providers and run the wiki fixes', async () => {
       mockDirectoryExists.mockResolvedValue(true);
-      const { lintFix } = await import('@llmwiki/core');
-      (lintFix as Mock).mockResolvedValue({
+      mockFixWiki.mockResolvedValue(noIssues);
+
+      await commandHandlers['llmwiki.refresh']();
+
+      expect(mockFixWiki).toHaveBeenCalledWith(WORKSPACE);
+      expect(mockProviders.entities.refresh).toHaveBeenCalled();
+      expect(mockProviders.concepts.refresh).toHaveBeenCalled();
+      expect(mockProviders.rawSources.refresh).toHaveBeenCalled();
+      expect(mockProviders.lintFindings.setFindings).toHaveBeenCalledWith([]);
+      expect(mockShowInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('no issues found'),
+      );
+    });
+
+    it('should list remaining issues and offer to show them or fix them with Copilot', async () => {
+      mockDirectoryExists.mockResolvedValue(true);
+      const broken = { severity: 'error', category: 'broken-links', message: 'Broken link', file: 'a.md' };
+      mockFixWiki.mockResolvedValue({
+        removed_pages: ['entities/gone.md'],
         fixed: [],
-        remaining: [],
+        remaining: [broken],
         fixedCount: 0,
+        remainingCount: 1,
       });
 
       await commandHandlers['llmwiki.refresh']();
 
-      expect(mockProviders.entities.refresh).toHaveBeenCalled();
-      expect(mockProviders.concepts.refresh).toHaveBeenCalled();
-      expect(mockProviders.rawSources.refresh).toHaveBeenCalled();
-      expect(mockShowInformationMessage).toHaveBeenCalledWith(
-        expect.stringContaining('no issues found'),
+      expect(mockProviders.lintFindings.setFindings).toHaveBeenCalledWith([broken]);
+      expect(mockShowWarningMessage).toHaveBeenCalledWith(
+        'Wiki refreshed — 1 orphaned page(s) removed, 1 issue(s) remaining.',
+        'Show Findings',
+        'Fix with Copilot',
       );
+      const messages = mockShowWarningMessage.mock.calls.map((c) => String(c[0]));
+      expect(messages.some((m) => m.includes('@wiki'))).toBe(false);
+    });
+  });
+
+  describe('llmwiki.fix', () => {
+    const broken = { severity: 'error', category: 'broken-links', message: 'Broken link', file: 'a.md' };
+
+    it('should warn when the wiki is not initialized', async () => {
+      mockDirectoryExists.mockResolvedValue(false);
+
+      await commandHandlers['llmwiki.fix']();
+
+      expect(mockFixWiki).not.toHaveBeenCalled();
+      expect(mockShowWarningMessage).toHaveBeenCalledWith(expect.stringContaining('not initialized'));
+    });
+
+    it('should report a healthy wiki', async () => {
+      mockDirectoryExists.mockResolvedValue(true);
+      mockFixWiki.mockResolvedValue({ removed_pages: [], fixed: [], remaining: [], fixedCount: 0, remainingCount: 0 });
+
+      await commandHandlers['llmwiki.fix']();
+
+      expect(vscode.window.withProgress).toHaveBeenCalled();
+      expect(mockShowInformationMessage).toHaveBeenCalledWith(expect.stringContaining('wiki is healthy'));
+      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('setContext', 'llmwiki.hasLintFindings', false);
+    });
+
+    it('should apply fixes, show remaining findings and offer Copilot', async () => {
+      mockDirectoryExists.mockResolvedValue(true);
+      mockFixWiki.mockResolvedValue({
+        removed_pages: [],
+        fixed: [{ severity: 'error', category: 'stale-entries', message: 'Stale' }],
+        remaining: [broken],
+        fixedCount: 1,
+        remainingCount: 1,
+      });
+      mockShowWarningMessage.mockResolvedValue('Fix with Copilot');
+
+      await commandHandlers['llmwiki.fix']();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mockProviders.lintFindings.setFindings).toHaveBeenCalledWith([broken]);
+      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('setContext', 'llmwiki.hasLintFindings', true);
+      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('lintFindings.focus');
+      expect(mockShowWarningMessage).toHaveBeenCalledWith(
+        'LLM Wiki: 1 issue(s) fixed, 1 issue(s) need your judgment.',
+        'Fix with Copilot',
+      );
+      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('llmwiki.fixWithCopilot');
+    });
+  });
+
+  describe('llmwiki.lint', () => {
+    it('should populate the Lint Findings view', async () => {
+      mockDirectoryExists.mockResolvedValue(true);
+      const finding = { severity: 'warning', category: 'orphan-pages', message: 'Orphan', file: 'b.md' };
+      mockLintWiki.mockResolvedValue({ findings: [finding], errorCount: 0, warningCount: 1, infoCount: 0 });
+      mockShowWarningMessage.mockResolvedValue('Fix Issues');
+
+      await commandHandlers['llmwiki.lint']();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mockProviders.lintFindings.setFindings).toHaveBeenCalledWith([finding]);
+      expect(mockShowWarningMessage).toHaveBeenCalledWith(
+        'LLM Wiki: 0 error(s), 1 warning(s), 0 info.',
+        'Fix Issues',
+        'Fix with Copilot',
+      );
+      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('llmwiki.fix');
+    });
+
+    it('should report a clean wiki', async () => {
+      mockDirectoryExists.mockResolvedValue(true);
+      mockLintWiki.mockResolvedValue({ findings: [], errorCount: 0, warningCount: 0, infoCount: 0 });
+
+      await commandHandlers['llmwiki.lint']();
+
+      expect(mockShowInformationMessage).toHaveBeenCalledWith(expect.stringContaining('no issues found'));
+    });
+  });
+
+  describe('llmwiki.fixWithCopilot', () => {
+    it('should open chat with the wiki-fix skill', async () => {
+      await commandHandlers['llmwiki.fixWithCopilot']();
+
+      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('workbench.action.chat.open', {
+        query: '/wiki-fix',
+      });
+    });
+  });
+
+  describe('llmwiki.removeSource', () => {
+    const filePath = join(WORKSPACE, 'raw', 'Paper.md');
+
+    it('should delete the raw file and the pages derived only from it', async () => {
+      mockShowWarningMessage.mockResolvedValue('Remove');
+      mockRemoveSourcePages.mockResolvedValue(['sources/paper-summary.md', 'entities/author.md']);
+
+      await commandHandlers['llmwiki.removeSource']({ filePath });
+
+      expect(unlink).toHaveBeenCalledWith(filePath);
+      expect(mockRemoveSourcePages).toHaveBeenCalledWith(join(WORKSPACE, 'wiki'), 'sources/paper-summary.md');
+      expect(appendEntry).toHaveBeenCalledWith(
+        join(WORKSPACE, 'wiki', 'log.md'),
+        expect.objectContaining({ verb: 'removed', subject: 'Paper.md', details: 'Source file and 2 wiki page(s) removed.' }),
+      );
+      expect(mockShowInformationMessage).toHaveBeenCalledWith('Removed "Paper.md" and 2 wiki page(s).');
+    });
+
+    it('should do nothing when the user cancels', async () => {
+      mockShowWarningMessage.mockResolvedValue(undefined);
+
+      await commandHandlers['llmwiki.removeSource']({ filePath });
+
+      expect(unlink).not.toHaveBeenCalled();
+      expect(mockRemoveSourcePages).not.toHaveBeenCalled();
     });
   });
 

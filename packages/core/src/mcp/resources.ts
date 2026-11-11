@@ -27,11 +27,14 @@ import { assertWithinDir } from './read-tools.js';
  * Template resources:
  *   - `resource://wiki/pages/{path}`   — single page content + frontmatter
  *   - `resource://wiki/sources/{path}` — raw source file content
+ *
+ * @param wikiRoot  The wiki root, or a function that resolves it on demand.
  */
-export function registerResources(server: Server, wikiRoot: string): void {
-  const wikiDir = join(wikiRoot, 'wiki');
-  const rawDir = join(wikiRoot, 'raw');
-  const indexPath = join(wikiDir, 'index.md');
+export function registerResources(
+  server: Server,
+  wikiRoot: string | (() => Promise<string>),
+): void {
+  const getWikiRoot = typeof wikiRoot === 'string' ? async () => wikiRoot : wikiRoot;
 
   // -----------------------------------------------------------------
   // List static resources
@@ -89,6 +92,10 @@ export function registerResources(server: Server, wikiRoot: string): void {
   // -----------------------------------------------------------------
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const { uri } = request.params;
+    const root = await getWikiRoot();
+    const wikiDir = join(root, 'wiki');
+    const rawDir = join(root, 'raw');
+    const indexPath = join(wikiDir, 'index.md');
 
     // --- Static: wiki index -------------------------------------------
     if (uri === 'resource://wiki/index') {

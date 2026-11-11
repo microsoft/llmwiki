@@ -10,7 +10,7 @@ Interactive wiki browsing powered by LLM maintenance. Browse, query, and grow yo
 - **Lint Findings panel** — Review wiki quality issues grouped by severity; click to jump to the affected file.
 - **Status bar integration** — Live page count, tooltip with coverage %, click for a full status notification.
 - **Bulk ingest** — Pick multiple files, pick a folder, or right-click a selection in the Explorer.
-- **`@wiki` chat participant** — Talk to the wiki through Copilot Chat with slash commands.
+- **Copilot skills and the Wiki Librarian agent** — Ask, research, ingest, save and fix from Copilot Chat with `/wiki-ask`, `/wiki-research`, `/wiki-ingest`, `/wiki-save` and `/wiki-fix`, backed by the bundled LLM Wiki MCP server.
 
 ## Installation
 
@@ -44,8 +44,10 @@ npm run package --workspace=packages/vscode
 | `llmwiki.search` | LLM Wiki: Search Wiki | Filter entities/concepts by title, summary, or tag |
 | `llmwiki.searchRaw` | LLM Wiki: Search Sources | Find a raw source file by name |
 | `llmwiki.refresh` | LLM Wiki: Refresh | Run lint-fix, prune orphaned pages, and refresh views |
-| `llmwiki.fix` | LLM Wiki: Fix Issues | Open the `@wiki /fix` chat to interactively resolve findings |
-| `llmwiki.removeSource` | LLM Wiki: Remove Source | Delete a raw source plus the wiki pages derived from it |
+| `llmwiki.lint` | LLM Wiki: Run Lint | Run health checks and show the results in the Lint Findings view |
+| `llmwiki.fix` | LLM Wiki: Fix Issues | Apply the deterministic fixes and list what still needs judgment in Lint Findings |
+| `llmwiki.fixWithCopilot` | LLM Wiki: Fix Remaining Issues with Copilot | Open Copilot Chat with the `/wiki-fix` skill |
+| `llmwiki.removeSource` | LLM Wiki: Remove Source | Delete a raw source, its summary page, and the wiki pages derived only from it |
 
 ## Bulk Ingest
 
@@ -72,16 +74,17 @@ The extension contributes an **LLM Wiki** activity-bar container with four tree 
 - **Wiki Pages** — Entities, Concepts, and Sources read from `wiki/index.md`.
 - **Raw Sources** — Files in `raw/`, grouped by subdirectory if any exist.
 - **Backlinks** — Pages that link to the currently open wiki page.
-- **Lint Findings** — Errors, warnings, and info populated by the last lint run.
+- **Lint Findings** — Errors, warnings, and info from the last **Run Lint**, **Fix Issues** or **Refresh**.
 
-## `@wiki` Chat Participant
+## Copilot Chat
 
-Open the Chat view and type `@wiki` to converse with the wiki via GitHub Copilot:
+In workspaces with a wiki, the extension contributes:
 
-- `@wiki /status` — show wiki statistics.
-- `@wiki /save` — save the previous answer as a wiki page.
-- `@wiki /lint` — run health checks and get fix suggestions.
-- `@wiki /fix` — auto-fix lint issues using the LLM.
+- **Skills** — `/wiki-ask`, `/wiki-research` and `/wiki-ingest` (Copilot also loads these automatically when relevant), plus `/wiki-save` and `/wiki-fix`, which run only when you invoke them.
+- **Wiki Librarian** — a custom agent in the agent picker.
+- **Instructions** for files under `.wiki/`.
+
+They work in both the Copilot harness and the Local harness. The `@wiki` chat participant was removed because VS Code deprecated chat participants; see the [migration table](https://github.com/microsoft/llmwiki#migrating-from-wiki).
 
 ## Configuration
 
@@ -89,17 +92,17 @@ The extension activates automatically when a workspace contains a wiki at `.wiki
 
 ## Requirements
 
-- **VS Code** 1.93 or later
+- **VS Code** 1.109 or later
 - **Node.js** 20.x or later (for building from source)
 - **GitHub Copilot** subscription (the extension uses the VS Code Language Model API for ingestion enrichment)
 
 ## Architecture
 
-The extension uses `@llmwiki/core` exclusively for wiki logic — no operations are duplicated in extension code. Commands delegate to shared functions like `ingestSource`, `queryWiki`, `getWikiStatus`, `lintWiki`, and `getBacklinks`, keeping the extension a thin UI layer.
+The extension uses `@llmwiki/core` exclusively for wiki logic — no operations are duplicated in extension code. Commands delegate to shared functions like `ingestSource`, `queryWiki`, `getWikiStatus`, `lintWiki`, `fixWiki`, and `getBacklinks`, keeping the extension a thin UI layer.
 
 ## MCP Server
 
-The extension automatically registers an MCP (Model Context Protocol) server named **LLM Wiki** with Copilot Chat (via the `mcpServerDefinitionProviders` contribution) — no configuration required. Open the Chat view's MCP server picker and you'll see it listed; tools are available to any chat session that opts in.
+The extension automatically registers an MCP (Model Context Protocol) server named **LLM Wiki** with Copilot Chat (via the `mcpServerDefinitionProviders` contribution) — no configuration required. Open the Chat view's MCP server picker and you'll see it listed; tools are available to any chat session that opts in. Read-only tools are annotated so they run without confirmation prompts.
 
 The same server can be used from Claude Desktop, Cursor, or any other MCP-compatible client via the `llmwiki-mcp` stdio launcher shipped by `@llmwiki/core`:
 

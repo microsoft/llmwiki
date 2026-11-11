@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { isNotFoundError } from './errors.js';
+import { withWikiLock } from './lock.js';
 
 export interface IndexEntry {
   path: string;
@@ -158,9 +159,31 @@ export async function addEntry(
   filePath: string,
   entry: IndexEntry,
 ): Promise<void> {
-  const entries = await readIndex(filePath);
-  entries.push(entry);
-  await writeIndex(filePath, entries);
+  await withWikiLock(dirname(filePath), async () => {
+    const entries = await readIndex(filePath);
+    entries.push(entry);
+    await writeIndex(filePath, entries);
+  });
+}
+
+/**
+ * Add an entry, or replace the existing entry with the same path. An empty
+ * `summary` keeps the existing entry's summary.
+ */
+export async function upsertEntry(
+  filePath: string,
+  entry: IndexEntry,
+): Promise<void> {
+  await withWikiLock(dirname(filePath), async () => {
+    const entries = await readIndex(filePath);
+    const idx = entries.findIndex((e) => e.path === entry.path);
+    if (idx >= 0) {
+      entries[idx] = { ...entry, summary: entry.summary || entries[idx].summary };
+    } else {
+      entries.push(entry);
+    }
+    await writeIndex(filePath, entries);
+  });
 }
 
 /**
@@ -171,9 +194,11 @@ export async function removeEntry(
   filePath: string,
   path: string,
 ): Promise<void> {
-  const entries = await readIndex(filePath);
-  const filtered = entries.filter((e) => e.path !== path);
-  await writeIndex(filePath, filtered);
+  await withWikiLock(dirname(filePath), async () => {
+    const entries = await readIndex(filePath);
+    const filtered = entries.filter((e) => e.path !== path);
+    await writeIndex(filePath, filtered);
+  });
 }
 
 /**
@@ -185,18 +210,20 @@ export async function updateIndexEntry(
   pagePath: string,
   updates: Partial<Omit<IndexEntry, 'path'>>,
 ): Promise<boolean> {
-  const entries = await readIndex(filePath);
-  const idx = entries.findIndex((e) => e.path === pagePath);
-  if (idx < 0) return false;
+  return withWikiLock(dirname(filePath), async () => {
+    const entries = await readIndex(filePath);
+    const idx = entries.findIndex((e) => e.path === pagePath);
+    if (idx < 0) return false;
 
-  const entry = entries[idx];
-  if (updates.title !== undefined) entry.title = updates.title;
-  if (updates.summary !== undefined) entry.summary = updates.summary;
-  if (updates.tags !== undefined) entry.tags = updates.tags;
-  if (updates.category !== undefined) entry.category = updates.category;
+    const entry = entries[idx];
+    if (updates.title !== undefined) entry.title = updates.title;
+    if (updates.summary !== undefined) entry.summary = updates.summary;
+    if (updates.tags !== undefined) entry.tags = updates.tags;
+    if (updates.category !== undefined) entry.category = updates.category;
 
-  await writeIndex(filePath, entries);
-  return true;
+    await writeIndex(filePath, entries);
+    return true;
+  });
 }
 
 /**
