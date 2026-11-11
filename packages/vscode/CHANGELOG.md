@@ -5,9 +5,9 @@ All notable changes to the LLM Wiki VS Code extension will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] — 2026-11-11
 
-VS Code deprecated chat participants, and the Copilot harness (which VS Code 1.142 began rolling out as the default for new chat sessions) doesn't run them. This release replaces `@wiki` with skills, a custom agent and a richer MCP server. It is a breaking change.
+VS Code deprecated chat participants, and the Copilot harness (which VS Code 1.142 began rolling out as the default for new chat sessions) doesn't run them. This release replaces `@wiki` with skills, a custom agent and a richer MCP server; see the migration table under **Removed**. It also updates dependencies to fix the security advisories reported since 1.0.1.
 
 ### Removed
 
@@ -20,6 +20,12 @@ VS Code deprecated chat participants, and the Copilot harness (which VS Code 1.1
   | `@wiki /lint` | **LLM Wiki: Run Lint**, or the `wiki_lint` tool |
   | `@wiki /fix` | **LLM Wiki: Fix Issues**, then `/wiki-fix` for the rest |
   | `@wiki /save` | `/wiki-save [title]` |
+
+### Security
+
+- Updated runtime dependencies `body-parser` (2.4.0), `zod` (4.6.7), `hono` (4.13.13), `@hono/node-server` (2.1.6), `fast-uri` (3.1.9), `qs` (6.17.1) and `ip-address` (10.7.5) to patched versions.
+- Updated dev dependencies `undici`, `@azure/msal-node`, `@azure/identity`, `vite` and `markdown-it` to patched versions, and updated the pinned GitHub Actions.
+- Deleting pages (**Remove Source**, cleanup after a source is removed, `wiki_delete_page`) refuses paths that leave the wiki through a symlinked folder, and never deletes `index.md` or `log.md` under another letter case.
 
 ### Added
 
@@ -47,7 +53,6 @@ VS Code deprecated chat participants, and the Copilot harness (which VS Code 1.1
 - Reading a page no longer returns frontmatter mutated by an earlier caller when the file's content repeats (gray-matter cache), which could make lint miss findings in long-running processes such as the MCP server.
 - The MCP server definition sets `ELECTRON_RUN_AS_NODE` explicitly, so it also starts when spawned by a process that doesn't inherit it.
 - Concurrent writers no longer overwrite each other's changes. For example, two ingests that extend the same entity page now both keep their content and `sources`. Page and index updates hold a write lock (`wiki/.llmwiki.lock`) that the extension and every MCP server process share.
-- Deleting pages (**Remove Source**, cleanup after a source is removed, `wiki_delete_page`) never deletes `index.md` or `log.md` under another letter case. It also refuses paths that leave the wiki through a symlinked folder.
 
 ## [1.0.1] — 2026-10-12
 

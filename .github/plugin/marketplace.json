@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "Agent plugin for LLM Wiki, a personal knowledge base that your agent maintains.",
-    "version": "1.0.1"
+    "version": "1.1.0"
   },
   "plugins": [
     {
       "name": "llmwiki",
       "description": "Skills to ask, research, ingest, save and fix an LLM Wiki, a Wiki Librarian agent, and the LLM Wiki MCP server.",
-      "version": "1.0.1",
+      "version": "1.1.0",
       "source": "./plugin",
       "homepage": "https://github.com/microsoft/llmwiki#readme",
       "repository": "https://github.com/microsoft/llmwiki",
